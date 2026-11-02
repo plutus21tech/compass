@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type ClipboardEvent, type DragEvent } from 'react'
+import { insertMarkdownImage, transferredImageFiles } from '@/lib/project-image-validation'
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle
 } from '@/components/ui/sheet'
@@ -187,11 +188,6 @@ function statusLabelForTask(task: Pick<PanelTask, 'status' | 'section'>) {
 
 function statusColorForSection(section: ProjectStatusSection | Pick<ProjectStatusSection, 'color' | 'canonicalStatus'> | null | undefined, status?: string) {
   return section?.color || STATUS_HEX[section?.canonicalStatus || status || 'IN_PROGRESS'] || STATUS_HEX.IN_PROGRESS
-}
-
-function appendMarkdownImage(content: string, url: string) {
-  const prefix = content.trim() ? `${content.trimEnd()}\n\n` : ''
-  return `${prefix}![image](${url})`
 }
 
 // Extra guard at each link/image sink, on the exact value rendered. lib/safe-url
@@ -615,28 +611,38 @@ export function TaskDetailPanel({
     }
   }
 
-  const uploadImage = async (file: File | undefined, target: 'description' | 'comment') => {
-    if (!file || !task || (target === 'description' ? !canEdit : !canComment)) return
+  // Uploads one or more images and inserts each at `position` (default: the end).
+  const uploadImages = async (files: File[], target: 'description' | 'comment', position?: number) => {
+    if (!files.length || !task || (target === 'description' ? !canEdit : !canComment)) return
+    let at = position
     try {
       setUploadingImage(target)
-      const formData = new FormData()
-      formData.set('projectId', projectId)
-      formData.set('file', file)
-      const res = await fetch('/api/projects/images', {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await res.json()
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || 'Failed to upload image')
-      }
+      for (const file of files) {
+        const formData = new FormData()
+        formData.set('projectId', projectId)
+        formData.set('file', file)
+        const res = await fetch('/api/projects/images', {
+          method: 'POST',
+          body: formData,
+        })
+        const data = await res.json()
+        if (!res.ok || !data.url) {
+          throw new Error(data.error || 'Failed to upload image')
+        }
 
-      if (target === 'description') {
-        const nextDescription = appendMarkdownImage(description, data.url)
-        setDescription(nextDescription)
-        await updateTask({ description: nextDescription })
-      } else {
-        setNewComment((prev) => appendMarkdownImage(prev, data.url))
+        // Read the live text so typing during the upload is kept.
+        const textarea = target === 'description' ? descriptionTextareaRef.current : commentTextareaRef.current
+        const current = textarea?.value ?? (target === 'description' ? description : newComment)
+        const next = insertMarkdownImage(current, data.url, at)
+        const image = `![image](${data.url})`
+        at = at === undefined ? undefined : next.indexOf(image) + image.length
+
+        if (target === 'description') {
+          setDescription(next)
+          await updateTask({ description: next })
+        } else {
+          setNewComment(next)
+        }
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to upload image')
@@ -644,6 +650,25 @@ export function TaskDetailPanel({
       setUploadingImage(null)
       if (descriptionImageInputRef.current) descriptionImageInputRef.current.value = ''
       if (commentImageInputRef.current) commentImageInputRef.current.value = ''
+    }
+  }
+
+  const imageTransferHandlers = (target: 'description' | 'comment') => {
+    const allowed = target === 'description' ? canEdit : canComment
+    const take = (event: ClipboardEvent<HTMLTextAreaElement> | DragEvent<HTMLTextAreaElement>, data: DataTransfer) => {
+      if (!allowed) return
+      const files = transferredImageFiles(data).slice(0, 10)
+      if (!files.length) return
+      event.preventDefault()
+      void uploadImages(files, target, event.currentTarget.selectionStart)
+    }
+    return {
+      onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => take(event, event.clipboardData),
+      onDrop: (event: DragEvent<HTMLTextAreaElement>) => take(event, event.dataTransfer),
+      // Without this the browser opens a dropped file instead of handing it to onDrop.
+      onDragOver: (event: DragEvent<HTMLTextAreaElement>) => {
+        if (allowed && event.dataTransfer.types.includes('Files')) event.preventDefault()
+      },
     }
   }
 
@@ -1402,7 +1427,7 @@ export function TaskDetailPanel({
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif"
                     className="hidden"
-                    onChange={(event) => void uploadImage(event.target.files?.[0], 'description')}
+                    onChange={(event) => void uploadImages(Array.from(event.target.files ?? []).slice(0, 1), 'description')}
                   />
                 </>
               )}
@@ -1412,8 +1437,9 @@ export function TaskDetailPanel({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onBlur={() => canEdit && handleDescBlur()}
+              {...imageTransferHandlers('description')}
               readOnly={!canEdit}
-              placeholder="Add a more detailed description..."
+              placeholder={canEdit ? 'Add a more detailed description... Paste or drop images here.' : 'Add a more detailed description...'}
               className={cn(
                 'w-full min-h-[80px] bg-muted/20 rounded-lg p-3 text-sm border border-border/30 outline-none resize-y placeholder:text-muted-foreground/40 focus:border-primary/30 transition-colors',
                 !canEdit && 'cursor-default resize-none',
@@ -1475,6 +1501,7 @@ export function TaskDetailPanel({
                   ref={commentTextareaRef}
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
+                  {...imageTransferHandlers('comment')}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postComment() }
                   }}
@@ -1493,7 +1520,7 @@ export function TaskDetailPanel({
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"
                 className="hidden"
-                onChange={(event) => void uploadImage(event.target.files?.[0], 'comment')}
+                onChange={(event) => void uploadImages(Array.from(event.target.files ?? []).slice(0, 1), 'comment')}
               />
               <button
                 type="button"
