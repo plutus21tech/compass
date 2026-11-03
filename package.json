@@ -116,6 +116,6 @@
     "readdir-glob": {
       "brace-expansion": "2.1.7"
     },
-    "follow-redirects": "^1.16.1"
+    "follow-redirects": "^1.16.2"
   }
 }
