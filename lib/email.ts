@@ -2311,3 +2311,24 @@ export async function sendTransitionPlanEscalation(requestId: string) {
     return { success: false, message: 'Failed to escalate to HR' }
   }
 }
+
+/** Tells O&A that a contractor changed payout details. Carries the person's name only, never the details. */
+export async function sendPayoutUpdatedNotification(personName: string) {
+  const oaUsers = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
+  const recipients = mergeRecipientEmails(oaUsers.map((u) => u.email))
+  if (recipients.length === 0) return { success: false, message: 'No O&A recipients configured' }
+  const subject = `Payout details updated for ${personName}`
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">Payout details updated</h2>
+      <p>${escapeHtml(personName)} updated their payout details. Open Compass to review them.</p>
+    </div>
+  `
+  try {
+    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients.join(', '), subject, html })
+    return { success: true, data: { messageId: info.messageId } }
+  } catch (error) {
+    console.error('Failed to send payout updated notification')
+    return { success: false, error: error instanceof Error ? error.message : 'send failed' }
+  }
+}
