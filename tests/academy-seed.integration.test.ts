@@ -3,17 +3,18 @@ import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { completeTestUsers } from '../scripts/academy-cutover-complete-test-users'
 import { ACADEMY_MODULES, ACADEMY_CARDS, ACADEMY_CHECKLIST } from '../prisma/seed-academy-data'
-import { seedAcademy } from '../prisma/seed-academy'
+import { seedAcademy, seedRefusal } from '../prisma/seed-academy'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 const OLD_SLUG = 'act-seed-retired-old'
+const LEGACY_BENEFITS_SLUG = 'benefits'
 const OLD_QUESTION_TEXT = 'ACT seed old question'
 const NEW_QUESTION_TEXT = 'ACT seed new question'
 const slugs = ACADEMY_MODULES.map((m) => m.slug)
 
 async function clean() {
-  await prisma.onboardingModule.deleteMany({ where: { slug: { in: [...slugs, OLD_SLUG] } } })
+  await prisma.onboardingModule.deleteMany({ where: { slug: { in: [...slugs, OLD_SLUG, LEGACY_BENEFITS_SLUG] } } })
   await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { in: [OLD_QUESTION_TEXT, NEW_QUESTION_TEXT] } } })
   for (const c of ACADEMY_CARDS) await prisma.onboardingLibraryCard.deleteMany({ where: { kind: c.kind, title: c.title } })
   await prisma.onboardingChecklistTemplateItem.deleteMany({ where: { key: { in: ACADEMY_CHECKLIST.map((i) => i.key) } } })
@@ -54,6 +55,34 @@ test('first run creates 14 modules and retires the old one', ACADEMY_DB_TEST, as
   assert.equal(q.isActive, false)
   assert.equal(q.orderIndex, 1077)
   assert.ok(q.retiredAt)
+})
+
+test('the legacy benefits module is retired and an active your-benefits exists', ACADEMY_DB_TEST, async () => {
+  await prisma.onboardingModule.create({ data: { slug: LEGACY_BENEFITS_SLUG, title: 'ACT legacy benefits', orderIndex: 2 } })
+  const expectedRetired = await prisma.onboardingModule.count({ where: { slug: { notIn: slugs }, orderIndex: { lt: 1000 } } })
+  const result = await seedAcademy(prisma)
+  assert.equal(result.modulesRetired, expectedRetired)
+  const legacy = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: LEGACY_BENEFITS_SLUG } })
+  assert.equal(legacy.isActive, false)
+  assert.equal(legacy.orderIndex, 1002)
+  const current = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'your-benefits' } })
+  assert.equal(current.isActive, true)
+  assert.equal(current.orderIndex, 10)
+})
+
+test('no seeded slug collides with a legacy module slug', () => {
+  const legacy = ['company-intro', 'team-intro', 'culture', 'policies', 'benefits', 'tools', 'important-calls', 'discord-training', 'compass-training', 'buddy-intro', 'ending-note']
+  assert.equal(slugs.length, 14)
+  assert.deepEqual(slugs.filter((slug) => legacy.includes(slug)), [])
+})
+
+test('the seed CLI refuses unless both the flag and the confirm variable are set', () => {
+  const on = { ONBOARDING_ACADEMY_ENABLED: 'true', ONBOARDING_ACADEMY_SEED_CONFIRM: 'yes' }
+  assert.equal(seedRefusal(on), null)
+  assert.match(seedRefusal({ ...on, ONBOARDING_ACADEMY_ENABLED: undefined }) ?? '', /ONBOARDING_ACADEMY_ENABLED/)
+  assert.match(seedRefusal({ ...on, ONBOARDING_ACADEMY_ENABLED: 'false' }) ?? '', /ONBOARDING_ACADEMY_ENABLED/)
+  assert.match(seedRefusal({ ...on, ONBOARDING_ACADEMY_SEED_CONFIRM: undefined }) ?? '', /ONBOARDING_ACADEMY_SEED_CONFIRM/)
+  assert.match(seedRefusal({}) ?? '', /ONBOARDING_ACADEMY/)
 })
 
 test('questions with an explanation survive a re-run untouched', ACADEMY_DB_TEST, async () => {

@@ -467,7 +467,7 @@ Everything new is gated by `ONBOARDING_ACADEMY_ENABLED`. With the flag off, Comp
    | 7 | security | Security, Equipment and Data | DAY_1 | 10 | STAY / Secure | ShieldCheck | CHECKLIST_AND_ACK |
    | 8 | linkedin | Your LinkedIn Profile | WEEK_1 | 5 | MAKE IT LINKEDIN / Official | Linkedin | FIELD_SUBMITTED |
    | 9 | time-off | Working Hours, Time Off and Holidays | WEEK_1 | 10 | TIME / Off | CalendarDays | SCROLL_END |
-   | 10 | benefits | Your Benefits | WEEK_1 | 6 | WHAT WE / Offer You | Gift | SCROLL_END |
+   | 10 | your-benefits | Your Benefits | WEEK_1 | 6 | WHAT WE / Offer You | Gift | SCROLL_END |
    | 11 | getting-paid | Getting Paid | WEEK_1 | 5 | GETTING / Paid | Wallet | PAYMENT_SETUP |
    | 12 | reimbursements | Reimbursements | WEEK_1 | 4 | CLAIMING / Expenses | Receipt | SCROLL_END |
    | 13 | reviews-growth | Reviews, Feedback and Growth | WEEK_1 | 5 | HOW YOU / Grow | TrendingUp | SCROLL_END |

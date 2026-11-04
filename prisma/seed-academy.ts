@@ -2,8 +2,9 @@
 // RUN ONLY AT FLAG-ON: this retires the legacy onboarding modules and quiz questions, so with
 // ONBOARDING_ACADEMY_ENABLED off the old flow would break. Run it at switch-on, after the
 // hire-facing course exists (stage 2 or later), and not before.
-// CLI: ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
+// CLI: ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
 import { Prisma, PrismaClient } from '@prisma/client'
+import { isAcademyEnabled } from '../lib/academy/flag'
 import { academyLinkSchema, libraryCardSchema } from '../lib/academy/links'
 import { ACADEMY_CARDS, ACADEMY_CHECKLIST, ACADEMY_DEFAULT_LINKS, ACADEMY_MODULES } from './seed-academy-data'
 
@@ -14,12 +15,15 @@ export interface SeedAcademyResult {
   checklistItemsCreated: number
 }
 
+type Tx = Prisma.TransactionClient
+
 const RETIRED_OFFSET = 1000
+const REORDER_TIMEOUT_MS = 120_000
 const FLAG_ON_WARNING =
   'WARNING: this retires the legacy onboarding modules and quiz questions. Run it only at flag-on (ONBOARDING_ACADEMY_ENABLED), after the hire-facing course exists (stage 2 or later), not before.'
 
 /** Highest first, so a bumped row can never land on one still waiting to move. */
-async function retireOldModules(db: PrismaClient): Promise<number> {
+async function retireOldModules(db: Tx): Promise<number> {
   const keep = ACADEMY_MODULES.map((m) => m.slug)
   const old = await db.onboardingModule.findMany({
     where: { slug: { notIn: keep }, orderIndex: { lt: RETIRED_OFFSET } },
@@ -43,8 +47,11 @@ async function retireOldModules(db: PrismaClient): Promise<number> {
   return old.length
 }
 
-async function ensureModules(db: PrismaClient): Promise<number> {
-  const existing = await db.onboardingModule.findMany({ where: { slug: { in: ACADEMY_MODULES.map((m) => m.slug) } } })
+async function ensureModules(db: Tx): Promise<number> {
+  const existing = await db.onboardingModule.findMany({
+    where: { slug: { in: ACADEMY_MODULES.map((m) => m.slug) } },
+    orderBy: { id: 'asc' },
+  })
   // Park existing rows on negative indexes first, so reordering cannot trip the unique constraint.
   for (const [i, row] of existing.entries()) {
     await db.onboardingModule.update({ where: { id: row.id }, data: { orderIndex: -(i + 1) } })
@@ -106,8 +113,11 @@ async function ensureChecklist(db: PrismaClient): Promise<number> {
 }
 
 export async function seedAcademy(db: PrismaClient): Promise<SeedAcademyResult> {
-  const modulesRetired = await retireOldModules(db)
-  const modulesCreated = await ensureModules(db)
+  // Together: a failure partway must not leave old modules retired with no new ones in place.
+  const { modulesRetired, modulesCreated } = await db.$transaction(
+    async (tx) => ({ modulesRetired: await retireOldModules(tx), modulesCreated: await ensureModules(tx) }),
+    { timeout: REORDER_TIMEOUT_MS },
+  )
   const cardsCreated = await ensureCards(db)
   await ensureLinks(db)
   const checklistItemsCreated = await ensureChecklist(db)
@@ -122,9 +132,21 @@ function describeHost(url: string | undefined): string {
   }
 }
 
+/** Why the CLI must not run, or null when both the flag and the confirmation are set. */
+export function seedRefusal(env: Record<string, string | undefined>): string | null {
+  if (!isAcademyEnabled(env)) {
+    return 'Refusing to run: ONBOARDING_ACADEMY_ENABLED must be true, because this retires the legacy onboarding.'
+  }
+  if (env.ONBOARDING_ACADEMY_SEED_CONFIRM !== 'yes') {
+    return 'Refusing to run: set ONBOARDING_ACADEMY_SEED_CONFIRM=yes to seed the Academy.'
+  }
+  return null
+}
+
 async function main(): Promise<void> {
-  if (process.env.ONBOARDING_ACADEMY_SEED_CONFIRM !== 'yes') {
-    console.error('Refusing to run: set ONBOARDING_ACADEMY_SEED_CONFIRM=yes to seed the Academy.')
+  const refusal = seedRefusal(process.env)
+  if (refusal) {
+    console.error(refusal)
     process.exit(1)
   }
   console.warn(FLAG_ON_WARNING)
