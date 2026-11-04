@@ -164,10 +164,10 @@ CREATE TABLE "OnboardingLibraryCard" (
     "icon" TEXT NOT NULL,
     "body" TEXT NOT NULL,
     "links" JSONB NOT NULL DEFAULT '[]',
-    "countries" TEXT[],
-    "workModes" "WorkMode"[],
-    "contractTypes" "ContractType"[],
-    "employmentStatuses" "EmploymentStatus"[],
+    "countries" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "workModes" "WorkMode"[] DEFAULT ARRAY[]::"WorkMode"[],
+    "contractTypes" "ContractType"[] DEFAULT ARRAY[]::"ContractType"[],
+    "employmentStatuses" "EmploymentStatus"[] DEFAULT ARRAY[]::"EmploymentStatus"[],
     "orderIndex" INTEGER NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -327,5 +327,3 @@ ALTER TABLE "OnboardingChecklistItem" ADD CONSTRAINT "OnboardingChecklistItem_do
 -- AddForeignKey
 ALTER TABLE "ContractorPayoutDetails" ADD CONSTRAINT "ContractorPayoutDetails_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
-ALTER TABLE "ContractorPayoutRevealLog" ADD CONSTRAINT "ContractorPayoutRevealLog_payoutUserId_fkey" FOREIGN KEY ("payoutUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

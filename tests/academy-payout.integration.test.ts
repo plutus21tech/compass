@@ -40,6 +40,16 @@ test('sensitive fields are encrypted at rest; plain fields stay plain; no payrol
   assert.equal(await prisma.payrollEmployeeProfile.count({ where: { userId: P.hire.id } }), 0)
 })
 
+test('permanently deleting the owner leaves the reveal log rows', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  await readPayout(prisma, P.hire.id, { reveal: true, viewerId: P.hr.id })
+  await prisma.user.delete({ where: { id: P.hire.id } })
+  assert.equal(await prisma.contractorPayoutDetails.count({ where: { userId: P.hire.id } }), 0)
+  const logs = await prisma.contractorPayoutRevealLog.findMany({ where: { payoutUserId: P.hire.id } })
+  assert.equal(logs.length, 1)
+  assert.equal(logs[0].viewerId, P.hr.id)
+})
+
 test('owner read is decrypted and writes no log', ACADEMY_DB_TEST, async () => {
   await savePayout(prisma, P.hire.id, bank)
   const own = await readOwnPayout(prisma, P.hire.id)

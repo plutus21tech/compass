@@ -422,7 +422,6 @@ model User {
   onboardingVersionsPublished   OnboardingModuleVersion[]      @relation("OnboardingModuleVersionPublisher")
   onboardingChecklistItemsDone  OnboardingChecklistItem[]      @relation("OnboardingChecklistItemDoneBy")
   contractorPayoutDetails       ContractorPayoutDetails?       @relation("ContractorPayoutOwner")
-  contractorPayoutRevealsOwn    ContractorPayoutRevealLog[]    @relation("ContractorPayoutRevealOwner")
 }
 
 model OfficeUserPreference {
@@ -3295,10 +3294,10 @@ model OnboardingLibraryCard {
   icon               String
   body               String
   links              Json               @default("[]")
-  countries          String[]
-  workModes          WorkMode[]
-  contractTypes      ContractType[]
-  employmentStatuses EmploymentStatus[]
+  countries          String[]           @default([])
+  workModes          WorkMode[]         @default([])
+  contractTypes      ContractType[]     @default([])
+  employmentStatuses EmploymentStatus[] @default([])
   orderIndex         Int
   isActive           Boolean            @default(true)
   createdAt          DateTime           @default(now())
@@ -3378,11 +3377,9 @@ model ContractorPayoutDetails {
 
 model ContractorPayoutRevealLog {
   id           String   @id @default(cuid())
-  payoutUserId String
-  viewerId     String // plain id, no relation: the audit trail must survive user deletion
+  payoutUserId String // plain id, no relation: the audit trail must survive user deletion
+  viewerId     String // plain id, for the same reason
   createdAt    DateTime @default(now())
-
-  payoutUser   User     @relation("ContractorPayoutRevealOwner", fields: [payoutUserId], references: [id], onDelete: Cascade)
 
   @@index([payoutUserId, createdAt])
 }
