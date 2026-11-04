@@ -70,7 +70,7 @@ test('revealed read is unmasked and writes exactly one log row', ACADEMY_DB_TEST
 
 test('reveal returns nothing and writes no log when the log write fails', ACADEMY_DB_TEST, async () => {
   await savePayout(prisma, P.hire.id, bank)
-  await assert.rejects(readPayout(prisma, P.hire.id, { reveal: true, viewerId: 'act-missing-viewer' }))
+  await assert.rejects(readPayout(prisma, P.hire.id, { reveal: true, viewerId: null as never }))
   assert.equal(await prisma.contractorPayoutRevealLog.count(), 0)
 })
 
@@ -99,4 +99,14 @@ test('changing method clears the previous method fields; reports first vs update
   for (const f of ['bankName', 'accountNumberOrIban', 'swiftBic', 'bankCountry', 'bankAddress', 'instructions'] as const) {
     assert.equal(row[f], null, `${f} should be cleared`)
   }
+})
+
+test('OTHER instructions and WISE payoutEmail are encrypted at rest', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, { method: 'OTHER', accountHolderName: 'Cara Lindqvist', currency: 'EUR', instructions: 'Pay by cheque to the office' })
+  let row = await prisma.contractorPayoutDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.ok(row.instructions?.startsWith('p21enc:v1:'))
+  await savePayout(prisma, P.hire.id, wise)
+  row = await prisma.contractorPayoutDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.ok(row.payoutEmail?.startsWith('p21enc:v1:'))
+  assert.equal(row.instructions, null)
 })

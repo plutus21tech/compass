@@ -329,7 +329,3 @@ ALTER TABLE "ContractorPayoutDetails" ADD CONSTRAINT "ContractorPayoutDetails_us
 
 -- AddForeignKey
 ALTER TABLE "ContractorPayoutRevealLog" ADD CONSTRAINT "ContractorPayoutRevealLog_payoutUserId_fkey" FOREIGN KEY ("payoutUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "ContractorPayoutRevealLog" ADD CONSTRAINT "ContractorPayoutRevealLog_viewerId_fkey" FOREIGN KEY ("viewerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-

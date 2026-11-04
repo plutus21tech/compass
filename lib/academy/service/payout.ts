@@ -1,7 +1,7 @@
 import type { PrismaClient, ContractorPayoutDetails } from '@prisma/client'
 import { decryptSensitiveValue, encryptSensitiveValue } from '@/lib/payroll/sensitive-fields'
 import { AcademyError } from '../errors'
-import { maskPayout, payoutSchema, type PayoutView } from '../payout'
+import { canSavePayout, maskPayout, payoutSchema, type PayoutView } from '../payout'
 
 const ENCRYPTED_FIELDS = [
   'accountHolderName', 'payoutEmail', 'bankName', 'accountNumberOrIban', 'swiftBic', 'bankAddress', 'instructions',
@@ -24,7 +24,7 @@ export async function savePayout(db: PrismaClient, userId: string, input: unknow
   const parsed = payoutSchema.parse(input)
   const user = await db.user.findUnique({ where: { id: userId }, select: { contractType: true } })
   if (!user) throw new AcademyError('User not found', 404)
-  if (user.contractType === 'PK_EMPLOYMENT') {
+  if (!canSavePayout(user.contractType)) {
     throw new AcademyError('Payout details are for contractors. Pakistan-based employees are paid through payroll.', 400)
   }
   const source = parsed as Record<string, unknown>

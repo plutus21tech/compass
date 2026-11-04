@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { payoutSchema, maskPayout, canReadPayoutDetails, type PayoutView } from '../lib/academy/payout'
+import { canSavePayout, payoutSchema, maskPayout, canReadPayoutDetails, type PayoutView } from '../lib/academy/payout'
 
 const bank = {
   method: 'BANK_TRANSFER', accountHolderName: 'Sam Rivers', bankName: 'Example Bank',
@@ -58,4 +58,24 @@ test('canReadPayoutDetails: HR and OA only', () => {
   assert.equal(canReadPayoutDetails('HR'), true)
   assert.equal(canReadPayoutDetails('OA'), true)
   for (const r of ['EMPLOYEE', 'SECURITY', 'EXECUTION', null, undefined]) assert.equal(canReadPayoutDetails(r), false)
+})
+
+test('canSavePayout refuses only PK_EMPLOYMENT', () => {
+  assert.equal(canSavePayout('PK_EMPLOYMENT'), false)
+  for (const t of ['INDEPENDENT_CONTRACTOR', 'OTHER_EMPLOYMENT', null, undefined]) assert.equal(canSavePayout(t), true)
+})
+
+test('schema rejects the ciphertext prefix on every encrypted free-text field', () => {
+  const bad = 'p21enc:v1:aaa:bbb:ccc'
+  const wallet = { method: 'WISE', accountHolderName: 'Sam Rivers', payoutEmail: 'sam@example.com', currency: 'USD' }
+  const bankInput = {
+    method: 'BANK_TRANSFER', accountHolderName: 'Sam Rivers', bankName: 'Example Bank',
+    accountNumberOrIban: 'GB33BUKB20201555555555', swiftBic: 'BUKBGB22', bankCountry: 'GB', currency: 'GBP',
+  }
+  assert.equal(payoutSchema.safeParse({ ...wallet, accountHolderName: bad }).success, false)
+  assert.equal(payoutSchema.safeParse({ ...wallet, payoutEmail: `${bad}@example.com` }).success, false)
+  for (const field of ['bankName', 'accountNumberOrIban', 'bankAddress']) {
+    assert.equal(payoutSchema.safeParse({ ...bankInput, [field]: bad }).success, false, field)
+  }
+  assert.equal(payoutSchema.safeParse({ method: 'OTHER', accountHolderName: 'A', currency: 'USD', instructions: bad }).success, false)
 })

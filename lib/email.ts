@@ -2316,7 +2316,10 @@ export async function sendTransitionPlanEscalation(requestId: string) {
 export async function sendPayoutUpdatedNotification(personName: string) {
   const oaUsers = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
   const recipients = mergeRecipientEmails(oaUsers.map((u) => u.email))
-  if (recipients.length === 0) return { success: false, message: 'No O&A recipients configured' }
+  if (recipients.length === 0) {
+    console.error('[academy] no O&A recipients configured for payout update notification')
+    return { success: false, message: 'No O&A recipients configured' }
+  }
   const subject = `Payout details updated for ${personName}`
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

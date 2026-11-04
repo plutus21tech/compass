@@ -423,7 +423,6 @@ model User {
   onboardingChecklistItemsDone  OnboardingChecklistItem[]      @relation("OnboardingChecklistItemDoneBy")
   contractorPayoutDetails       ContractorPayoutDetails?       @relation("ContractorPayoutOwner")
   contractorPayoutRevealsOwn    ContractorPayoutRevealLog[]    @relation("ContractorPayoutRevealOwner")
-  contractorPayoutRevealsMade   ContractorPayoutRevealLog[]    @relation("ContractorPayoutRevealViewer")
 }
 
 model OfficeUserPreference {
@@ -3380,11 +3379,10 @@ model ContractorPayoutDetails {
 model ContractorPayoutRevealLog {
   id           String   @id @default(cuid())
   payoutUserId String
-  viewerId     String
+  viewerId     String // plain id, no relation: the audit trail must survive user deletion
   createdAt    DateTime @default(now())
 
   payoutUser   User     @relation("ContractorPayoutRevealOwner", fields: [payoutUserId], references: [id], onDelete: Cascade)
-  viewer       User     @relation("ContractorPayoutRevealViewer", fields: [viewerId], references: [id], onDelete: Cascade)
 
   @@index([payoutUserId, createdAt])
 }

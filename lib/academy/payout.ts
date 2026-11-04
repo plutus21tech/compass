@@ -4,9 +4,13 @@ import { canReadPayoutDetails } from '@/lib/permissions'
 
 export { canReadPayoutDetails }
 
-const holder = z.string().trim().min(1).max(200)
+// encryptSensitiveValue passes through any value carrying its prefix, so a user could store a value
+// that later fails to decrypt. Reject the prefix on every encrypted free-text field.
+const text = (schema: z.ZodString) => schema.refine((v) => !v.toLowerCase().includes('p21enc:'), 'This value is not allowed')
+
+const holder = text(z.string().trim().min(1).max(200))
 const currency = z.string().regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter code such as USD')
-const email = z.string().trim().email().max(320)
+const email = text(z.string().trim().email().max(320))
 
 const walletShape = { accountHolderName: holder, payoutEmail: email, currency }
 
@@ -16,20 +20,25 @@ export const payoutSchema = z.discriminatedUnion('method', [
   z.object({
     method: z.literal('BANK_TRANSFER'),
     accountHolderName: holder,
-    bankName: z.string().trim().min(1).max(200),
-    accountNumberOrIban: z.string().trim().min(5).max(64),
+    bankName: text(z.string().trim().min(1).max(200)),
+    accountNumberOrIban: text(z.string().trim().min(5).max(64)),
     swiftBic: z.string().regex(/^[A-Z0-9]{8}([A-Z0-9]{3})?$/, 'SWIFT/BIC must be 8 or 11 characters'),
     bankCountry: z.string().regex(/^[A-Z]{2}$/, 'Bank country must be a 2-letter code'),
-    bankAddress: z.string().trim().max(500).optional(),
+    bankAddress: text(z.string().trim().max(500)).optional(),
     currency,
   }),
   z.object({
     method: z.literal('OTHER'),
     accountHolderName: holder,
-    instructions: z.string().trim().min(5).max(2000),
+    instructions: text(z.string().trim().min(5).max(2000)),
     currency,
   }),
 ])
+
+/** Pakistan-based employees are paid through payroll; a null contractType may save. */
+export function canSavePayout(contractType: string | null | undefined): boolean {
+  return contractType !== 'PK_EMPLOYMENT'
+}
 
 export type PayoutInput = z.infer<typeof payoutSchema>
 
