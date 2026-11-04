@@ -11,8 +11,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { CalendarCheck, Handshake, ShieldCheck } from 'lucide-react'
-import { withGroupItem, withItemPatched, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
+import { BookOpen, CalendarCheck, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
+import { withAcademyNav, withGroupItem, withItemPatched, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
 
 // Context so child pages can access user info
 interface LayoutUser {
@@ -68,6 +68,8 @@ export function SidebarLayout({
   const [weeklyMe, setWeeklyMe] = useState({ enabled: false, cycleActive: false, openCount: 0 })
   // Security Checks entries appear only when the module is on.
   const [securityChecksAccess, setSecurityChecksAccess] = useState<SecurityChecksNavAccess>({ enabled: false, console: false })
+  // Academy settings entries appear only when the flag is on (admin console only).
+  const [academyEnabled, setAcademyEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -119,6 +121,10 @@ export function SidebarLayout({
             setSecurityChecksAccess({ enabled: Boolean(body?.data?.enabled), console: Boolean(body?.data?.capabilities?.console) }),
           )
           .catch(() => setSecurityChecksAccess({ enabled: false, console: false }))
+        fetch('/api/users/me')
+          .then((res) => (res.ok ? res.json() : null))
+          .then((body: { academyEnabled?: boolean } | null) => setAcademyEnabled(body?.academyEnabled === true))
+          .catch(() => setAcademyEnabled(false))
         setLoading(false)
       })
       .catch(() => router.push('/login'))
@@ -187,10 +193,14 @@ export function SidebarLayout({
       : isAdminConsole
         ? withGroupItem(effectiveSidebarConfig, 'Performance', { label: 'Evaluation round', href: '/admin/evaluation-round', icon: CalendarCheck }, 'start')
         : withItemPatched(effectiveSidebarConfig, '/evaluations/weekly', weeklyBadge)
-  const finalSidebarConfig =
+  const sidebarConfigWithSecurity =
     baseSidebarConfig === onboardingSidebarConfig
       ? sidebarConfigWithWeekly
       : withSecurityChecksNav(sidebarConfigWithWeekly, securityChecksAccess, ShieldCheck)
+  const finalSidebarConfig =
+    baseSidebarConfig === onboardingSidebarConfig
+      ? sidebarConfigWithSecurity
+      : withAcademyNav(sidebarConfigWithSecurity, academyEnabled, { library: BookOpen, contacts: Users, links: Link2 })
 
   return (
     <LayoutUserContext.Provider value={user}>

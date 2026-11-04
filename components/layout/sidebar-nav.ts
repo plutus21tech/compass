@@ -50,3 +50,20 @@ export function withSecurityChecksNav(config: SidebarConfig, access: SecurityChe
   }
   return withItemAfter(config, entry, '/my-tasks')
 }
+
+export interface AcademyNavIcons {
+  library: NavItem['icon']
+  contacts: NavItem['icon']
+  links: NavItem['icon']
+}
+
+/** Academy settings pages, under the admin console's Onboarding group only (never the onboarding sidebar). */
+export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: AcademyNavIcons): SidebarConfig {
+  if (!enabled || !config.items.some((item) => item.href === '/admin')) return config
+  const entries: NavItem[] = [
+    { label: 'Academy library', href: '/admin/onboarding/academy/library', icon: icons.library },
+    { label: 'Key contacts', href: '/admin/onboarding/academy/contacts', icon: icons.contacts },
+    { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
+  ]
+  return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), config)
+}
