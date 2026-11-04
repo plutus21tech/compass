@@ -451,7 +451,7 @@ The flag is server-read and exposed to the layout the same way `SECURITY_CHECKS_
 
 **Cutover (D11).** Before the server-side lockout goes live, a script marks every user with `onboardingCompleted = false` as complete. These are test accounts from March–April 2026. The script prints the names it changes, and it is run once, deliberately, not on every build.
 
-**Seeding.** A seed script, safe to re-run and checked into `prisma/`, does the following:
+**Seeding.** The seed retires the legacy modules and quiz questions, so it runs at flag-on, after the hire-facing course exists (stage 2 or later), and not before. A seed script, safe to re-run and checked into `prisma/`, does the following:
 - retires the old 11 modules and the old quiz questions
 - creates the 14 modules with version 1 content taken from the spec copy
 - creates the 12 quiz questions with explanations

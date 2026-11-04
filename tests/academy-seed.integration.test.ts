@@ -9,11 +9,12 @@ import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 const OLD_SLUG = 'act-seed-retired-old'
 const OLD_QUESTION_TEXT = 'ACT seed old question'
+const NEW_QUESTION_TEXT = 'ACT seed new question'
 const slugs = ACADEMY_MODULES.map((m) => m.slug)
 
 async function clean() {
   await prisma.onboardingModule.deleteMany({ where: { slug: { in: [...slugs, OLD_SLUG] } } })
-  await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: OLD_QUESTION_TEXT } })
+  await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { in: [OLD_QUESTION_TEXT, NEW_QUESTION_TEXT] } } })
   for (const c of ACADEMY_CARDS) await prisma.onboardingLibraryCard.deleteMany({ where: { kind: c.kind, title: c.title } })
   await prisma.onboardingChecklistTemplateItem.deleteMany({ where: { key: { in: ACADEMY_CHECKLIST.map((i) => i.key) } } })
   await prisma.onboardingConfig.deleteMany({ where: { id: 'singleton' } })
@@ -32,9 +33,11 @@ after(async () => {
 })
 
 test('first run creates 14 modules and retires the old one', ACADEMY_DB_TEST, async () => {
+  const expectedRetired = await prisma.onboardingModule.count({ where: { slug: { notIn: slugs }, orderIndex: { lt: 1000 } } })
+  assert.ok(expectedRetired >= 1)
   const result = await seedAcademy(prisma)
   assert.equal(result.modulesCreated, 14)
-  assert.ok(result.modulesRetired >= 1)
+  assert.equal(result.modulesRetired, expectedRetired)
   const mods = await prisma.onboardingModule.findMany({ where: { slug: { in: slugs } }, include: { versions: true } })
   assert.equal(mods.length, 14)
   for (const m of mods) {
@@ -50,6 +53,33 @@ test('first run creates 14 modules and retires the old one', ACADEMY_DB_TEST, as
   const q = await prisma.onboardingQuizQuestion.findFirstOrThrow({ where: { questionText: OLD_QUESTION_TEXT } })
   assert.equal(q.isActive, false)
   assert.equal(q.orderIndex, 1077)
+  assert.ok(q.retiredAt)
+})
+
+test('questions with an explanation survive a re-run untouched', ACADEMY_DB_TEST, async () => {
+  const keep = await prisma.onboardingQuizQuestion.create({
+    data: { questionText: NEW_QUESTION_TEXT, optionsJson: [], correctAnswer: 'a', orderIndex: 78, explanation: 'ACT why' },
+  })
+  await seedAcademy(prisma)
+  await seedAcademy(prisma)
+  const row = await prisma.onboardingQuizQuestion.findUniqueOrThrow({ where: { id: keep.id } })
+  assert.equal(row.isActive, true)
+  assert.equal(row.orderIndex, 78)
+  assert.equal(row.retiredAt, null)
+})
+
+test('an HR deactivation of a seeded module sticks across re-runs', ACADEMY_DB_TEST, async () => {
+  await seedAcademy(prisma)
+  await prisma.onboardingModule.update({ where: { slug: 'discord' }, data: { isActive: false } })
+  await seedAcademy(prisma)
+  assert.equal((await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'discord' } })).isActive, false)
+})
+
+test('a null-valued link key is filled', ACADEMY_DB_TEST, async () => {
+  await prisma.onboardingConfig.create({ data: { id: 'singleton', links: { LEAVE_POLICY: null } } })
+  await seedAcademy(prisma)
+  const links = (await prisma.onboardingConfig.findUniqueOrThrow({ where: { id: 'singleton' } })).links as Record<string, unknown>
+  assert.deepEqual(links.LEAVE_POLICY, { kind: 'handbook', slug: 'leave-policy' })
 })
 
 test('checklist template is seeded with the lead-input row', ACADEMY_DB_TEST, async () => {

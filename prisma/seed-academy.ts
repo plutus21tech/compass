@@ -1,4 +1,7 @@
 // Re-runnable seed for the Onboarding Academy. Never runs on deploy.
+// RUN ONLY AT FLAG-ON: this retires the legacy onboarding modules and quiz questions, so with
+// ONBOARDING_ACADEMY_ENABLED off the old flow would break. Run it at switch-on, after the
+// hire-facing course exists (stage 2 or later), and not before.
 // CLI: ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
 import { Prisma, PrismaClient } from '@prisma/client'
 import { academyLinkSchema, libraryCardSchema } from '../lib/academy/links'
@@ -12,6 +15,8 @@ export interface SeedAcademyResult {
 }
 
 const RETIRED_OFFSET = 1000
+const FLAG_ON_WARNING =
+  'WARNING: this retires the legacy onboarding modules and quiz questions. Run it only at flag-on (ONBOARDING_ACADEMY_ENABLED), after the hire-facing course exists (stage 2 or later), not before.'
 
 /** Highest first, so a bumped row can never land on one still waiting to move. */
 async function retireOldModules(db: PrismaClient): Promise<number> {
@@ -23,9 +28,17 @@ async function retireOldModules(db: PrismaClient): Promise<number> {
   for (const row of old) {
     await db.onboardingModule.update({ where: { id: row.id }, data: { isActive: false, orderIndex: RETIRED_OFFSET + row.orderIndex } })
   }
-  const questions = await db.onboardingQuizQuestion.findMany({ where: { orderIndex: { lt: RETIRED_OFFSET } }, orderBy: { orderIndex: 'desc' } })
+  // Old questions have no explanation; every stage-3 question does, so those are never retired.
+  const questions = await db.onboardingQuizQuestion.findMany({
+    where: { orderIndex: { lt: RETIRED_OFFSET }, explanation: null, retiredAt: null },
+    orderBy: { orderIndex: 'desc' },
+  })
+  const retiredAt = new Date()
   for (const q of questions) {
-    await db.onboardingQuizQuestion.update({ where: { id: q.id }, data: { isActive: false, orderIndex: RETIRED_OFFSET + q.orderIndex } })
+    await db.onboardingQuizQuestion.update({
+      where: { id: q.id },
+      data: { isActive: false, retiredAt, orderIndex: RETIRED_OFFSET + q.orderIndex },
+    })
   }
   return old.length
 }
@@ -41,7 +54,7 @@ async function ensureModules(db: PrismaClient): Promise<number> {
     const { slug, ...fields } = def
     const found = existing.find((e) => e.slug === slug)
     const mod = found
-      ? await db.onboardingModule.update({ where: { id: found.id }, data: { ...fields, isActive: true } })
+      ? await db.onboardingModule.update({ where: { id: found.id }, data: { ...fields } })
       : await db.onboardingModule.create({ data: { slug, ...fields, isActive: true } })
     if (!found) created += 1
     if (!mod.currentVersionId) {
@@ -81,7 +94,7 @@ async function ensureLinks(db: PrismaClient): Promise<void> {
   }
   const links = merged as Prisma.InputJsonObject
   if (!row) await db.onboardingConfig.create({ data: { id: 'singleton', links } })
-  else if (Object.keys(merged).length !== Object.keys(current).length) await db.onboardingConfig.update({ where: { id: 'singleton' }, data: { links } })
+  else if (JSON.stringify(merged) !== JSON.stringify(current)) await db.onboardingConfig.update({ where: { id: 'singleton' }, data: { links } })
 }
 
 async function ensureChecklist(db: PrismaClient): Promise<number> {
@@ -114,6 +127,7 @@ async function main(): Promise<void> {
     console.error('Refusing to run: set ONBOARDING_ACADEMY_SEED_CONFIRM=yes to seed the Academy.')
     process.exit(1)
   }
+  console.warn(FLAG_ON_WARNING)
   console.log(`Seeding the Academy into database host: ${describeHost(process.env.DATABASE_URL)}`)
   const db = new PrismaClient()
   try {

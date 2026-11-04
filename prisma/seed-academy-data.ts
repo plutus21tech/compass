@@ -55,7 +55,7 @@ export const ACADEMY_CARDS: readonly LibraryCardInput[] = [
   card('BENEFIT', 'Laptop, phone and phone line', 'Laptop', 'Permanent employees receive a laptop, a phone and a phone line.', { employmentStatuses: ['PERMANENT'] }),
   card(
     'BENEFIT', 'Health insurance', 'HeartPulse',
-    'We care about your well-being. Your cover includes you and your spouse, with maternity included. Before you make a claim, read the Health Insurance Onboarding Presentation and use the Claim Kit, which has the Medical Claim Form and a checklist of required documents. {links}',
+    'We care about your well-being. Your cover includes you and your spouse, with maternity included. Before you make a claim, read the Health Insurance Onboarding Presentation and use the Claim Kit, which has the Medical Claim Form and a checklist of required documents. ',
     { countries: ['PK'] },
   ),
   card(
