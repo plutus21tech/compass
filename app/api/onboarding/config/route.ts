@@ -3,8 +3,19 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
 
+// Any signed-in user can read this route, so the Academy config columns stay out of it.
+const LEGACY_CONFIG_SELECT = {
+  id: true,
+  quizPassPercent: true,
+  maxQuizAttempts: true,
+  welcomeMessage: true,
+  createdAt: true,
+  updatedAt: true,
+} as const
+
 async function getOrCreateConfig() {
   return prisma.onboardingConfig.upsert({
+    select: LEGACY_CONFIG_SELECT,
     where: { id: 'singleton' },
     update: {},
     create: {
@@ -51,6 +62,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const config = await prisma.onboardingConfig.upsert({
+      select: LEGACY_CONFIG_SELECT,
       where: { id: 'singleton' },
       update: {
         ...(quizPassPercent !== undefined ? { quizPassPercent } : {}),

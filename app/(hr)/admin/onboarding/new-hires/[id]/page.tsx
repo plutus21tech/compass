@@ -20,6 +20,7 @@ import {
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft, Save, CheckCircle2, Clock } from 'lucide-react'
 import { OnboardingSetupSection } from './_components/OnboardingSetupSection'
+import { withoutSetupOwnedFields } from '@/lib/academy/setup'
 
 interface NewHireDetail {
   id: string
@@ -68,6 +69,7 @@ export default function NewHireDetailPage() {
   const [newHire, setNewHire] = useState<NewHireDetail | null>(null)
   const [users, setUsers] = useState<UserOption[]>([])
   const [academyEnabled, setAcademyEnabled] = useState(false)
+  const [setupLoadCount, setSetupLoadCount] = useState(0)
   const [form, setForm] = useState({
     name: '',
     title: '',
@@ -124,16 +126,17 @@ export default function NewHireDetailPage() {
       const res = await fetch(`/api/onboarding/new-hires/${newHireId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          teamLeadId: form.teamLeadId || null,
-          buddyId: form.buddyId || null,
-        }),
+        body: JSON.stringify(
+          academyEnabled
+            ? withoutSetupOwnedFields(form)
+            : { ...form, teamLeadId: form.teamLeadId || null, buddyId: form.buddyId || null },
+        ),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to update new hire')
       toast.success('New hire updated')
       await loadData()
+      setSetupLoadCount((count) => count + 1)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update new hire')
     } finally {
@@ -175,6 +178,11 @@ export default function NewHireDetailPage() {
             <h1 className="text-2xl sm:text-3xl font-display font-light text-foreground tracking-tight">New Hire Detail</h1>
             <Badge variant="secondary">{newHire.status}</Badge>
           </div>
+          {academyEnabled && (
+            <p className="text-sm text-muted-foreground">
+              Title, department, joining date, team lead and buddy are edited in Onboarding Academy setup below.
+            </p>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -183,7 +191,7 @@ export default function NewHireDetailPage() {
             </div>
             <div>
               <Label className="mb-1">Title</Label>
-              <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              <Input value={form.title} disabled={academyEnabled} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
               <Label className="mb-1">Company</Label>
@@ -191,7 +199,7 @@ export default function NewHireDetailPage() {
             </div>
             <div>
               <Label className="mb-1">Department</Label>
-              <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+              <Input value={form.department} disabled={academyEnabled} onChange={(e) => setForm({ ...form, department: e.target.value })} />
             </div>
             <div>
               <Label className="mb-1">Email</Label>
@@ -201,6 +209,7 @@ export default function NewHireDetailPage() {
               <Label className="mb-1">Onboarding Date</Label>
               <Input
                 type="date"
+                disabled={academyEnabled}
                 value={form.onboardingDate}
                 onChange={(e) => setForm({ ...form, onboardingDate: e.target.value })}
               />
@@ -209,6 +218,7 @@ export default function NewHireDetailPage() {
               <Label className="mb-1">Team Lead</Label>
               <Select
                 value={form.teamLeadId || '__none__'}
+                disabled={academyEnabled}
                 onValueChange={(value) => setForm({ ...form, teamLeadId: value === '__none__' ? '' : value })}
               >
                 <SelectTrigger>
@@ -228,6 +238,7 @@ export default function NewHireDetailPage() {
               <Label className="mb-1">Buddy</Label>
               <Select
                 value={form.buddyId || '__none__'}
+                disabled={academyEnabled}
                 onValueChange={(value) => setForm({ ...form, buddyId: value === '__none__' ? '' : value })}
               >
                 <SelectTrigger>
@@ -321,7 +332,7 @@ export default function NewHireDetailPage() {
       </motion.div>
 
       {academyEnabled && newHireId && (
-        <OnboardingSetupSection newHireId={newHireId} users={users} onSaved={loadData} />
+        <OnboardingSetupSection key={setupLoadCount} newHireId={newHireId} users={users} onSaved={loadData} />
       )}
     </div>
   )

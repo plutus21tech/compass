@@ -4,8 +4,7 @@ import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
 import { sendTeamLeadFormSubmittedNotification } from '@/lib/email'
 import { isAcademyEnabled } from '@/lib/academy/flag'
-import { formatZodIssues } from '@/lib/academy/profile-input'
-import { buildLeadDraftData, leadInputSchema, normalizeLeadInputBody, shouldApplyLeadInput } from '@/lib/academy/setup'
+import { buildLeadDraftData, buildLeadSubmitData, shouldApplyLeadInput } from '@/lib/academy/setup'
 
 interface RouteContext {
   params: Promise<{ newHireId: string }>
@@ -80,17 +79,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     let leadInputData: Record<string, unknown> = {}
     if (shouldApplyLeadInput(isAcademyEnabled())) {
-      const incoming = normalizeLeadInputBody(body)
-      const stored = normalizeLeadInputBody(record.teamLeadForm)
-      if (submit) {
-        const parsed = leadInputSchema.safeParse({ ...stored, ...incoming })
-        if (!parsed.success) return NextResponse.json({ error: formatZodIssues(parsed.error) }, { status: 400 })
-        leadInputData = parsed.data
-      } else {
-        const draft = buildLeadDraftData(true, body)
-        if (!draft.ok) return NextResponse.json({ error: draft.error }, { status: 400 })
-        leadInputData = draft.data
-      }
+      const result = submit ? buildLeadSubmitData(record.teamLeadForm, body) : buildLeadDraftData(true, body)
+      if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
+      leadInputData = result.data
     }
 
     const updated = await prisma.teamLeadForm.update({

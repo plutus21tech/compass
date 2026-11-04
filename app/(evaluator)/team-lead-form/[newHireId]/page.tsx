@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft, Save } from 'lucide-react'
+import { isLeadInputSubmitted } from '@/lib/academy/setup'
 
 interface TeamLeadFormData {
   emailGroups: string
@@ -54,6 +55,7 @@ export default function TeamLeadFormPage() {
   const [saving, setSaving] = useState(false)
   const [newHire, setNewHire] = useState<NewHireSummary | null>(null)
   const [academyEnabled, setAcademyEnabled] = useState(false)
+  const [leadInputComplete, setLeadInputComplete] = useState(false)
   const [leadInput, setLeadInput] = useState<LeadInputData>(EMPTY_LEAD_INPUT)
   const [form, setForm] = useState<TeamLeadFormData>({
     emailGroups: '',
@@ -75,6 +77,7 @@ export default function TeamLeadFormPage() {
       }
       setNewHire(data.newHire)
       setAcademyEnabled(data.academyEnabled === true)
+      setLeadInputComplete(isLeadInputSubmitted(data.form))
       setLeadInput({
         roleExpectations: data.form?.roleExpectations || '',
         day1Goal: data.form?.day1Goal || '',
@@ -124,6 +127,7 @@ export default function TeamLeadFormPage() {
         throw new Error(data.error || 'Failed to save form')
       }
       toast.success(submit ? 'Form submitted' : 'Draft saved')
+      setLeadInputComplete(isLeadInputSubmitted(data.form))
       setForm((prev) => ({
         ...prev,
         submittedAt: submit ? new Date().toISOString() : prev.submittedAt,
@@ -138,6 +142,9 @@ export default function TeamLeadFormPage() {
   if (loading) {
     return <LoadingScreen message="Loading team lead form..." />
   }
+
+  // A form submitted before the Academy, or blanked by a later draft, can be submitted again.
+  const submitted = !!form.submittedAt && (!academyEnabled || leadInputComplete)
 
   return (
     <div className="p-6 sm:p-8 max-w-4xl mx-auto">
@@ -218,8 +225,8 @@ export default function TeamLeadFormPage() {
             <Button variant="outline" onClick={() => saveForm(false)} disabled={saving}>
               <Save className="h-4 w-4" /> Save Draft
             </Button>
-            <Button onClick={() => saveForm(true)} disabled={saving || !!form.submittedAt}>
-              {form.submittedAt ? 'Submitted' : 'Submit Form'}
+            <Button onClick={() => saveForm(true)} disabled={saving || submitted}>
+              {submitted ? 'Submitted' : 'Submit Form'}
             </Button>
           </div>
         </CardContent>

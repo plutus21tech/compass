@@ -10,16 +10,9 @@ import {
   WORK_MODES,
   type PersonAttributes,
 } from '@/lib/academy/attributes'
+import { ATTRIBUTE_LABELS, attributeValueLabel } from '@/lib/academy/labels'
 
 const NONE = '__none__'
-
-const LABELS: Record<string, string> = {
-  KARACHI: 'Karachi', CASABLANCA: 'Casablanca', BOGOTA: 'Bogota', DALLAS: 'Dallas', REMOTE: 'Remote',
-  OFFICE: 'Office', HYBRID: 'Hybrid',
-  PK_EMPLOYMENT: 'Pakistan employment', INDEPENDENT_CONTRACTOR: 'Independent contractor', OTHER_EMPLOYMENT: 'Other employment',
-  PERMANENT: 'Permanent', FIXED_TERM: 'Fixed term', INTERN: 'Intern',
-}
-const label = (value: string) => LABELS[value] ?? value
 
 interface Props {
   value: PersonAttributes
@@ -44,7 +37,7 @@ function EnumSelect<T extends string>(props: {
         <SelectContent>
           <SelectItem value={NONE}>Not set</SelectItem>
           {props.options.map((option) => (
-            <SelectItem key={option} value={option}>{label(option)}</SelectItem>
+            <SelectItem key={option} value={option}>{attributeValueLabel(option)}</SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -60,7 +53,7 @@ export function AttributeFields({ value, onChange, disabled }: Props) {
       <legend className="px-1 text-sm font-semibold text-foreground">Onboarding attributes</legend>
       <p className="text-xs text-muted-foreground">These choose which Academy content a person sees. Only HR can change them.</p>
       <p className="text-xs text-muted-foreground">Empty fields are suggested from the team and employment type. Save to keep them.</p>
-      <EnumSelect id="attr-office" title="Office location" options={OFFICE_LOCATIONS} value={value.officeLocation} onChange={(v) => set('officeLocation', v)} />
+      <EnumSelect id="attr-office" title={ATTRIBUTE_LABELS.officeLocation} options={OFFICE_LOCATIONS} value={value.officeLocation} onChange={(v) => set('officeLocation', v)} />
       {value.officeLocation === 'REMOTE' && (
         <div>
           <Label htmlFor="attr-country" className="mb-1">Country (two-letter code)</Label>
@@ -73,9 +66,9 @@ export function AttributeFields({ value, onChange, disabled }: Props) {
           />
         </div>
       )}
-      <EnumSelect id="attr-mode" title="Work mode" options={WORK_MODES} value={value.workMode} onChange={(v) => set('workMode', v)} />
-      <EnumSelect id="attr-contract" title="Contract type" options={CONTRACT_TYPES} value={value.contractType} onChange={(v) => set('contractType', v)} />
-      <EnumSelect id="attr-status" title="Employment status" options={EMPLOYMENT_STATUSES} value={value.employmentStatus} onChange={(v) => set('employmentStatus', v)} />
+      <EnumSelect id="attr-mode" title={ATTRIBUTE_LABELS.workMode} options={WORK_MODES} value={value.workMode} onChange={(v) => set('workMode', v)} />
+      <EnumSelect id="attr-contract" title={ATTRIBUTE_LABELS.contractType} options={CONTRACT_TYPES} value={value.contractType} onChange={(v) => set('contractType', v)} />
+      <EnumSelect id="attr-status" title={ATTRIBUTE_LABELS.employmentStatus} options={EMPLOYMENT_STATUSES} value={value.employmentStatus} onChange={(v) => set('employmentStatus', v)} />
     </fieldset>
   )
 }

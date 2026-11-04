@@ -16,6 +16,7 @@ import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNew
 import {
   ATTRIBUTE_SELECT,
   copySetupToUser,
+  finishNewHireLink,
   getPersonAttributes,
   setPersonAttributes,
 } from '@/lib/academy/service/attributes'
@@ -451,12 +452,13 @@ export async function POST(request: NextRequest) {
       return createdUser
     })
 
-    if (payrollProfile) {
-      await upsertPayrollProfileAndRevision({
-        userId: newUser.id,
-        actorId: user.id,
-        payload: payrollProfile,
-      })
+    const writePayrollProfile = payrollProfile
+      ? () => upsertPayrollProfileAndRevision({ userId: newUser.id, actorId: user.id, payload: payrollProfile })
+      : null
+    if (shouldCreateAsNewHire && linkedNewHire && shouldCopyNewHireSetup(isAcademyEnabled())) {
+      await finishNewHireLink(prisma, { newHireId: linkedNewHire.id, userId: newUser.id, writePayrollProfile })
+    } else if (writePayrollProfile) {
+      await writePayrollProfile()
     }
 
     return NextResponse.json({ success: true, user: newUser })
@@ -535,30 +537,28 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const updatedUser = await prisma.$transaction(async (tx) => {
-      const saved = await tx.user.update({
-        where: { id },
-        data: {
-          name,
-          email: normalizeOptionalString(email),
-          discordId: normalizeOptionalString(discordId),
-          department: department || null,
-          position: position || null,
-          role: normalizedRole as (typeof VALID_USER_ROLES)[number],
-          ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
-          // Omitting teamTag leaves it untouched; sending null clears it.
-          ...(teamTag !== undefined
-            ? { teamTag: (normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number]) ?? null }
-            : {}),
-        },
-        select: SAFE_USER_RESPONSE_SELECT,
-      })
-      if (attributeRequested) {
-        const current = await getPersonAttributes(tx, id)
-        await setPersonAttributes(tx, id, mergeAttributePatch(current, body))
-      }
-      return saved
-    })
+    const userChanges = {
+      name,
+      email: normalizeOptionalString(email),
+      discordId: normalizeOptionalString(discordId),
+      department: department || null,
+      position: position || null,
+      role: normalizedRole as (typeof VALID_USER_ROLES)[number],
+      ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
+      // Omitting teamTag leaves it untouched; sending null clears it.
+      ...(teamTag !== undefined
+        ? { teamTag: (normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number]) ?? null }
+        : {}),
+    }
+
+    const updatedUser = attributeRequested
+      ? await prisma.$transaction(async (tx) => {
+          const saved = await tx.user.update({ where: { id }, data: userChanges, select: SAFE_USER_RESPONSE_SELECT })
+          const current = await getPersonAttributes(tx, id)
+          await setPersonAttributes(tx, id, mergeAttributePatch(current, body))
+          return saved
+        })
+      : await prisma.user.update({ where: { id }, data: userChanges, select: SAFE_USER_RESPONSE_SELECT })
 
     if (payrollProfile) {
       await upsertPayrollProfileAndRevision({

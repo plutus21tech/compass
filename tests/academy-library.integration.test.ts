@@ -2,7 +2,15 @@ import test, { after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { ZodError } from 'zod'
 import { prisma } from '../lib/db'
-import { eligibleCards, getAcademyConfig, listLibraryCards, saveKeyContacts, updateAcademyConfig } from '../lib/academy/service/library'
+import {
+  deactivateLibraryCard,
+  eligibleCards,
+  getAcademyConfig,
+  listLibraryCards,
+  saveKeyContacts,
+  updateAcademyConfig,
+  updateLibraryCard,
+} from '../lib/academy/service/library'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
@@ -45,6 +53,30 @@ after(async () => {
     await prisma.onboardingLibraryCard.deleteMany({ where: { body: 'ACT body' } })
   }
   await prisma.$disconnect()
+})
+
+test('a hidden card can be unhidden with isActive alone, and nothing else changes', ACADEMY_DB_TEST, async () => {
+  const row = await prisma.onboardingLibraryCard.findFirstOrThrow({ where: { title: 'ACT everyone' } })
+  await deactivateLibraryCard(prisma, row.id)
+  const updated = await updateLibraryCard(prisma, row.id, { isActive: true })
+  assert.equal(updated.isActive, true)
+  assert.equal(updated.title, row.title)
+  assert.equal(updated.body, row.body)
+})
+
+test('an update with more than isActive still needs the whole card', ACADEMY_DB_TEST, async () => {
+  const row = await prisma.onboardingLibraryCard.findFirstOrThrow({ where: { title: 'ACT everyone' } })
+  await assert.rejects(updateLibraryCard(prisma, row.id, { isActive: true, title: 'ACT changed' }), ZodError)
+})
+
+test('a new card defaults to no eligibility rules', ACADEMY_DB_TEST, async () => {
+  const created = await prisma.onboardingLibraryCard.create({
+    data: { kind: 'BENEFIT', title: 'ACT defaults', icon: 'Gift', body: 'ACT body', orderIndex: 9000 },
+  })
+  assert.deepEqual(
+    [created.countries, created.workModes, created.contractTypes, created.employmentStatuses],
+    [[], [], [], []],
+  )
 })
 
 const pkOffice = { officeLocation: 'KARACHI', remoteCountry: null, workMode: 'OFFICE', contractType: 'PK_EMPLOYMENT', employmentStatus: 'PERMANENT' } as const

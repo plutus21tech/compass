@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { academyFetch } from '../_components/academy-api'
 import { ErrorNotice } from '../_components/ErrorNotice'
-import { useAcademyGate } from '../_components/useAcademyGate'
 
 const GROUPS = [
   { value: 'HR', label: 'HR' },
@@ -49,7 +48,6 @@ function move<T>(list: T[], from: number, to: number): T[] {
 }
 
 export default function AcademyContactsPage() {
-  const enabled = useAcademyGate()
   const [rows, setRows] = useState<ContactRow[]>([])
   const [users, setUsers] = useState<UserOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -57,7 +55,6 @@ export default function AcademyContactsPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!enabled) return
     Promise.all([
       academyFetch<ServerContact[]>('/api/admin/onboarding/key-contacts'),
       fetch('/api/users').then((res) => (res.ok ? res.json() : { users: [] })) as Promise<{ users: UserOption[] }>,
@@ -68,7 +65,7 @@ export default function AcademyContactsPage() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not load key contacts'))
       .finally(() => setLoading(false))
-  }, [enabled])
+  }, [])
 
   const patch = (index: number, change: Partial<ContactRow>) =>
     setRows(rows.map((row, i) => (i === index ? { ...row, ...change } : row)))
@@ -94,7 +91,6 @@ export default function AcademyContactsPage() {
     }
   }
 
-  if (!enabled) return null
   if (loading) return <LoadingScreen message="Loading key contacts..." />
 
   return (

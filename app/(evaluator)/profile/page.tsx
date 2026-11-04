@@ -50,6 +50,7 @@ import {
   type AvatarOutfitType,
 } from '@/shared/avatar-v2'
 import { isValidEmailAddress } from '@/lib/email-address'
+import { ATTRIBUTE_LABELS, attributeValueLabel } from '@/lib/academy/labels'
 
 const WEEKDAYS = [
   { value: '0', label: 'Sunday' },
@@ -204,16 +205,7 @@ interface AcademyProfile {
   employmentStatus: string | null
 }
 
-const ATTRIBUTE_ROWS: Array<{ key: keyof AcademyProfile; label: string }> = [
-  { key: 'officeLocation', label: 'Office location' },
-  { key: 'remoteCountry', label: 'Country' },
-  { key: 'workMode', label: 'Work mode' },
-  { key: 'contractType', label: 'Contract type' },
-  { key: 'employmentStatus', label: 'Employment status' },
-]
-
-const readable = (value: string | null) =>
-  value ? value.charAt(0) + value.slice(1).toLowerCase().replace(/_/g, ' ') : 'Not set'
+const ATTRIBUTE_ROWS = ['officeLocation', 'remoteCountry', 'workMode', 'contractType', 'employmentStatus'] as const
 
 export default function ProfilePage() {
   const user = useLayoutUser()
@@ -535,12 +527,10 @@ export default function ProfilePage() {
                 <h3 className="text-sm font-semibold text-foreground mb-1">Onboarding attributes</h3>
                 <p className="text-xs text-muted-foreground mb-3">Set by HR. Ask HR if something here is wrong.</p>
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {ATTRIBUTE_ROWS.filter((row) => row.key !== 'remoteCountry' || academy.officeLocation === 'REMOTE').map((row) => (
-                    <div key={row.key} className="p-3 rounded-lg bg-muted/50">
-                      <dt className="text-xs text-muted-foreground">{row.label}</dt>
-                      <dd className="text-sm font-medium text-foreground">
-                        {row.key === 'remoteCountry' ? academy.remoteCountry || 'Not set' : readable(academy[row.key])}
-                      </dd>
+                  {ATTRIBUTE_ROWS.filter((key) => key !== 'remoteCountry' || academy.officeLocation === 'REMOTE').map((key) => (
+                    <div key={key} className="p-3 rounded-lg bg-muted/50">
+                      <dt className="text-xs text-muted-foreground">{ATTRIBUTE_LABELS[key]}</dt>
+                      <dd className="text-sm font-medium text-foreground">{attributeValueLabel(academy[key])}</dd>
                     </div>
                   ))}
                 </dl>

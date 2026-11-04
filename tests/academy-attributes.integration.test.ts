@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { ZodError } from 'zod'
 import { prisma } from '../lib/db'
 import { mergeAttributePatch } from '../lib/academy/profile-input'
-import { copySetupToUser, getPersonAttributes, setPersonAttributes } from '../lib/academy/service/attributes'
+import { copySetupToUser, finishNewHireLink, getPersonAttributes, setPersonAttributes } from '../lib/academy/service/attributes'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
@@ -46,22 +46,58 @@ test('setPersonAttributes throws a ZodError for REMOTE without a country, and sa
   assert.equal((await getPersonAttributes(prisma, P.hr.id)).officeLocation, null)
 })
 
-test('copySetupToUser copies attributes and fills an existing empty joiningDate', ACADEMY_DB_TEST, async () => {
+test('copySetupToUser copies attributes and leaves payroll alone', ACADEMY_DB_TEST, async () => {
   await prisma.payrollEmployeeProfile.create({ data: { userId: P.hire.id } })
   await prisma.$transaction((tx) => copySetupToUser(tx, NEW_HIRE_ID, P.hire.id))
   assert.deepEqual(await getPersonAttributes(prisma, P.hire.id), {
     officeLocation: 'REMOTE', remoteCountry: 'ID', workMode: 'REMOTE', contractType: 'INDEPENDENT_CONTRACTOR', employmentStatus: 'FIXED_TERM',
   })
   const profile = await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: P.hire.id } })
-  assert.equal(profile.joiningDate?.toISOString(), ONBOARDING_DATE.toISOString())
+  assert.equal(profile.joiningDate, null)
 })
 
-test('copySetupToUser keeps an existing joiningDate', ACADEMY_DB_TEST, async () => {
-  const existing = new Date('2026-06-01T00:00:00.000Z')
-  await prisma.payrollEmployeeProfile.create({ data: { userId: P.hire.id, joiningDate: existing } })
+// The real order: the account is created and linked first, the payroll write comes after.
+async function linkHire(contractType: 'PK_EMPLOYMENT' | 'INDEPENDENT_CONTRACTOR' | 'OTHER_EMPLOYMENT') {
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { userId: P.hire.id, contractType } })
   await prisma.$transaction((tx) => copySetupToUser(tx, NEW_HIRE_ID, P.hire.id))
-  const profile = await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: P.hire.id } })
-  assert.equal(profile.joiningDate?.toISOString(), existing.toISOString())
+}
+const createProfile = (joiningDate: Date | null = null) => async () => {
+  await prisma.payrollEmployeeProfile.create({ data: { userId: P.hire.id, joiningDate } })
+}
+const finish = (writePayrollProfile: (() => Promise<void>) | null) =>
+  finishNewHireLink(prisma, { newHireId: NEW_HIRE_ID, userId: P.hire.id, writePayrollProfile })
+const profileOf = () => prisma.payrollEmployeeProfile.findUnique({ where: { userId: P.hire.id } })
+
+test('Pakistan employee: a profile written after the link gets the joining date', ACADEMY_DB_TEST, async () => {
+  await linkHire('PK_EMPLOYMENT')
+  assert.equal(await profileOf(), null)
+  await finish(createProfile())
+  assert.equal((await profileOf())?.joiningDate?.toISOString(), ONBOARDING_DATE.toISOString())
+})
+
+test('Pakistan employee: a joining date HR entered is kept', ACADEMY_DB_TEST, async () => {
+  const entered = new Date('2026-06-01T00:00:00.000Z')
+  await linkHire('PK_EMPLOYMENT')
+  await finish(createProfile(entered))
+  assert.equal((await profileOf())?.joiningDate?.toISOString(), entered.toISOString())
+})
+
+test('Pakistan employee with no payroll write: no profile is created', ACADEMY_DB_TEST, async () => {
+  await linkHire('PK_EMPLOYMENT')
+  await finish(null)
+  assert.equal(await profileOf(), null)
+})
+
+test('contractor: the payroll write is skipped, so no profile exists', ACADEMY_DB_TEST, async () => {
+  await linkHire('INDEPENDENT_CONTRACTOR')
+  await finish(createProfile())
+  assert.equal(await profileOf(), null)
+})
+
+test('other employment: the profile is written but the joining date stays empty', ACADEMY_DB_TEST, async () => {
+  await linkHire('OTHER_EMPLOYMENT')
+  await finish(createProfile())
+  assert.equal((await profileOf())?.joiningDate, null)
 })
 
 test('copySetupToUser never creates a payroll profile', ACADEMY_DB_TEST, async () => {

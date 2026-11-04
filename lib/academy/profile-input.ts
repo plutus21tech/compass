@@ -1,15 +1,9 @@
 // Pure request-shaping helpers for the profile routes. No server-only imports.
 import { z } from 'zod'
 import { stripHtml } from '../sanitize'
-import type { PersonAttributes } from './attributes'
+import { ATTRIBUTE_KEYS, type PersonAttributes } from './attributes'
 
-export const ATTRIBUTE_KEYS = [
-  'officeLocation',
-  'remoteCountry',
-  'workMode',
-  'contractType',
-  'employmentStatus',
-] as const satisfies ReadonlyArray<keyof PersonAttributes>
+export { ATTRIBUTE_KEYS }
 
 export function hasAttributeKeys(body: unknown): boolean {
   if (typeof body !== 'object' || body === null) return false
@@ -29,6 +23,8 @@ export function mergeAttributePatch(current: PersonAttributes, body: unknown): R
 
 const LINKEDIN_URL = /^https:\/\/(www\.)?linkedin\.com\/\S+$/i
 
+const LINKEDIN_MESSAGE = 'LinkedIn must be a full https link, like https://www.linkedin.com/in/your-name.'
+
 /** Empty or whitespace-only input clears the value. */
 const emptyToNull = (value: string): string | null => (value === '' ? null : value)
 
@@ -36,18 +32,24 @@ export const selfContactExtrasShape = {
   discordUsername: z
     .string()
     .trim()
-    .max(100)
+    .max(100, 'Discord username is too long.')
     .nullable()
     .optional()
     .transform((value) => (typeof value === 'string' ? emptyToNull(stripHtml(value).trim()) : value)),
   linkedinUrl: z
     .string()
     .trim()
-    .max(300)
-    .refine((value) => value === '' || LINKEDIN_URL.test(value), 'LinkedIn must be an https://linkedin.com/… address')
+    .max(300, 'LinkedIn link is too long.')
+    .refine((value) => value === '' || LINKEDIN_URL.test(value), LINKEDIN_MESSAGE)
     .nullable()
     .optional()
     .transform((value) => (typeof value === 'string' ? emptyToNull(value) : value)),
+}
+
+/** The message for a bad contact field, which a person can act on; null for any other problem. */
+export function contactFieldError(error: z.ZodError): string | null {
+  const issue = error.issues.find(({ path }) => path[0] === 'linkedinUrl' || path[0] === 'discordUsername')
+  return issue ? issue.message : null
 }
 
 export type AttributeGate = 'ignore' | 'allow' | 'forbidden'

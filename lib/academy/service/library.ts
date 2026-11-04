@@ -41,13 +41,19 @@ export async function createLibraryCard(db: PrismaClient, input: unknown): Promi
   return db.onboardingLibraryCard.create({ data: { ...data, orderIndex: (last._max.orderIndex ?? -1) + 1 } })
 }
 
-const cardUpdateSchema = libraryCardSchema.extend({
-  isActive: z.boolean().optional(),
-  orderIndex: z.number().int().min(0).optional(),
-})
+const cardUpdateSchema = libraryCardSchema
+  .extend({
+    isActive: z.boolean().optional(),
+    orderIndex: z.number().int().min(0).optional(),
+  })
+  .transform(({ kind: _kind, ...fields }) => fields)
+
+/** Hide or unhide on its own, without resending the card. */
+const cardVisibilitySchema = z.object({ isActive: z.boolean() }).strict()
 
 export async function updateLibraryCard(db: PrismaClient, id: string, input: unknown): Promise<OnboardingLibraryCard> {
-  const { kind: _kind, ...data } = cardUpdateSchema.parse(input)
+  const visibility = cardVisibilitySchema.safeParse(input)
+  const data = visibility.success ? visibility.data : cardUpdateSchema.parse(input)
   const existing = await db.onboardingLibraryCard.findUnique({ where: { id }, select: { id: true } })
   if (!existing) throw new AcademyError('Card not found', 404)
   return db.onboardingLibraryCard.update({ where: { id }, data })

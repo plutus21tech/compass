@@ -21,6 +21,14 @@ export interface PersonAttributes {
   employmentStatus: EmploymentStatus | null
 }
 
+export const ATTRIBUTE_KEYS = [
+  'officeLocation',
+  'remoteCountry',
+  'workMode',
+  'contractType',
+  'employmentStatus',
+] as const satisfies ReadonlyArray<keyof PersonAttributes>
+
 const OFFICE_COUNTRY: Record<Exclude<OfficeLocation, 'REMOTE'>, string> = {
   KARACHI: 'PK',
   CASABLANCA: 'MA',
@@ -40,13 +48,27 @@ export const personAttributesSchema: z.ZodType<PersonAttributes, unknown> = z
   })
   .superRefine((v, ctx) => {
     if (v.officeLocation === 'REMOTE' && !v.remoteCountry) {
-      ctx.addIssue({ code: 'custom', path: ['remoteCountry'], message: 'remoteCountry is required for REMOTE' })
+      ctx.addIssue({ code: 'custom', path: ['remoteCountry'], message: 'Remote country is required when the office location is Remote.' })
     }
   })
   .transform((v): PersonAttributes => ({
     ...v,
     remoteCountry: v.officeLocation === 'REMOTE' ? v.remoteCountry : null,
   }))
+
+function isBlank(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+}
+
+/** A whole-form save may leave any attribute empty: blank or absent keys become null. */
+function fillBlankAttributes(value: unknown): unknown {
+  if (!isBlank(value) && (typeof value !== 'object' || Array.isArray(value))) return value
+  const source = (isBlank(value) ? {} : value) as Record<string, unknown>
+  return Object.fromEntries(ATTRIBUTE_KEYS.map((key) => [key, isBlank(source[key]) ? null : source[key]]))
+}
+
+/** Same rules as personAttributesSchema, for a form that may still be partly empty. */
+export const partialAttributesSchema = z.preprocess(fillBlankAttributes, personAttributesSchema)
 
 export function countryOf(a: Pick<PersonAttributes, 'officeLocation' | 'remoteCountry'>): string | null {
   if (!a.officeLocation) return null

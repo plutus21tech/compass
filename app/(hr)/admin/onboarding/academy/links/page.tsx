@@ -19,7 +19,6 @@ import { academyFetch, loadHandbookOptions, type HandbookOption } from '../_comp
 import { ErrorNotice } from '../_components/ErrorNotice'
 import { InvoiceTemplatesEditor, type InvoiceRow } from '../_components/InvoiceTemplatesEditor'
 import { LinkPicker } from '../_components/LinkPicker'
-import { useAcademyGate } from '../_components/useAcademyGate'
 
 type LinkMap = Partial<Record<AcademyLinkKey, AcademyLink>>
 
@@ -34,7 +33,6 @@ function withLink(map: LinkMap, key: AcademyLinkKey, link: AcademyLink | null): 
 }
 
 export default function AcademyLinksPage() {
-  const enabled = useAcademyGate()
   const [links, setLinks] = useState<LinkMap>({})
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
   const [bankLetter, setBankLetter] = useState('')
@@ -47,7 +45,6 @@ export default function AcademyLinksPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!enabled) return
     Promise.all([academyFetch<AcademyConfigView>('/api/admin/onboarding/academy-config'), loadHandbookOptions()])
       .then(([config, pages]) => {
         setLinks(config.links)
@@ -60,7 +57,7 @@ export default function AcademyLinksPage() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not load settings'))
       .finally(() => setLoading(false))
-  }, [enabled])
+  }, [])
 
   const save = async () => {
     const names = invoices.map((r) => r.department.trim())
@@ -93,7 +90,6 @@ export default function AcademyLinksPage() {
     }
   }
 
-  if (!enabled) return null
   if (loading) return <LoadingScreen message="Loading settings..." />
 
   return (

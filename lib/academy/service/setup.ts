@@ -1,13 +1,20 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { AcademyError } from '../errors'
 import { ATTRIBUTE_SELECT, setPersonAttributes } from './attributes'
-import { formatZodIssues } from '../profile-input'
-import { getSetupReadiness, leadInputDueAt, setupSchema, type SetupInput, type SetupSnapshot } from '../setup'
+import { describeSetupIssues } from '../labels'
+import {
+  getSetupReadiness,
+  isLeadInputSubmitted,
+  leadInputDueAt,
+  setupSchema,
+  type SetupInput,
+  type SetupSnapshot,
+} from '../setup'
 
 type Db = PrismaClient | Prisma.TransactionClient
 
-async function requireUsers(db: Db, ids: string[], message: string): Promise<void> {
-  const unique = [...new Set(ids)]
+async function requireUsers(db: Db, ids: Array<string | null>, message: string): Promise<void> {
+  const unique = [...new Set(ids.filter((id): id is string => id !== null))]
   const found = await db.user.count({ where: { id: { in: unique } } })
   if (found !== unique.length) throw new AcademyError(message, 400)
 }
@@ -15,7 +22,7 @@ async function requireUsers(db: Db, ids: string[], message: string): Promise<voi
 function parseSetup(input: unknown, hireUserId: string | null): SetupInput {
   const body = typeof input === 'object' && input !== null ? input : {}
   const parsed = setupSchema.safeParse({ ...body, hireUserId })
-  if (!parsed.success) throw new AcademyError(formatZodIssues(parsed.error), 400)
+  if (!parsed.success) throw new AcademyError(describeSetupIssues(parsed.error), 400)
   return parsed.data
 }
 
@@ -36,8 +43,9 @@ async function requireEligible(db: Db, userId: string, role: string): Promise<vo
 
 /**
  * Reads, validates and writes in one transaction, so nothing is half-written and the lead-change check
- * cannot race. Attributes go to User once the hire is linked, to NewHire before. Returns whether the
- * team lead should be sent a request for their input.
+ * cannot race. Attributes go to User once the hire is linked, to NewHire before. Fields may be blank:
+ * readiness reports them. Returns whether the team lead should be sent a request for their input:
+ * a lead is set, and either no request has gone out yet or the lead changed.
  */
 export async function saveSetup(
   db: PrismaClient,
@@ -54,8 +62,9 @@ export async function saveSetup(
     const data = parseSetup(input, hire.userId)
 
     // Eligibility applies only to a person newly chosen, so an already-saved choice never blocks a save.
-    if (data.teamLeadId !== hire.teamLeadId) await requireEligible(tx, data.teamLeadId, 'team lead')
-    if (data.buddyId !== hire.buddyId) await requireEligible(tx, data.buddyId, 'buddy')
+    const leadChanged = data.teamLeadId !== hire.teamLeadId
+    if (data.teamLeadId && leadChanged) await requireEligible(tx, data.teamLeadId, 'team lead')
+    if (data.buddyId && data.buddyId !== hire.buddyId) await requireEligible(tx, data.buddyId, 'buddy')
     await requireUsers(tx, [data.teamLeadId], 'Invalid team lead')
     await requireUsers(tx, [data.buddyId], 'Invalid buddy')
     await requireUsers(tx, data.teamMemberIds, 'Invalid team member')
@@ -74,8 +83,8 @@ export async function saveSetup(
       create: { newHireId, leadInputDueAt: dueAt },
       update: { leadInputDueAt: dueAt },
     })
-    const firstSave = !hire.teamLeadForm?.leadInputDueAt
-    return { leadRequestNeeded: firstSave || hire.teamLeadId !== data.teamLeadId }
+    const noRequestYet = !hire.teamLeadForm?.leadInputDueAt
+    return { leadRequestNeeded: data.teamLeadId !== null && (noRequestYet || leadChanged) }
   })
 }
 
@@ -84,7 +93,19 @@ export async function loadSetup(db: PrismaClient, newHireId: string) {
     where: { id: newHireId },
     include: {
       teamMembers: { select: { userId: true } },
-      teamLeadForm: { select: { submittedAt: true, leadInputDueAt: true } },
+      teamLeadForm: {
+        select: {
+          submittedAt: true,
+          leadInputDueAt: true,
+          roleExpectations: true,
+          day1Goal: true,
+          week1Goal: true,
+          month1Goal: true,
+          month3Goal: true,
+          tutorials: true,
+          teamTools: true,
+        },
+      },
       user: { select: ATTRIBUTE_SELECT },
     },
   })
@@ -112,7 +133,7 @@ export async function loadSetup(db: PrismaClient, newHireId: string) {
     coreHoursStart: hire.coreHoursStart,
     coreHoursEnd: hire.coreHoursEnd,
     userLinked: hire.userId !== null,
-    leadInputSubmitted: hire.teamLeadForm?.submittedAt != null,
+    leadInputSubmitted: isLeadInputSubmitted(hire.teamLeadForm),
   }
   return { setup, readiness: getSetupReadiness(setup), leadInputDueAt: hire.teamLeadForm?.leadInputDueAt ?? null }
 }

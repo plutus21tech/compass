@@ -5,7 +5,7 @@ import { getSession } from '@/lib/auth'
 import { stripHtml } from '@/lib/sanitize'
 import { isAcademyEnabled } from '@/lib/academy/flag'
 import { missingAttributes } from '@/lib/academy/attributes'
-import { selfAttributeGate, selfContactExtrasShape } from '@/lib/academy/profile-input'
+import { contactFieldError, selfAttributeGate, selfContactExtrasShape } from '@/lib/academy/profile-input'
 import { getPersonAttributes } from '@/lib/academy/service/attributes'
 import {
   AVATAR_ACCESSORIES,
@@ -86,7 +86,7 @@ export async function PUT(request: NextRequest) {
     const parsed = (academyEnabled ? academyProfileUpdateSchema : profileUpdateSchema).safeParse(body)
     if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Invalid profile payload', details: parsed.error.issues },
+        { error: (academyEnabled ? contactFieldError(parsed.error) : null) ?? 'Invalid profile payload', details: parsed.error.issues },
         { status: 400 }
       )
     }

@@ -1,11 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ZodError } from 'zod'
-import { personAttributesSchema, type PersonAttributes } from '../lib/academy/attributes'
+import {
+  CONTRACT_TYPES,
+  EMPLOYMENT_STATUSES,
+  OFFICE_LOCATIONS,
+  WORK_MODES,
+  personAttributesSchema,
+  type PersonAttributes,
+} from '../lib/academy/attributes'
+import { attributeValueLabel } from '../lib/academy/labels'
 import {
   ATTRIBUTE_KEYS,
   adminAttributeGate,
   applyPrefill,
+  contactFieldError,
   formatZodIssues,
   selfAttributeGate,
   shouldCopyNewHireSetup,
@@ -54,6 +63,25 @@ test('linkedinUrl must be an https linkedin.com address; empty clears', () => {
   }
 })
 
+test('a bad LinkedIn link gives a message a person can act on', () => {
+  const bad = extras.safeParse({ linkedinUrl: 'http://linkedin.com/in/a' })
+  assert.equal(bad.success, false)
+  if (!bad.success) assert.match(contactFieldError(bad.error) ?? '', /^LinkedIn must be a full https link/)
+  const other = z.object({ email: z.string() }).safeParse({})
+  assert.equal(other.success, false)
+  if (!other.success) assert.equal(contactFieldError(other.error), null)
+})
+
+test('attribute values have proper labels', () => {
+  assert.equal(attributeValueLabel('PK_EMPLOYMENT'), 'Pakistan employment contract')
+  assert.equal(attributeValueLabel('FIXED_TERM'), 'Fixed term')
+  assert.equal(attributeValueLabel(null), 'Not set')
+  assert.equal(attributeValueLabel('SOMETHING_NEW'), 'SOMETHING_NEW')
+  for (const options of [OFFICE_LOCATIONS, WORK_MODES, CONTRACT_TYPES, EMPLOYMENT_STATUSES]) {
+    for (const value of options) assert.notEqual(attributeValueLabel(value), value)
+  }
+})
+
 test('discordUsername is trimmed, tag-stripped and empty clears', () => {
   assert.equal(extras.parse({ discordUsername: '  ana_t  ' }).discordUsername, 'ana_t')
   assert.equal(extras.parse({ discordUsername: '   ' }).discordUsername, null)
@@ -85,7 +113,7 @@ test('shouldCopyNewHireSetup follows the flag', () => {
 test('formatZodIssues joins path and message', () => {
   const result = personAttributesSchema.safeParse(mergeAttributePatch(current, { officeLocation: 'REMOTE' }))
   assert.ok(!result.success)
-  assert.equal(formatZodIssues(result.error), 'remoteCountry: remoteCountry is required for REMOTE')
+  assert.equal(formatZodIssues(result.error), 'remoteCountry: Remote country is required when the office location is Remote.')
 })
 
 test('applyPrefill fills empty fields only and never overwrites', () => {
