@@ -126,7 +126,7 @@ Everything new is gated by `ONBOARDING_ACADEMY_ENABLED`. With the flag off, Comp
   - `OnboardingAcknowledgement` (userId, kind, statementText, moduleVersionId?, typedName, signedAt, `@@index([userId, kind])`)
   - `OnboardingLibraryCard` (kind, title, icon, body, links Json @default("[]"), countries String[], workModes WorkMode[], contractTypes ContractType[], employmentStatuses EmploymentStatus[], orderIndex, isActive @default(true), timestamps, `@@index([kind, isActive, orderIndex])`)
   - `OnboardingKeyContact` (group, userId?, label?, email?, orderIndex, timestamps)
-  - `OnboardingChecklistTemplateItem` and `OnboardingChecklistItem`, fields per spec §5.8, `@@unique([newHireId, templateItemId])`
+  - `OnboardingChecklistTemplateItem` (`key` unique, `autoTickEvent String?`) and `OnboardingChecklistItem`, fields per spec §5.8, `@@unique([newHireId, templateItemId])`
   - `ContractorPayoutDetails` (userId @unique, method, accountHolderName, payoutEmail?, bankName?, accountNumberOrIban?, swiftBic?, bankCountry?, bankAddress?, instructions?, currency, submittedAt, updatedAt)
   - `ContractorPayoutRevealLog` (payoutUserId, viewerId, createdAt, `@@index([payoutUserId, createdAt])`)
 
@@ -448,7 +448,7 @@ Everything new is gated by `ONBOARDING_ACADEMY_ENABLED`. With the flag off, Comp
 **Interfaces:**
 - Consumes: Task 1 schema; Task 7 `libraryCardSchema`, `academyLinkSchema`.
 - Produces:
-  - `export async function seedAcademy(db: PrismaClient): Promise<{ modulesCreated: number; modulesRetired: number; cardsCreated: number }>`
+  - `export async function seedAcademy(db: PrismaClient): Promise<{ modulesCreated: number; modulesRetired: number; cardsCreated: number; checklistItemsCreated: number }>`
   - `export async function completeTestUsers(db: PrismaClient, opts: { apply: boolean }): Promise<string[]>`, which returns the affected names
 
 **Seed content.** All of it is idempotent: upsert by `slug`, and cards by `(kind, title)`.
@@ -502,9 +502,12 @@ Everything new is gated by `ONBOARDING_ACADEMY_ENABLED`. With the flag off, Comp
    | ZERO_TOLERANCE_POLICY | zero-tolerance-policy |
    | PRINCIPLES_OF_CONDUCT | principles-of-conduct |
 
+6. **HR checklist template:** the 17 rows of spec §5.8, upserted by `key`. Create missing rows only; never overwrite a row HR may have edited.
+
 - [ ] **Step 1: Write the failing integration tests.**
   - **First run:** with an old module at `orderIndex` 1 seeded beforehand, `seedAcademy` creates 14 active modules and retires the old one (`orderIndex` 1001).
-  - **Idempotency:** a second run gives `modulesCreated: 0` and the same card count.
+  - **Checklist:** the first run gives `checklistItemsCreated: 17`, and `lead-input` has `ownerRole` TEAM_LEAD, `dueOffsetDays` -7 and `autoTickEvent` `LEAD_INPUT_SUBMITTED`.
+  - **Idempotency:** a second run gives `modulesCreated: 0`, `checklistItemsCreated: 0` and the same card count. A checklist title edited between runs is left as edited.
   - **Benefits untouched (Review Focus 4):** the `benefit` and `benefitCategory` counts are equal before and after.
   - **Cutover script:** `completeTestUsers(db, {apply:false})` returns the names and changes nothing. `{apply:true}` sets `onboardingCompleted=true` for exactly those users.
 - [ ] **Step 2: Run them.** They should FAIL.

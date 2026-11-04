@@ -1,7 +1,7 @@
 # Compass Onboarding Academy — Design
 
 **Date:** 2026-11-02
-**Source spec:** `Compass Onboarding Academy_ Product Spec.docx` (HR's product spec, sections 1–6). Section 7 (video scripts) is not needed for the build. Section 8 (HR onboarding checklist) is still to come from the user.
+**Source spec:** `Compass Onboarding Academy_ Product Spec.docx` (HR's product spec, sections 1–6). Section 7 (video scripts) is not needed for the build. Section 8 (HR onboarding checklist) was never supplied, so §5.8 holds a drafted version for HR to correct.
 **Builds on:** the onboarding module shipped in Feb–Mar 2026 (`lib/onboarding.ts`, `app/(evaluator)/onboarding/*`, `app/(hr)/admin/onboarding/*`, `app/api/onboarding/*`, `prisma/seed-onboarding.ts`).
 
 Wherever this document says "the spec", it means the product spec above. Copy, question banks, tables and module-by-module screen text come from the spec and are not repeated here.
@@ -38,7 +38,7 @@ The user wants it to feel **friendly**. The reference point is compliance-traini
 - The new-hire course from spec sections 2, 4 and 5: 14 modules, the quiz, both acknowledgements, and the completion screen with a certificate.
 - HR setup fields on the new-hire record (spec section 3), plus a team lead input request.
 - An HR tracker (table and side drawer) and Onboarding settings (content editors with a preview).
-- An HR onboarding checklist with deadlines, reminders and automatic ticks (spec section 8, still to come).
+- An HR onboarding checklist with deadlines, reminders and automatic ticks (spec section 8 was not supplied; drafted in §5.8).
 - Reminders and notifications by email.
 - Content versioning, "ask everyone to re-read", and assigning a single module to existing staff.
 
@@ -89,7 +89,7 @@ The user wants it to feel **friendly**. The reference point is compliance-traini
 | `BenefitCategory`, `Benefit` | **Untouched** (D3). The Academy's benefits use a new library (§5.6). |
 | Client-side lockout in `components/layout/SidebarLayout.tsx` | **Keep, and add server-side enforcement** (§9). It is client-only today. |
 | `ONBOARDING_SIDEBAR` | Keep. Add the Company Dashboard link (§9). |
-| The 4 `NewHire` rows in prod (Abc, Test, Sana Khan, Maria) | Leave in place. They look like test data. Don't delete without asking. |
+| The 4 `NewHire` rows in prod | Leave in place. They look like test data. Don't delete without asking. |
 
 ## 5. Data model
 
@@ -218,22 +218,35 @@ HR can download these from the tracker drawer, one at a time as a PDF, or all of
 - **`OnboardingQuizQuestion`**: add `explanation`, `valueKey` (which value it maps to, for colour), `videoChapterKey`, `retiredAt`. Questions are retired, never deleted, so old attempts still resolve.
 - **`QuizAttempt`**: `answersJson` records, per question, the question ID, the chosen option, whether it was correct, and the order shown.
 
-### 5.8 HR onboarding checklist (section 8, still to come)
+### 5.8 HR onboarding checklist (drafted by us; spec section 8 was not supplied)
 
-- **`OnboardingChecklistTemplateItem`**: `title`, `ownerRole` (HR | SECURITY | OA | TEAM_LEAD), `dueOffsetDays` (relative to joining date, can be negative), `autoTickEvent?`, `orderIndex`, `isActive`.
+- **`OnboardingChecklistTemplateItem`**: `key` (unique, stable across renames), `title`, `ownerRole` (HR | SECURITY | OA | TEAM_LEAD), `dueOffsetDays` (calendar days relative to joining date, can be negative), `autoTickEvent?`, `orderIndex`, `isActive`.
 - **`OnboardingChecklistItem`** (one per hire): `newHireId`, `templateItemId`, `dueAt`, `doneAt?`, `doneById?`, `autoTicked`, `missReason?`.
   - Created when the setup is saved.
+  - A due date that lands on a weekend moves back to the Friday before.
   - Overdue items ask for a `missReason` when they are finally ticked, which feeds the "reason for every miss" success measure.
-- **Auto-tick events named in the spec:**
+- **The template below is a draft.** Items 2, 12, 14, 15 and 17 and their auto-ticks come from the spec (the "KPIs" wording is dropped from item 2, per the decision to remove KPIs). Everything else, including every owner and offset the spec doesn't state, is our call. HR edits the template in Onboarding settings (stage 4), so corrections need no release. Changing the template never alters checklists already created for a hire.
 
-  | Event | Ticks |
-  |---|---|
-  | `DISCORD_USERNAME_SAVED` (Module 6) | "Creation Discord Account (with profile photo)" |
-  | `LINKEDIN_VERIFIED` (Module 8 verify) | "LinkedIn Profile Update" |
-  | `PAYMENT_SETUP_DONE` (Module 11) | "Invoice Sharing/Bank Account Setup + Accounting Team Updated" |
-  | `LEAD_INPUT_SUBMITTED` | "KPIs and tutorials and documentation from Team Manager" |
+  | # | key | Title | Owner | Due (days from joining) | Auto-tick event |
+  |---|---|---|---|---|---|
+  | 1 | contract-signed | Signed contract on file | HR | -14 | |
+  | 2 | lead-input | Tutorials and documentation from Team Manager | TEAM_LEAD | -7 | `LEAD_INPUT_SUBMITTED` |
+  | 3 | setup-complete | Setup fields complete (team, buddy, calls, core hours) | HR | -7 | `SETUP_READY` |
+  | 4 | accounts-created | Company email and Compass account created | SECURITY | -3 | `ACCOUNT_LINKED` |
+  | 5 | equipment-ready | Laptop, phone and phone line prepared | SECURITY | -3 | |
+  | 6 | calls-booked | HR, Security and team onboarding calls booked | HR | -3 | |
+  | 7 | access-granted | Email groups and tool access granted | SECURITY | -1 | |
+  | 8 | course-released | Course released to the new hire | HR | -1 | `COURSE_RELEASED` |
+  | 9 | hr-call | HR onboarding call held | HR | 0 | |
+  | 10 | security-call | Security onboarding call held | SECURITY | 0 | |
+  | 11 | team-call | Team onboarding call held | TEAM_LEAD | 0 | |
+  | 12 | discord-account | Creation Discord Account (with profile photo) | HR | 0 | `DISCORD_USERNAME_SAVED` |
+  | 13 | security-ack | Security acknowledgement signed | SECURITY | 0 | `SECURITY_ACK_SIGNED` |
+  | 14 | linkedin-update | LinkedIn Profile Update | HR | 7 | `LINKEDIN_VERIFIED` |
+  | 15 | payment-setup | Invoice Sharing/Bank Account Setup + Accounting Team Updated | OA | 7 | `PAYMENT_SETUP_DONE` |
+  | 16 | academy-complete | Academy and culture quiz complete | HR | 7 | `COURSE_COMPLETED` |
+  | 17 | manager-checklist | Completion of Manager's Onboarding Checklist | TEAM_LEAD | 14 | |
 
-  The full list is seeded once section 8 arrives.
 - "Completion of Manager's Onboarding Checklist" is owned by the team lead and is never auto-ticked.
 
 ### 5.9 Contractor payout details (Module 11, version B)
@@ -443,7 +456,7 @@ The flag is server-read and exposed to the layout the same way `SECURITY_CHECKS_
 - creates the 14 modules with version 1 content taken from the spec copy
 - creates the 12 quiz questions with explanations
 - seeds the library cards from the spec matrix and the key-contact groups (empty)
-- seeds the HR checklist template once section 8 arrives
+- seeds the HR checklist template (§5.8)
 
 ## 11. Testing
 
@@ -480,7 +493,7 @@ Each stage is a PR behind the flag.
 3. **Quiz and acknowledgements:** the quiz flow, the results screen, both acknowledgements, the completion screen and the certificate.
 4. **HR operations:**
    - tracker and drawer
-   - checklist (needs section 8)
+   - checklist (template seeded in stage 1, §5.8)
    - the cron and all notifications
    - re-read, single-module assignment and unlock-early
 5. **Video and polish:**
@@ -494,7 +507,7 @@ Each stage is a PR behind the flag.
 
 | Item | Owner |
 |---|---|
-| Spec section 8: the HR onboarding checklist (items, owners, deadlines, which ones auto-tick) | User/HR, needed before stage 4 |
+| Correct the drafted checklist in §5.8 (items, owners, deadlines) | HR, any time; editable in settings from stage 4 |
 | YouTube IDs, chapter timestamps and transcripts for Videos 1 and 2 | HR, after filming |
 | Links with no handbook page yet: Discord Training Manual, Discord training video, incident inquiry form, Cyber Security SOP, health-insurance presentation and claim kit, invoice templates per team | HR, entered in settings (not blocking) |
 | Value colours | **Settled.** The spec's four hex codes are Canva's default palette, so the other three use the same palette: Innovation #FFBD59, Integrity #CB6CE6, Excellence #FF5757, Client-centric #38B6FF, Collaboration #7ED957, Accountability #FF66C4, Speed #FF914D. They are used only as fills and strips. Text on or beside them is Deep Navy, or white on a navy panel, never coloured text on white, so everything stays WCAG AA. |
