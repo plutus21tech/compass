@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/table'
 import Papa from 'papaparse'
 import { prefillFromTeamTag, type PersonAttributes } from '@/lib/academy/attributes'
+import { applyPrefill } from '@/lib/academy/profile-input'
 import { AttributeFields } from './_components/AttributeFields'
 import { Users, Plus, Search, Upload, Edit2, Trash2, UserCheck, Shield, Key, Eye, EyeOff, RotateCcw, XCircle } from 'lucide-react'
 
@@ -257,7 +258,15 @@ export default function UsersPage() {
   }
 
   const handleOpenModal = (user?: User) => {
-    setAttributeForm(user?.attributes ?? EMPTY_ATTRIBUTES)
+    // Suggestions fill empty fields only; nothing is saved until HR saves the dialog.
+    setAttributeForm(
+      user
+        ? applyPrefill(
+            user.attributes ?? EMPTY_ATTRIBUTES,
+            prefillFromTeamTag(user.teamTag, user.payrollProfile?.employmentType?.name ?? null),
+          )
+        : EMPTY_ATTRIBUTES,
+    )
     if (user) {
       setSelectedUser(user)
       setFormData({
@@ -593,9 +602,7 @@ export default function UsersPage() {
     return matchSearch && matchRole && matchDept && matchMissing
   })
   const missingCount = users.filter((u) => (u.missingAttributes?.length ?? 0) > 0).length
-  const attributeSuggestion = selectedUser
-    ? prefillFromTeamTag(selectedUser.teamTag, selectedUser.payrollProfile?.employmentType?.name ?? null)
-    : {}
+
 
   if (loading) {
     return (
@@ -864,7 +871,7 @@ export default function UsersPage() {
           </div>
 
           {academyEnabled && selectedUser && (
-            <AttributeFields value={attributeForm} onChange={setAttributeForm} suggestion={attributeSuggestion} />
+            <AttributeFields value={attributeForm} onChange={setAttributeForm} />
           )}
 
           <div>

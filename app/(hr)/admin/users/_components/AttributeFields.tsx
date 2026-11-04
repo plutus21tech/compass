@@ -2,7 +2,6 @@
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   CONTRACT_TYPES,
@@ -25,8 +24,6 @@ const label = (value: string) => LABELS[value] ?? value
 interface Props {
   value: PersonAttributes
   onChange: (next: PersonAttributes) => void
-  /** A suggestion from the team tag and payroll employment type; applied only on request. */
-  suggestion: Partial<PersonAttributes>
   disabled?: boolean
 }
 
@@ -55,19 +52,14 @@ function EnumSelect<T extends string>(props: {
   )
 }
 
-export function AttributeFields({ value, onChange, suggestion, disabled }: Props) {
+export function AttributeFields({ value, onChange, disabled }: Props) {
   const set = <K extends keyof PersonAttributes>(key: K, next: PersonAttributes[K]) => onChange({ ...value, [key]: next })
-  const hasSuggestion = Object.keys(suggestion).length > 0
 
   return (
     <fieldset className="space-y-3 rounded-lg border border-border p-4" disabled={disabled}>
       <legend className="px-1 text-sm font-semibold text-foreground">Onboarding attributes</legend>
       <p className="text-xs text-muted-foreground">These choose which Academy content a person sees. Only HR can change them.</p>
-      {hasSuggestion && (
-        <Button type="button" variant="outline" size="sm" onClick={() => onChange({ ...value, ...suggestion })}>
-          Fill suggestions from team and employment type
-        </Button>
-      )}
+      <p className="text-xs text-muted-foreground">Empty fields are suggested from the team and employment type. Save to keep them.</p>
       <EnumSelect id="attr-office" title="Office location" options={OFFICE_LOCATIONS} value={value.officeLocation} onChange={(v) => set('officeLocation', v)} />
       {value.officeLocation === 'REMOTE' && (
         <div>

@@ -5,7 +5,7 @@ import { getSession } from '@/lib/auth'
 import { stripHtml } from '@/lib/sanitize'
 import { isAcademyEnabled } from '@/lib/academy/flag'
 import { missingAttributes } from '@/lib/academy/attributes'
-import { hasAttributeKeys, selfContactExtrasShape } from '@/lib/academy/profile-input'
+import { selfAttributeGate, selfContactExtrasShape } from '@/lib/academy/profile-input'
 import { getPersonAttributes } from '@/lib/academy/service/attributes'
 import {
   AVATAR_ACCESSORIES,
@@ -80,7 +80,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json()
     const academyEnabled = isAcademyEnabled()
-    if (academyEnabled && hasAttributeKeys(body)) {
+    if (selfAttributeGate(academyEnabled, body) === 'forbidden') {
       return NextResponse.json({ error: 'Only HR can change these details' }, { status: 403 })
     }
     const parsed = (academyEnabled ? academyProfileUpdateSchema : profileUpdateSchema).safeParse(body)

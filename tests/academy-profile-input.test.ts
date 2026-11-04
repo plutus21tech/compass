@@ -4,6 +4,11 @@ import { ZodError } from 'zod'
 import { personAttributesSchema, type PersonAttributes } from '../lib/academy/attributes'
 import {
   ATTRIBUTE_KEYS,
+  adminAttributeGate,
+  applyPrefill,
+  formatZodIssues,
+  selfAttributeGate,
+  shouldCopyNewHireSetup,
   hasAttributeKeys,
   mergeAttributePatch,
   selfContactExtrasShape,
@@ -53,4 +58,42 @@ test('discordUsername is trimmed, tag-stripped and empty clears', () => {
   assert.equal(extras.parse({ discordUsername: '  ana_t  ' }).discordUsername, 'ana_t')
   assert.equal(extras.parse({ discordUsername: '   ' }).discordUsername, null)
   assert.throws(() => extras.parse({ discordUsername: 'x'.repeat(101) }), ZodError)
+})
+
+test('adminAttributeGate: off or no keys ignored; HR allowed; others forbidden', () => {
+  const body = { name: 'x', workMode: 'OFFICE' }
+  assert.equal(adminAttributeGate(false, 'EMPLOYEE', body), 'ignore')
+  assert.equal(adminAttributeGate(false, 'HR', body), 'ignore')
+  assert.equal(adminAttributeGate(true, 'HR', { name: 'x' }), 'ignore')
+  assert.equal(adminAttributeGate(true, 'HR', body), 'allow')
+  for (const role of ['OA', 'EMPLOYEE', 'SECURITY', 'EXECUTION']) assert.equal(adminAttributeGate(true, role, body), 'forbidden', role)
+})
+
+test('selfAttributeGate: 403 on any attribute key only when the flag is on', () => {
+  for (const key of ATTRIBUTE_KEYS) {
+    assert.equal(selfAttributeGate(true, { [key]: null }), 'forbidden', key)
+    assert.equal(selfAttributeGate(false, { [key]: null }), 'ignore', key)
+  }
+  assert.equal(selfAttributeGate(true, { discordUsername: 'a', linkedinUrl: null }), 'ignore')
+})
+
+test('shouldCopyNewHireSetup follows the flag', () => {
+  assert.equal(shouldCopyNewHireSetup(true), true)
+  assert.equal(shouldCopyNewHireSetup(false), false)
+})
+
+test('formatZodIssues joins path and message', () => {
+  const result = personAttributesSchema.safeParse(mergeAttributePatch(current, { officeLocation: 'REMOTE' }))
+  assert.ok(!result.success)
+  assert.equal(formatZodIssues(result.error), 'remoteCountry: remoteCountry is required for REMOTE')
+})
+
+test('applyPrefill fills empty fields only and never overwrites', () => {
+  const empty: PersonAttributes = { officeLocation: null, remoteCountry: null, workMode: null, contractType: null, employmentStatus: null }
+  assert.deepEqual(applyPrefill(empty, { officeLocation: 'REMOTE', remoteCountry: 'ID', contractType: 'INDEPENDENT_CONTRACTOR' }), {
+    ...empty, officeLocation: 'REMOTE', remoteCountry: 'ID', contractType: 'INDEPENDENT_CONTRACTOR',
+  })
+  assert.deepEqual(applyPrefill(current, { officeLocation: 'REMOTE', remoteCountry: 'ID', contractType: 'INDEPENDENT_CONTRACTOR' }), current)
+  assert.equal(applyPrefill({ ...empty, officeLocation: 'KARACHI' }, { officeLocation: 'REMOTE', remoteCountry: 'ID' }).remoteCountry, null)
+  assert.equal(empty.officeLocation, null)
 })

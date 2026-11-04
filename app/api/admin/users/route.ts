@@ -12,7 +12,7 @@ import {
 import { isPlutusEmail } from '@/lib/onboarding'
 import { isAcademyEnabled } from '@/lib/academy/flag'
 import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
-import { hasAttributeKeys, mergeAttributePatch } from '@/lib/academy/profile-input'
+import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNewHireSetup } from '@/lib/academy/profile-input'
 import {
   ATTRIBUTE_SELECT,
   copySetupToUser,
@@ -424,7 +424,7 @@ export async function POST(request: NextRequest) {
           },
         })
 
-        if (isAcademyEnabled()) {
+        if (shouldCopyNewHireSetup(isAcademyEnabled())) {
           await copySetupToUser(tx, linkedNewHire.id, createdUser.id)
         }
 
@@ -479,8 +479,9 @@ export async function PUT(request: NextRequest) {
 
     const body: unknown = await request.json()
     // Off, the attribute keys are unknown keys and ignored, as before. On, only HR may send them.
-    const attributeRequested = isAcademyEnabled() && hasAttributeKeys(body)
-    if (attributeRequested && user.role !== 'HR') {
+    const attributeGate = adminAttributeGate(isAcademyEnabled(), user.role, body)
+    const attributeRequested = attributeGate === 'allow'
+    if (attributeGate === 'forbidden') {
       return NextResponse.json({ error: 'Only HR can change onboarding attributes' }, { status: 403 })
     }
 
@@ -574,7 +575,7 @@ export async function PUT(request: NextRequest) {
     }
     if (error instanceof ZodError) {
       return NextResponse.json(
-        { error: error.issues.map((issue) => issue.message).join('; ') },
+        { error: formatZodIssues(error) },
         { status: 400 },
       )
     }

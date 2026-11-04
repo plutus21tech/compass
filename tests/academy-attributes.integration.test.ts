@@ -2,6 +2,7 @@ import test, { after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { ZodError } from 'zod'
 import { prisma } from '../lib/db'
+import { mergeAttributePatch } from '../lib/academy/profile-input'
 import { copySetupToUser, getPersonAttributes, setPersonAttributes } from '../lib/academy/service/attributes'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
@@ -67,4 +68,16 @@ test('copySetupToUser never creates a payroll profile', ACADEMY_DB_TEST, async (
   await prisma.$transaction((tx) => copySetupToUser(tx, NEW_HIRE_ID, P.hire.id))
   assert.equal(await prisma.payrollEmployeeProfile.count({ where: { userId: P.hire.id } }), 0)
   assert.equal((await getPersonAttributes(prisma, P.hire.id)).workMode, 'REMOTE')
+})
+
+test('a partial patch merged over stored attributes keeps the rest; an invalid merge saves nothing', ACADEMY_DB_TEST, async () => {
+  await setPersonAttributes(prisma, P.hr.id, { officeLocation: 'KARACHI', workMode: 'OFFICE', contractType: 'PK_EMPLOYMENT', employmentStatus: 'PERMANENT' })
+  const current = await getPersonAttributes(prisma, P.hr.id)
+  const saved = await setPersonAttributes(prisma, P.hr.id, mergeAttributePatch(current, { workMode: 'HYBRID' }))
+  assert.deepEqual(saved, { ...current, workMode: 'HYBRID' })
+  await assert.rejects(
+    setPersonAttributes(prisma, P.hr.id, mergeAttributePatch(saved, { officeLocation: 'REMOTE' })),
+    (error: unknown) => error instanceof ZodError,
+  )
+  assert.deepEqual(await getPersonAttributes(prisma, P.hr.id), saved)
 })

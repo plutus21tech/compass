@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
 import { getSession, type SafeUser } from '@/lib/auth'
+import { formatZodIssues } from './profile-input'
 import { isAcademyEnabled } from './flag'
 
 export class AcademyError extends Error {
@@ -21,7 +22,7 @@ export function academyErrorResponse(error: unknown): NextResponse {
   const fail = (message: string, status: number) => NextResponse.json({ success: false, error: message }, { status })
   if (error instanceof AcademyError) return fail(error.message, error.status)
   if (error instanceof ZodError) {
-    return fail(error.issues.map((issue) => (issue.path.length ? `${issue.path.join('.')}: ${issue.message}` : issue.message)).join('; '), 400)
+    return fail(formatZodIssues(error), 400)
   }
   console.error('[academy] unexpected error', error)
   return fail('Something went wrong. Reload and try again.', 500)
