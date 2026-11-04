@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
 import { sendTeamLeadFormRequestNotification } from '@/lib/email'
 import { validateTeamLeadEligibility } from '@/lib/onboarding'
+import { isAcademyEnabled } from '@/lib/academy/flag'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -39,7 +40,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'New hire not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ newHire })
+    return NextResponse.json({ newHire, academyEnabled: isAcademyEnabled() })
   } catch (error) {
     console.error('Failed to fetch new hire:', error)
     return NextResponse.json({ error: 'Failed to fetch new hire' }, { status: 500 })

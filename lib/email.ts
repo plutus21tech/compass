@@ -1556,6 +1556,50 @@ export async function sendTeamLeadFormRequestNotification(newHireId: string) {
   }
 }
 
+/** Asks the team lead for role expectations and goals. Throws on send failure; callers log it. */
+export async function sendLeadInputRequest(newHireId: string): Promise<void> {
+  const newHire = await prisma.newHire.findUnique({
+    where: { id: newHireId },
+    include: {
+      teamLead: { select: { name: true, email: true } },
+      teamLeadForm: { select: { leadInputDueAt: true } },
+    },
+  })
+  if (!newHire) return
+
+  const recipients = mergeRecipientEmails([newHire.teamLead?.email], getOnboardingExecutionRecipients())
+  if (recipients.length === 0) return
+
+  const formUrl = compassUrl(`/team-lead-form/${encodeURIComponent(newHire.id)}`)
+  const dueAt = newHire.teamLeadForm?.leadInputDueAt
+  const dueLine = dueAt
+    ? `<p><strong>Please complete by:</strong> ${escapeHtml(dueAt.toISOString().slice(0, 10))}</p>`
+    : ''
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">Your input is needed for a new hire</h2>
+      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>New Hire:</strong> ${escapeHtml(newHire.name)}</p>
+        <p><strong>Title:</strong> ${escapeHtml(newHire.title)}</p>
+        <p><strong>Joining:</strong> ${escapeHtml(newHire.onboardingDate.toISOString().slice(0, 10))}</p>
+        ${dueLine}
+      </div>
+      <p style="color: #475569; margin: 0 0 14px;">
+        Please describe what you expect from this role and set their goals for day 1, week 1, month 1 and month 3.
+      </p>
+      <p><a href="${formUrl}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Add role expectations</a></p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: `P21 Compass <${FROM_EMAIL}>`,
+    to: recipients.join(', '),
+    subject: `Action Required: role expectations for ${newHire.name}`,
+    html: htmlContent,
+  })
+}
+
 export async function sendSecurityChecklistCompleteNotification(newHireId: string) {
   const newHire = await prisma.newHire.findUnique({
     where: { id: newHireId },

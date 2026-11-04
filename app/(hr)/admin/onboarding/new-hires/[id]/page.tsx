@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft, Save, CheckCircle2, Clock } from 'lucide-react'
+import { OnboardingSetupSection } from './_components/OnboardingSetupSection'
 
 interface NewHireDetail {
   id: string
@@ -66,6 +67,7 @@ export default function NewHireDetailPage() {
   const [saving, setSaving] = useState(false)
   const [newHire, setNewHire] = useState<NewHireDetail | null>(null)
   const [users, setUsers] = useState<UserOption[]>([])
+  const [academyEnabled, setAcademyEnabled] = useState(false)
   const [form, setForm] = useState({
     name: '',
     title: '',
@@ -91,6 +93,7 @@ export default function NewHireDetailPage() {
 
       const detail = newHireData.newHire
       setNewHire(detail)
+      setAcademyEnabled(newHireData.academyEnabled === true)
       setUsers(usersData.users || [])
       setForm({
         name: detail.name || '',
@@ -316,6 +319,10 @@ export default function NewHireDetailPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {academyEnabled && newHireId && (
+        <OnboardingSetupSection newHireId={newHireId} users={users} onSaved={loadData} />
+      )}
     </div>
   )
 }

@@ -1,15 +1,13 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 import { ZodError } from 'zod'
 import { getSession, type SafeUser } from '@/lib/auth'
 import { formatZodIssues } from './profile-input'
 import { isAcademyEnabled } from './flag'
+import { AcademyError } from './errors'
+import { checkRateLimit, RateLimitUnavailableError } from '@/lib/rate-limit'
+import { assertSameOrigin, SameOriginError } from '@/lib/security/same-origin'
 
-export class AcademyError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message)
-    this.name = 'AcademyError'
-  }
-}
+export { AcademyError }
 
 export async function requireAcademySession(): Promise<SafeUser> {
   if (!isAcademyEnabled()) throw new AcademyError('Not found', 404)
@@ -18,9 +16,28 @@ export async function requireAcademySession(): Promise<SafeUser> {
   return user
 }
 
+const MUTATIONS_PER_WINDOW = 120
+
+/** Same-origin and rate-limit guard for Academy writes. */
+export async function guardAcademyMutation(request: NextRequest, userId: string): Promise<void> {
+  assertSameOrigin(request.headers, request.url)
+  try {
+    const limit = await checkRateLimit(`academy:${userId}`, MUTATIONS_PER_WINDOW)
+    if (!limit.allowed) throw new AcademyError('Too many changes in a short time. Wait a few minutes and try again.', 429)
+  } catch (error) {
+    if (error instanceof RateLimitUnavailableError) {
+      console.warn('[academy] rate limiter unavailable; allowing request')
+      return
+    }
+    throw error
+  }
+}
+
 export function academyErrorResponse(error: unknown): NextResponse {
   const fail = (message: string, status: number) => NextResponse.json({ success: false, error: message }, { status })
   if (error instanceof AcademyError) return fail(error.message, error.status)
+  if (error instanceof SameOriginError) return fail(error.message, 403)
+  if (error instanceof SyntaxError) return fail('The request body is not valid JSON', 400)
   if (error instanceof ZodError) {
     return fail(formatZodIssues(error), 400)
   }

@@ -39,3 +39,10 @@ test('requireAcademySession is a 404 while the flag is off', async () => {
     if (saved !== undefined) process.env.ONBOARDING_ACADEMY_ENABLED = saved
   }
 })
+
+test('a cross-origin rejection maps to 403 and bad JSON to 400', async () => {
+  const { academyErrorResponse } = await loadHttp()
+  const { SameOriginError } = await import('../lib/security/same-origin')
+  assert.equal(academyErrorResponse(new SameOriginError('Cross-origin request rejected')).status, 403)
+  assert.equal(academyErrorResponse(new SyntaxError('bad')).status, 400)
+})

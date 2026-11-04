@@ -3,6 +3,9 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
 import { sendTeamLeadFormSubmittedNotification } from '@/lib/email'
+import { isAcademyEnabled } from '@/lib/academy/flag'
+import { formatZodIssues } from '@/lib/academy/profile-input'
+import { leadInputDraftSchema, leadInputSchema, normalizeLeadInputBody, shouldApplyLeadInput } from '@/lib/academy/setup'
 
 interface RouteContext {
   params: Promise<{ newHireId: string }>
@@ -11,6 +14,18 @@ interface RouteContext {
 function canAccessTeamLeadForm(args: { role: string; userId: string; teamLeadId: string | null }) {
   if (canManageOnboarding(args.role)) return true
   return args.teamLeadId === args.userId
+}
+
+function clearedLeadInput() {
+  return {
+    roleExpectations: null,
+    day1Goal: null,
+    week1Goal: null,
+    month1Goal: null,
+    month3Goal: null,
+    tutorials: [],
+    teamTools: [],
+  }
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
@@ -45,6 +60,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         teamLead: record.teamLead,
       },
       form: record.teamLeadForm,
+      academyEnabled: isAcademyEnabled(),
     })
   } catch (error) {
     console.error('Failed to fetch team lead form:', error)
@@ -74,6 +90,20 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const body = await request.json()
     const submit = body.submit === true
 
+    let leadInputData: Record<string, unknown> = {}
+    if (shouldApplyLeadInput(isAcademyEnabled())) {
+      const incoming = normalizeLeadInputBody(body)
+      const stored = normalizeLeadInputBody(record.teamLeadForm)
+      const parsed = submit
+        ? leadInputSchema.safeParse({ ...stored, ...incoming })
+        : leadInputDraftSchema.safeParse(incoming)
+      if (!parsed.success) {
+        return NextResponse.json({ error: formatZodIssues(parsed.error) }, { status: 400 })
+      }
+      // A draft replaces what was sent; fields left blank are cleared.
+      leadInputData = submit ? parsed.data : { ...clearedLeadInput(), ...parsed.data }
+    }
+
     const updated = await prisma.teamLeadForm.update({
       where: { newHireId },
       data: {
@@ -83,6 +113,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         ...(typeof body.earlyKpis === 'string' ? { earlyKpis: body.earlyKpis.trim() || null } : {}),
         ...(typeof body.availableOnDate === 'string' ? { availableOnDate: body.availableOnDate.trim() || null } : {}),
         ...(typeof body.resources === 'string' ? { resources: body.resources.trim() || null } : {}),
+        ...leadInputData,
         ...(submit ? { submittedAt: new Date() } : {}),
       },
     })
