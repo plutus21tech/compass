@@ -91,3 +91,44 @@ test('loadSetup reports readiness', ACADEMY_DB_TEST, async () => {
   const done = await loadSetup(prisma, NEW_HIRE_ID)
   assert.deepEqual(done.readiness, { ready: true, missing: [] })
 })
+
+const rejects400 = (p: Promise<unknown>) =>
+  assert.rejects(p, (e: Error & { status?: number }) => e.name === 'AcademyError' && e.status === 400)
+
+async function assertNothingWritten() {
+  const hire = await prisma.newHire.findUniqueOrThrow({ where: { id: NEW_HIRE_ID }, include: { teamLeadForm: true, teamMembers: true } })
+  assert.equal(hire.preferredName, null)
+  assert.equal(hire.teamLeadForm, null)
+  assert.equal(hire.teamMembers.length, 0)
+}
+
+test('an ineligible new team lead is rejected, nothing written', ACADEMY_DB_TEST, async () => {
+  await prisma.user.update({ where: { id: P.lead.id }, data: { onboardingCompleted: false } })
+  await rejects400(saveSetup(prisma, NEW_HIRE_ID, setup(), P.hr.id))
+  await assertNothingWritten()
+})
+
+test('an unchanged ineligible team lead still saves', ACADEMY_DB_TEST, async () => {
+  await saveSetup(prisma, NEW_HIRE_ID, setup(), P.hr.id)
+  await prisma.user.update({ where: { id: P.lead.id }, data: { onboardingCompleted: false } })
+  const result = await saveSetup(prisma, NEW_HIRE_ID, setup({ title: 'Senior Analyst' }), P.hr.id)
+  assert.deepEqual(result, { leadRequestNeeded: false })
+})
+
+test('an ineligible new buddy is rejected', ACADEMY_DB_TEST, async () => {
+  await prisma.user.update({ where: { id: P.buddy.id }, data: { onboardingCompleted: false } })
+  await rejects400(saveSetup(prisma, NEW_HIRE_ID, setup(), P.hr.id))
+  await assertNothingWritten()
+})
+
+test('nonexistent lead, buddy and member are rejected, nothing written', ACADEMY_DB_TEST, async () => {
+  await rejects400(saveSetup(prisma, NEW_HIRE_ID, setup({ teamLeadId: 'act-nobody' }), P.hr.id))
+  await rejects400(saveSetup(prisma, NEW_HIRE_ID, setup({ buddyId: 'act-nobody' }), P.hr.id))
+  await rejects400(saveSetup(prisma, NEW_HIRE_ID, setup({ teamMemberIds: ['act-nobody'] }), P.hr.id))
+  await assertNothingWritten()
+})
+
+test('the linked hire on their own team list is rejected', ACADEMY_DB_TEST, async () => {
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { userId: P.hire.id } })
+  await rejects400(saveSetup(prisma, NEW_HIRE_ID, setup({ teamMemberIds: [P.hire.id] }), P.hr.id))
+})

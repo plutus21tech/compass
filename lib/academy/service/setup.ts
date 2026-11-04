@@ -19,9 +19,25 @@ function parseSetup(input: unknown, hireUserId: string | null): SetupInput {
   return parsed.data
 }
 
+/** Same rule as the older new-hire update: the person must exist, have finished onboarding and be active. */
+async function requireEligible(db: Db, userId: string, role: string): Promise<void> {
+  const candidate = await db.user.findUnique({
+    where: { id: userId },
+    select: { onboardingCompleted: true, payrollProfile: { select: { isPayrollActive: true } } },
+  })
+  if (!candidate) throw new AcademyError(`Invalid ${role}`, 400)
+  if (candidate.onboardingCompleted === false) {
+    throw new AcademyError(`Selected ${role} must complete onboarding first`, 400)
+  }
+  if (candidate.payrollProfile?.isPayrollActive === false) {
+    throw new AcademyError(`Selected ${role} is inactive`, 400)
+  }
+}
+
 /**
- * Validates everything first, then writes in one transaction. Attributes go to User once the hire is linked,
- * to NewHire before. Returns whether the team lead should be sent a request for their input.
+ * Reads, validates and writes in one transaction, so nothing is half-written and the lead-change check
+ * cannot race. Attributes go to User once the hire is linked, to NewHire before. Returns whether the
+ * team lead should be sent a request for their input.
  */
 export async function saveSetup(
   db: PrismaClient,
@@ -29,19 +45,23 @@ export async function saveSetup(
   input: unknown,
   _actorId: string,
 ): Promise<{ leadRequestNeeded: boolean }> {
-  const hire = await db.newHire.findUnique({
-    where: { id: newHireId },
-    select: { userId: true, teamLeadId: true, teamLeadForm: { select: { leadInputDueAt: true } } },
-  })
-  if (!hire) throw new AcademyError('New hire not found', 404)
-  const data = parseSetup(input, hire.userId)
-  await requireUsers(db, [data.teamLeadId], 'Invalid team lead')
-  await requireUsers(db, [data.buddyId], 'Invalid buddy')
-  await requireUsers(db, data.teamMemberIds, 'Invalid team member')
+  return db.$transaction(async (tx) => {
+    const hire = await tx.newHire.findUnique({
+      where: { id: newHireId },
+      select: { userId: true, teamLeadId: true, buddyId: true, teamLeadForm: { select: { leadInputDueAt: true } } },
+    })
+    if (!hire) throw new AcademyError('New hire not found', 404)
+    const data = parseSetup(input, hire.userId)
 
-  const dueAt = leadInputDueAt(data.onboardingDate)
-  const { attributes, teamMemberIds, ...columns } = data
-  await db.$transaction(async (tx) => {
+    // Eligibility applies only to a person newly chosen, so an already-saved choice never blocks a save.
+    if (data.teamLeadId !== hire.teamLeadId) await requireEligible(tx, data.teamLeadId, 'team lead')
+    if (data.buddyId !== hire.buddyId) await requireEligible(tx, data.buddyId, 'buddy')
+    await requireUsers(tx, [data.teamLeadId], 'Invalid team lead')
+    await requireUsers(tx, [data.buddyId], 'Invalid buddy')
+    await requireUsers(tx, data.teamMemberIds, 'Invalid team member')
+
+    const dueAt = leadInputDueAt(data.onboardingDate)
+    const { attributes, teamMemberIds, ...columns } = data
     await tx.newHire.update({
       where: { id: newHireId },
       data: { ...columns, ...(hire.userId ? {} : attributes) },
@@ -54,9 +74,9 @@ export async function saveSetup(
       create: { newHireId, leadInputDueAt: dueAt },
       update: { leadInputDueAt: dueAt },
     })
+    const firstSave = !hire.teamLeadForm?.leadInputDueAt
+    return { leadRequestNeeded: firstSave || hire.teamLeadId !== data.teamLeadId }
   })
-  const firstSave = !hire.teamLeadForm?.leadInputDueAt
-  return { leadRequestNeeded: firstSave || hire.teamLeadId !== data.teamLeadId }
 }
 
 export async function loadSetup(db: PrismaClient, newHireId: string) {

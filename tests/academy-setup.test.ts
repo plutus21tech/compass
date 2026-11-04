@@ -98,3 +98,24 @@ test('setup access and lead-input gates', () => {
   assert.equal(shouldApplyLeadInput(true), true)
   assert.equal(shouldApplyLeadInput(false), false)
 })
+
+import { buildLeadDraftData } from '../lib/academy/setup'
+
+test('setupSchema rejects the hire on their own team list', () => {
+  assert.equal(setupSchema.safeParse({ ...validSetup, teamMemberIds: ['m1', 'hire'], hireUserId: 'hire' }).success, false)
+})
+
+test('lead draft: absent key preserved, blank key cleared, flag off gives nothing', () => {
+  const r = buildLeadDraftData(true, { week1Goal: 'Shadow', month1Goal: '  ', tutorials: [] })
+  assert.ok(r.ok)
+  if (r.ok) {
+    assert.equal(r.data.week1Goal, 'Shadow')
+    assert.equal(r.data.month1Goal, null)
+    assert.deepEqual(r.data.tutorials, [])
+    assert.equal('roleExpectations' in r.data, false)
+    assert.equal('month3Goal' in r.data, false)
+    assert.equal('teamTools' in r.data, false)
+  }
+  assert.deepEqual(buildLeadDraftData(false, { week1Goal: 'x' }), { ok: true, data: {} })
+  assert.equal(buildLeadDraftData(true, { tutorials: [{ title: 'x', url: 'http://a.test' }] }).ok, false)
+})

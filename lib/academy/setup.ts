@@ -43,6 +43,9 @@ export const setupSchema = z
     if (v.coreHoursStart >= v.coreHoursEnd) {
       ctx.addIssue({ code: 'custom', path: ['coreHoursEnd'], message: 'Core hours must end after they start' })
     }
+    if (v.hireUserId && v.teamMemberIds.includes(v.hireUserId)) {
+      ctx.addIssue({ code: 'custom', path: ['teamMemberIds'], message: 'The new hire cannot be on their own team list' })
+    }
     if (v.hireUserId && v.buddyId === v.hireUserId) {
       ctx.addIssue({ code: 'custom', path: ['buddyId'], message: 'The buddy cannot be the new hire' })
     }
@@ -71,7 +74,11 @@ export const leadInputSchema = z.object({
 export type LeadInput = z.output<typeof leadInputSchema>
 
 /** Drafts may be partial; a submit must pass the whole schema. */
-export const leadInputDraftSchema = leadInputSchema.partial()
+export const leadInputDraftSchema = leadInputSchema.partial().extend({
+  // No default: an absent list must stay absent, not become an empty one.
+  tutorials: leadInputSchema.shape.tutorials.unwrap().optional(),
+  teamTools: leadInputSchema.shape.teamTools.unwrap().optional(),
+})
 
 function stripBlank(row: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(row).filter(([, v]) => !(typeof v === 'string' && v.trim() === '')))
@@ -93,6 +100,31 @@ export function normalizeLeadInputBody(body: unknown): Record<string, unknown> {
       .filter((row) => !(typeof row === 'object' && row !== null && Object.keys(row).length === 0))
   }
   return out
+}
+
+const TEXT_KEYS = ['roleExpectations', 'day1Goal', 'week1Goal', 'month1Goal', 'month3Goal'] as const
+const LIST_KEYS = ['tutorials', 'teamTools'] as const
+
+/**
+ * What a draft save writes. Flag off: nothing. A key absent from the request is left alone;
+ * a text key sent blank is cleared. Returns an error message when the sent values are invalid.
+ */
+export function buildLeadDraftData(
+  enabled: boolean,
+  body: unknown,
+): { ok: true; data: Record<string, unknown> } | { ok: false; error: string } {
+  if (!shouldApplyLeadInput(enabled)) return { ok: true, data: {} }
+  const source = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+  const parsed = leadInputDraftSchema.safeParse(normalizeLeadInputBody(source))
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message)).join('; ') }
+  }
+  const cleared: Record<string, unknown> = {}
+  for (const key of TEXT_KEYS) {
+    if (typeof source[key] === 'string' && source[key].trim() === '') cleared[key] = null
+  }
+  for (const key of LIST_KEYS) if (key in source && !Array.isArray(source[key])) cleared[key] = []
+  return { ok: true, data: { ...cleared, ...parsed.data } }
 }
 
 /** The team lead should fill in their input a week before the hire joins. */
