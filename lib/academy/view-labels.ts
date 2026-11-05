@@ -1,7 +1,7 @@
 // Pure wording and mapping for the module page. No server-only imports: safe for client components.
 import type { KeyContactGroup, OnboardingPaymentMethod, TransportMode } from '@prisma/client'
 import { applyEvent, type ProgressEvent, type ProgressState } from './progress'
-import type { CommuteRow, HomeView, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView, ReleasedHomeView } from './view'
+import type { CommuteRow, HomeQuizView, HomeView, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView, ReleasedHomeView } from './view'
 
 const SAVING_REASON = 'Saving your progress...'
 const DATE_LOCALE = 'en-GB'
@@ -102,6 +102,54 @@ export function moduleCardCopy(card: ModuleCardView, timeZone: string | null = n
     label: moduleStatusLabel(card, timeZone),
     chip: card.overdue && card.status !== 'COMPLETED' ? OVERDUE_CHIP : null,
   }
+}
+
+const QUIZ_HREF = '/onboarding/quiz'
+export const QUIZ_UNAVAILABLE_MESSAGE = "The quiz isn't available right now. Please contact HR."
+
+function quizCardLabel(quiz: HomeQuizView, timeZone: string | null): string {
+  switch (quiz.status) {
+    case 'LOCKED':
+      return 'Finish all 14 modules first'
+    case 'READY':
+      return quiz.failedCount > 0 ? 'Retake' : 'Start'
+    case 'UNAVAILABLE':
+      return QUIZ_UNAVAILABLE_MESSAGE
+    case 'COOLDOWN':
+      return quiz.retakeAt ? `Retake after ${callTimeLabel(quiz.retakeAt, timeZone)}` : 'Retake'
+    case 'PASSED_UNSIGNED':
+      return 'Sign your acknowledgement'
+    case 'DONE':
+      return 'Completed'
+  }
+}
+
+/** DONE keeps its link: a hire who hasn't finished signs again there, and a finished one is sent on. */
+export function quizCardCopy(
+  quiz: HomeQuizView, timeZone: string | null = null,
+): { label: string; chip: string | null; href: string | null } {
+  const closed = quiz.status === 'LOCKED' || quiz.status === 'UNAVAILABLE'
+  return {
+    label: quizCardLabel(quiz, timeZone),
+    chip: quiz.overdue && quiz.status !== 'DONE' ? OVERDUE_CHIP : null,
+    href: closed ? null : QUIZ_HREF,
+  }
+}
+
+const pad2 = (value: number) => String(value).padStart(2, '0')
+
+/** "14:32", or "1:01:05" past the hour. Rounds up, so it reads 0:00 only when the wait is over. */
+export function countdownLabel(remainingMs: number): string {
+  const total = Math.max(0, Math.ceil(remainingMs / 1000))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const seconds = total % 60
+  return hours > 0 ? `${hours}:${pad2(minutes)}:${pad2(seconds)}` : `${minutes}:${pad2(seconds)}`
+}
+
+/** Rounds up as the grader does: a score passes when score / total reaches the percentage. */
+export function passMarkLabel({ total, passPercent }: { total: number; passPercent: number }): string {
+  return `Pass mark: ${Math.ceil((passPercent * total) / 100)} out of ${total} (${passPercent}%)`
 }
 
 export function completionToast(number: number, nextTitle: string | null): string {

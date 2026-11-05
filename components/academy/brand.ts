@@ -27,6 +27,12 @@ export const VALUE_COLOURS = {
   speed: '#FF914D',
 } as const
 
+/** A question with no value, or one HR typed differently, gets a neutral strip. */
+export function valueStripColour(valueKey: string | null): string {
+  const known = valueKey !== null && Object.prototype.hasOwnProperty.call(VALUE_COLOURS, valueKey)
+  return known ? VALUE_COLOURS[valueKey as keyof typeof VALUE_COLOURS] : ACADEMY_COLOURS.line
+}
+
 /**
  * Points the shared components/ui parts at the Academy palette, whatever theme the app is in: the
  * course is always on Paper. Portalled parts such as a dropdown need this on their own root too.

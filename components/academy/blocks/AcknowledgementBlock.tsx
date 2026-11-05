@@ -19,10 +19,9 @@ type AcknowledgementBlockType = Extract<Block, { type: 'acknowledgement' }>
 interface Signature { typedName: string; signedAt: string }
 
 interface SignFormProps {
-  kind: AcknowledgementBlockType['kind']
-  moduleSlug: string
   timeZone: string | null
-  onSigned: (signature: Signature) => void
+  /** Throws to show the server's message in the form. */
+  onSign: (typedName: string) => Promise<void>
 }
 
 function Signed({ name, date }: { name: string; date: string }) {
@@ -36,7 +35,7 @@ function Signed({ name, date }: { name: string; date: string }) {
   )
 }
 
-function SignForm({ kind, moduleSlug, timeZone, onSigned }: SignFormProps) {
+export function SignForm({ timeZone, onSign }: SignFormProps) {
   const { saving, error, run } = useFieldSave()
   const [agreed, setAgreed] = useState(false)
   const [typedName, setTypedName] = useState('')
@@ -44,10 +43,7 @@ function SignForm({ kind, moduleSlug, timeZone, onSigned }: SignFormProps) {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    await run(async () => {
-      const { signedAt } = await academyRequest<{ signedAt: string }>(ACK_URL, 'POST', { kind, typedName, moduleSlug })
-      onSigned({ typedName, signedAt })
-    })
+    await run(() => onSign(typedName))
   }
 
   return (
@@ -57,7 +53,7 @@ function SignForm({ kind, moduleSlug, timeZone, onSigned }: SignFormProps) {
           id="ack-agree"
           checked={agreed}
           onCheckedChange={(checked) => setAgreed(checked === true)}
-          className="mt-0.5 size-5 rounded-md border-white data-[state=checked]:bg-white data-[state=checked]:text-academy-navy focus-visible:ring-2 focus-visible:ring-white"
+          className="mt-0.5 size-5 min-h-5 min-w-5 rounded-md border-white data-[state=checked]:bg-white data-[state=checked]:text-academy-navy focus-visible:ring-2 focus-visible:ring-white"
         />
         <span className="leading-6">I agree to this statement</span>
       </label>
@@ -105,8 +101,10 @@ export function AcknowledgementBlock({ block, context }: AcknowledgementBlockPro
   const [signedNow, setSignedNow] = useState<Signature | null>(null)
   const signed = view.securityAcknowledgement ?? signedNow
 
-  const handleSigned = (signature: Signature) => {
-    setSignedNow(signature)
+  const sign = async (typedName: string) => {
+    const body = { kind: block.kind, typedName, moduleSlug: view.slug }
+    const { signedAt } = await academyRequest<{ signedAt: string }>(ACK_URL, 'POST', body)
+    setSignedNow({ typedName, signedAt })
     onSaved()
   }
 
@@ -114,9 +112,7 @@ export function AcknowledgementBlock({ block, context }: AcknowledgementBlockPro
     <section className="space-y-4 rounded-2xl bg-academy-navy p-5 text-white sm:p-6">
       <h2 className="text-lg font-semibold">{block.statement}</h2>
       {signed ? <Signed name={signed.typedName} date={formatAcademyDate(signed.signedAt, timeZone)} /> : null}
-      {!signed && !readOnly ? (
-        <SignForm kind={block.kind} moduleSlug={view.slug} timeZone={timeZone} onSigned={handleSigned} />
-      ) : null}
+      {!signed && !readOnly ? <SignForm timeZone={timeZone} onSign={sign} /> : null}
     </section>
   )
 }

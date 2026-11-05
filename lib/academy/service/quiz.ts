@@ -14,7 +14,7 @@ import {
 } from '../quiz'
 import { timeZoneFor } from '../time'
 import type { QuizResultView, QuizView } from '../view'
-import { callTimeLabel } from '../view-labels'
+import { QUIZ_UNAVAILABLE_MESSAGE, callTimeLabel } from '../view-labels'
 import { buildAcademyContext, loadHireFacts } from './context'
 import { getAcademyConfig } from './library'
 import { COURSE_TX_OPTIONS, readCourseProgress } from './progress'
@@ -167,7 +167,7 @@ function assertCanSubmit(state: QuizState, timeZone: string | null): void {
   if (state.status === 'LOCKED') throw new AcademyError('Finish all 14 modules first.', 403)
   if (state.status === 'UNAVAILABLE') {
     console.error('[academy] quiz refused: too few usable questions', { count: state.questions.length })
-    throw new AcademyError("The quiz isn't available right now. Please contact HR.", 409)
+    throw new AcademyError(QUIZ_UNAVAILABLE_MESSAGE, 409)
   }
   if (state.status === 'COOLDOWN') {
     const time = callTimeLabel(state.retakeAt?.toISOString() ?? null, timeZone)

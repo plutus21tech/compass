@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { ACADEMY_THEME_VARS } from './brand'
 import { academySans, academySerif } from './fonts'
 
-function Shell({ children }: { children: React.ReactNode }) {
+export function AcademyPanel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={ACADEMY_THEME_VARS}
@@ -18,20 +18,20 @@ function Shell({ children }: { children: React.ReactNode }) {
 /** A new hire whose course has not been released yet. */
 export function WaitingPanel() {
   return (
-    <Shell>
+    <AcademyPanel>
       <span aria-hidden className="mx-auto flex size-12 items-center justify-center rounded-full bg-academy-blue-tint text-academy-blue-dark">
         <Hourglass className="size-6" />
       </span>
       <h1 className="mt-5 text-2xl font-extrabold tracking-tight">Your course isn&apos;t ready yet</h1>
       <p className="mt-3 text-academy-slate">We&apos;re getting everything set up for you. Check back soon.</p>
-    </Shell>
+    </AcademyPanel>
   )
 }
 
 /** An existing employee who reached the onboarding page: there is nothing here for them. */
 export function NothingToDoPanel() {
   return (
-    <Shell>
+    <AcademyPanel>
       <span aria-hidden className="mx-auto flex size-12 items-center justify-center rounded-full bg-academy-blue-tint text-academy-blue-dark">
         <CheckCircle2 className="size-6" />
       </span>
@@ -43,6 +43,6 @@ export function NothingToDoPanel() {
       >
         Go to your dashboard
       </Link>
-    </Shell>
+    </AcademyPanel>
   )
 }

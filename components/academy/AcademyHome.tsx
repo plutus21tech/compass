@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { ArrowRight, Clock, PartyPopper } from 'lucide-react'
-import type { HomeView, ModuleCardView, ReleasedHomeView } from '@/lib/academy/view'
-import { formatAcademyDate, homeNextStep, homePanel } from '@/lib/academy/view-labels'
+import type { QuizStatus } from '@/lib/academy/quiz'
+import type { HomeQuizView, HomeView, ModuleCardView, ReleasedHomeView } from '@/lib/academy/view'
+import { formatAcademyDate, homeNextStep, homePanel, quizCardCopy } from '@/lib/academy/view-labels'
 import { cn } from '@/lib/utils'
 import { ACADEMY_THEME_VARS } from './brand'
 import { academySans, academySerif } from './fonts'
@@ -9,10 +10,10 @@ import { BuddyCard, CallsCard } from './HomeSideCards'
 import { NothingToDoPanel, WaitingPanel } from './HomeStates'
 import { ModuleCard } from './ModuleCard'
 import { ProgressRing } from './ProgressRing'
+import { QuizCard } from './QuizCard'
 
 const PHASE_HEADINGS = { DAY_1: 'Day 1', WEEK_1: 'Week 1' } as const
 const QUIZ_HEADING = 'Final Step: Culture Quiz'
-const QUIZ_PLACEHOLDER = 'Your culture quiz will appear here.'
 
 interface AcademyHomeProps {
   view: HomeView
@@ -81,7 +82,10 @@ function NextUp({ card }: { card: ModuleCardView }) {
   )
 }
 
-function AllDone({ total }: { total: number }) {
+const OPEN_QUIZ_STATES: readonly QuizStatus[] = ['READY', 'COOLDOWN', 'PASSED_UNSIGNED']
+
+function AllDone({ total, quiz, timeZone }: { total: number; quiz: HomeQuizView; timeZone: string | null }) {
+  const { label, href } = quizCardCopy(quiz, timeZone)
   return (
     <section aria-labelledby="home-done" className="flex flex-col justify-center rounded-2xl border border-academy-blue bg-academy-blue-tint p-6 sm:p-8">
       <span aria-hidden className="flex size-12 items-center justify-center rounded-full bg-white text-academy-blue">
@@ -90,6 +94,16 @@ function AllDone({ total }: { total: number }) {
       <h2 id="home-done" className="mt-4 text-balance text-2xl font-extrabold leading-tight tracking-tight">
         All {total} modules done. Your culture quiz is next.
       </h2>
+      {href && OPEN_QUIZ_STATES.includes(quiz.status) ? (
+        <Link
+          href={href}
+          prefetch={false}
+          className="mt-6 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-xl bg-academy-blue px-8 py-3 text-lg font-semibold text-white transition-colors hover:bg-academy-blue-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-academy-blue sm:w-fit"
+        >
+          {label}
+          <ArrowRight aria-hidden className="size-5" />
+        </Link>
+      ) : null}
     </section>
   )
 }
@@ -119,7 +133,7 @@ function Released({ view }: { view: ReleasedHomeView }) {
       <Hero view={view} timeZone={timeZone} />
       <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:py-10">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          {step === 'all-done' ? <AllDone total={view.total} /> : null}
+          {step === 'all-done' ? <AllDone total={view.total} quiz={view.quiz} timeZone={timeZone} /> : null}
           {step === 'next' && view.nextModule ? <NextUp card={view.nextModule} /> : null}
           {step === 'waiting-next' ? <WaitingNext /> : null}
           <div className="space-y-5">
@@ -137,7 +151,7 @@ function Released({ view }: { view: ReleasedHomeView }) {
           </PhaseGroup>
         ))}
         <PhaseGroup heading={QUIZ_HEADING}>
-          <div className="rounded-2xl border border-dashed border-academy-line bg-white p-6 text-academy-slate">{QUIZ_PLACEHOLDER}</div>
+          <QuizCard quiz={view.quiz} timeZone={timeZone} />
         </PhaseGroup>
       </div>
     </>

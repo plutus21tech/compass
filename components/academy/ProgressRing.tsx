@@ -37,7 +37,7 @@ export function ProgressRing({ done, total }: ProgressRingProps) {
         />
       </svg>
       <div aria-hidden className="absolute inset-0 flex flex-col items-center justify-center text-white">
-        <span className="text-[1.75rem] font-extrabold leading-none tabular-nums">
+        <span className="text-[1.375rem] font-extrabold leading-none tabular-nums">
           {done} of {total}
         </span>
         <span className="mt-1 text-[13px] font-medium">modules</span>
