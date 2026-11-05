@@ -40,6 +40,16 @@ export const academyLinkSchema: z.ZodType<AcademyLink> = z.discriminatedUnion('k
   z.object({ kind: z.literal('url'), url: httpsUrlSchema }),
 ])
 
+/** A card link may also point at a settings link by key, so HR changes it once under Links & settings. */
+export type ConfigLinkRef = { kind: 'config'; key: AcademyLinkKey }
+export type CardLinkTarget = AcademyLink | ConfigLinkRef
+
+export const cardLinkSchema: z.ZodType<CardLinkTarget> = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('handbook'), slug: z.string().max(120).regex(SLUG, 'slug may only use a-z, 0-9 and -') }),
+  z.object({ kind: z.literal('url'), url: httpsUrlSchema }),
+  z.object({ kind: z.literal('config'), key: z.enum(ACADEMY_LINK_KEYS) }),
+])
+
 /** Stored JSON could be anything: re-validate before turning a link into an href. */
 export function resolveAcademyLink(link: AcademyLink | null | undefined): string | null {
   const parsed = academyLinkSchema.safeParse(link)
@@ -47,6 +57,18 @@ export function resolveAcademyLink(link: AcademyLink | null | undefined): string
   const value = parsed.data
   if (value.kind === 'handbook') return value.slug ? `/handbook/${value.slug}` : '/handbook'
   return value.url
+}
+
+/** Resolves a card link, looking a config reference up in the settings links; null when unset or invalid. */
+export function resolveCardLink(
+  link: CardLinkTarget | null | undefined,
+  configLinks: Partial<Record<AcademyLinkKey, AcademyLink>>,
+): string | null {
+  const parsed = cardLinkSchema.safeParse(link)
+  if (!parsed.success) return null
+  const value = parsed.data
+  if (value.kind !== 'config') return resolveAcademyLink(value)
+  return resolveAcademyLink(configLinks[value.key])
 }
 
 /** Keeps only known keys with valid links; reports each dropped key. Never throws. */
@@ -78,7 +100,7 @@ export const libraryCardSchema = z
     title: z.string().trim().min(1).max(120),
     icon: z.string().regex(/^[A-Z][A-Za-z0-9]+$/, 'use a Lucide icon name such as HeartPulse'),
     body: z.string().trim().min(1).max(5000),
-    links: z.array(z.object({ label: z.string().trim().min(1).max(80), link: academyLinkSchema })).max(5),
+    links: z.array(z.object({ label: z.string().trim().min(1).max(80), link: cardLinkSchema })).max(5),
   })
   .extend(eligibilityRulesSchema.shape)
 

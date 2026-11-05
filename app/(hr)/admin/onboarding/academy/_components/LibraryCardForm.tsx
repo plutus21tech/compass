@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { libraryCardSchema, type AcademyLink } from '@/lib/academy/links'
+import { libraryCardSchema, type CardLinkTarget } from '@/lib/academy/links'
 import { academyFetch, type HandbookOption } from './academy-api'
 import { EligibilityEditor, type EligibilityValue } from './EligibilityEditor'
 import { ErrorNotice } from './ErrorNotice'
@@ -14,7 +14,7 @@ import { LinkPicker } from './LinkPicker'
 
 export interface CardLink {
   label: string
-  link: AcademyLink
+  link: CardLinkTarget
 }
 
 export interface LibraryCardRow extends EligibilityValue {
@@ -98,7 +98,11 @@ export function LibraryCardForm({ kind, card, handbook, onSaved, onCancel }: Lib
         {links.map((item, index) => (
           <div key={index} className="grid gap-2 md:grid-cols-[1fr_2fr_auto]">
             <Input aria-label="Link label" placeholder="Label" value={item.label} onChange={(e) => setLink(index, { label: e.target.value })} />
-            <LinkPicker id={`card-link-${index}`} value={item.link} handbook={handbook} onChange={(next) => next && setLink(index, { link: next })} />
+            {item.link.kind === 'config' ? (
+              <p className="flex h-10 items-center text-sm text-muted-foreground">From Links &amp; settings: {item.link.key}</p>
+            ) : (
+              <LinkPicker id={`card-link-${index}`} value={item.link} handbook={handbook} onChange={(next) => next && setLink(index, { link: next })} />
+            )}
             <Button type="button" variant="ghost" size="sm" aria-label="Remove link" onClick={() => setLinks(links.filter((_, i) => i !== index))}>
               <Trash2 className="h-4 w-4" />
             </Button>

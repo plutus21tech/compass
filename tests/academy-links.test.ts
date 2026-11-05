@@ -6,6 +6,7 @@ import {
   academyLinkSchema,
   libraryCardSchema,
   resolveAcademyLink,
+  resolveCardLink,
   sanitizeStoredLinks,
 } from '../lib/academy/links'
 import { withAcademyNav } from '../components/layout/sidebar-nav'
@@ -86,6 +87,25 @@ test('libraryCardSchema validates cards', () => {
   assert.equal(libraryCardSchema.safeParse({ ...ok, title: '' }).success, false)
   const six = Array.from({ length: 6 }, () => ({ label: 'a', link: { kind: 'handbook', slug: '' } }))
   assert.equal(libraryCardSchema.safeParse({ ...ok, links: six }).success, false)
+})
+
+test('resolveCardLink resolves config links through the settings links', () => {
+  assert.equal(resolveCardLink({ kind: 'config', key: 'HEALTH_CLAIM_KIT' }, {}), null)
+  assert.equal(
+    resolveCardLink({ kind: 'config', key: 'TRAVEL_POLICY' }, { TRAVEL_POLICY: { kind: 'handbook', slug: 'travel-policy' } }),
+    '/handbook/travel-policy',
+  )
+  assert.equal(resolveCardLink({ kind: 'url', url: 'https://example.test/a' }, {}), 'https://example.test/a')
+  assert.equal(resolveCardLink({ kind: 'config', key: 'NOPE' } as never, {}), null)
+})
+
+test('config links are card-only: academyLinkSchema rejects them, libraryCardSchema accepts them', () => {
+  const config = { kind: 'config', key: 'HEALTH_CLAIM_KIT' }
+  assert.equal(academyLinkSchema.safeParse(config).success, false)
+  assert.equal(academyConfigInputSchema.safeParse({ links: { TRAVEL_POLICY: config } }).success, false)
+  const card = { kind: 'BENEFIT', title: 'T', icon: 'Gift', body: 'b', links: [{ label: 'Kit', link: config }], countries: [], workModes: [], contractTypes: [], employmentStatuses: [] }
+  assert.ok(libraryCardSchema.safeParse(card).success)
+  assert.equal(libraryCardSchema.safeParse({ ...card, links: [{ label: 'x', link: { kind: 'config', key: 'NOPE' } }] }).success, false)
 })
 
 const icon = (() => null) as never

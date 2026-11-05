@@ -4,9 +4,11 @@
 // hire-facing course exists (stage 2 or later), and not before.
 // CLI: ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
 import { Prisma, PrismaClient } from '@prisma/client'
+import { parseBlocks } from '../lib/academy/blocks'
 import { isAcademyEnabled } from '../lib/academy/flag'
 import { academyLinkSchema, libraryCardSchema } from '../lib/academy/links'
 import { ACADEMY_CARDS, ACADEMY_CHECKLIST, ACADEMY_DEFAULT_LINKS, ACADEMY_MODULES } from './seed-academy-data'
+import { ACADEMY_MODULE_BLOCKS } from './seed-academy-content'
 
 export interface SeedAcademyResult {
   modulesCreated: number
@@ -64,12 +66,14 @@ async function ensureModules(db: Tx): Promise<number> {
       ? await db.onboardingModule.update({ where: { id: found.id }, data: { ...fields } })
       : await db.onboardingModule.create({ data: { slug, ...fields, isActive: true } })
     if (!found) created += 1
+    const content = parseBlocks(ACADEMY_MODULE_BLOCKS[slug] ?? []) as unknown as Prisma.InputJsonValue
+    // Fill version 1 only while it is empty: once HR has edited it, a re-run never touches it.
+    const v1 = await db.onboardingModuleVersion.findUnique({ where: { moduleId_version: { moduleId: mod.id, version: 1 } } })
+    if (v1 && Array.isArray(v1.blocks) && v1.blocks.length === 0) {
+      await db.onboardingModuleVersion.update({ where: { id: v1.id }, data: { blocks: content } })
+    }
     if (!mod.currentVersionId) {
-      const version = await db.onboardingModuleVersion.upsert({
-        where: { moduleId_version: { moduleId: mod.id, version: 1 } },
-        create: { moduleId: mod.id, version: 1, blocks: [] },
-        update: {},
-      })
+      const version = v1 ?? (await db.onboardingModuleVersion.create({ data: { moduleId: mod.id, version: 1, blocks: content } }))
       await db.onboardingModule.update({ where: { id: mod.id }, data: { currentVersionId: version.id } })
     }
   }

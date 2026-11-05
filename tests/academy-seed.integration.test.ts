@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { completeTestUsers } from '../scripts/academy-cutover-complete-test-users'
 import { ACADEMY_MODULES, ACADEMY_CARDS, ACADEMY_CHECKLIST } from '../prisma/seed-academy-data'
+import { ACADEMY_MODULE_BLOCKS } from '../prisma/seed-academy-content'
 import { seedAcademy, seedRefusal } from '../prisma/seed-academy'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
@@ -45,7 +46,7 @@ test('first run creates 14 modules and retires the old one', ACADEMY_DB_TEST, as
     assert.equal(m.isActive, true)
     assert.equal(m.versions.length, 1)
     assert.equal(m.currentVersionId, m.versions[0].id)
-    assert.deepEqual(m.versions[0].blocks, [])
+    assert.deepEqual(m.versions[0].blocks, ACADEMY_MODULE_BLOCKS[m.slug])
   }
   assert.equal(mods.find((m) => m.slug === 'welcome')?.orderIndex, 1)
   const old = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: OLD_SLUG } })
@@ -139,6 +140,41 @@ test('second run is idempotent and keeps HR edits', ACADEMY_DB_TEST, async () =>
   const after2 = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'welcome' }, include: { versions: true } })
   assert.equal(after2.currentVersionId, v2.id)
   assert.equal(after2.versions.length, 2)
+})
+
+test('a second run leaves blocks unchanged and never overwrites HR edits to version 1', ACADEMY_DB_TEST, async () => {
+  await seedAcademy(prisma)
+  const snapshot = async () =>
+    (await prisma.onboardingModuleVersion.findMany({ where: { module: { slug: { in: slugs } } }, include: { module: true } }))
+      .map((v) => [v.module.slug, JSON.stringify(v.blocks)] as const)
+      .sort(([a], [b]) => a.localeCompare(b))
+  const before = await snapshot()
+  const edited = [{ type: 'richText', markdown: 'ACT HR edit' }]
+  const discord = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'discord' } })
+  await prisma.onboardingModuleVersion.update({
+    where: { moduleId_version: { moduleId: discord.id, version: 1 } },
+    data: { blocks: edited },
+  })
+  await seedAcademy(prisma)
+  const after2 = await snapshot()
+  assert.deepEqual(after2.filter(([s]) => s !== 'discord'), before.filter(([s]) => s !== 'discord'))
+  assert.equal(after2.find(([s]) => s === 'discord')?.[1], JSON.stringify(edited))
+})
+
+test('a stored empty version 1 gets filled', ACADEMY_DB_TEST, async () => {
+  await seedAcademy(prisma)
+  const mod = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'welcome' } })
+  await prisma.onboardingModuleVersion.update({ where: { moduleId_version: { moduleId: mod.id, version: 1 } }, data: { blocks: [] } })
+  await seedAcademy(prisma)
+  const v1 = await prisma.onboardingModuleVersion.findUniqueOrThrow({ where: { moduleId_version: { moduleId: mod.id, version: 1 } } })
+  assert.deepEqual(v1.blocks, ACADEMY_MODULE_BLOCKS.welcome)
+})
+
+test('the health and travel cards link through the settings links', () => {
+  const keys = (title: string) =>
+    ACADEMY_CARDS.find((c) => c.title === title && c.links.length > 0)?.links.map((l) => (l.link.kind === 'config' ? l.link.key : null))
+  assert.deepEqual(keys('Health insurance'), ['HEALTH_INSURANCE_PRESENTATION', 'HEALTH_CLAIM_KIT'])
+  assert.deepEqual(keys('Work travel'), ['TRAVEL_POLICY'])
 })
 
 test('config links fill only empty keys and other config is untouched', ACADEMY_DB_TEST, async () => {

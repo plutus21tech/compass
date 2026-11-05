@@ -55,8 +55,12 @@ export const ACADEMY_CARDS: readonly LibraryCardInput[] = [
   card('BENEFIT', 'Laptop, phone and phone line', 'Laptop', 'Permanent employees receive a laptop, a phone and a phone line.', { employmentStatuses: ['PERMANENT'] }),
   card(
     'BENEFIT', 'Health insurance', 'HeartPulse',
-    'We care about your well-being. Your cover includes you and your spouse, with maternity included. Before you make a claim, read the Health Insurance Onboarding Presentation and use the Claim Kit, which has the Medical Claim Form and a checklist of required documents. ',
+    'We care about your well-being. Your cover includes you and your spouse, with maternity included. Before you make a claim, read the Health Insurance Onboarding Presentation and use the Claim Kit, which has the Medical Claim Form and a checklist of required documents.',
     { countries: ['PK'] },
+    [
+      { label: 'Health Insurance Onboarding Presentation', link: { kind: 'config', key: 'HEALTH_INSURANCE_PRESENTATION' } },
+      { label: 'Claim Kit', link: { kind: 'config', key: 'HEALTH_CLAIM_KIT' } },
+    ],
   ),
   card(
     'BENEFIT', 'Health insurance stipend MAD 909', 'HeartPulse',
@@ -81,7 +85,7 @@ export const ACADEMY_CARDS: readonly LibraryCardInput[] = [
   card(
     'REIMBURSEMENT', 'Work travel', 'Plane',
     'Reasonable and necessary costs for approved work travel are reimbursed under the Travel Policy.',
-    {}, [{ label: 'Travel Policy', link: { kind: 'handbook', slug: 'travel-policy' } }],
+    {}, [{ label: 'Travel Policy', link: { kind: 'config', key: 'TRAVEL_POLICY' } }],
   ),
 ]
 
