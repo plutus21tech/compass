@@ -61,6 +61,24 @@ export function moduleStatusLabel(card: ModuleCardView, timeZone: string | null)
   }
 }
 
+const TO_BE_CONFIRMED = 'Time to be confirmed'
+
+/** A call time in the hire's own zone. With no known zone the time is in UTC, and it says so. */
+export function callTimeLabel(iso: string | null, timeZone: string | null): string {
+  if (!iso) return TO_BE_CONFIRMED
+  return `${formatAcademyDateTime(iso, timeZone)}${timeZone ? '' : ' UTC'}`
+}
+
+const OVERDUE_CHIP = 'Overdue'
+
+/** The Home card's status words, and a red chip for any unfinished card that is late. */
+export function moduleCardCopy(card: ModuleCardView, timeZone: string | null = null): { label: string; chip: string | null } {
+  return {
+    label: moduleStatusLabel(card, timeZone),
+    chip: card.overdue && card.status !== 'COMPLETED' ? OVERDUE_CHIP : null,
+  }
+}
+
 export function completionToast(number: number, nextTitle: string | null): string {
   const done = `Nice, Module ${number} done`
   // "How We Work: Tools and Rhythm" reads better in a toast as "How We Work".

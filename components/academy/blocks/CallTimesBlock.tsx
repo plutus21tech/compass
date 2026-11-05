@@ -1,8 +1,6 @@
 import type { ModuleView } from '@/lib/academy/view'
-import { formatAcademyDateTime } from '@/lib/academy/view-labels'
+import { callTimeLabel } from '@/lib/academy/view-labels'
 import { BlockHeading } from './BlockHeading'
-
-const TO_BE_CONFIRMED = 'Time to be confirmed'
 
 interface CallTimesBlockProps {
   view: ModuleView
@@ -10,8 +8,7 @@ interface CallTimesBlockProps {
 
 export function CallTimesBlock({ view }: CallTimesBlockProps) {
   const { hrCallAt, teamCallAt, blockersCall, timeZone } = view.callTimes
-  // With no known time zone the time is in UTC, and it should say so.
-  const when = (iso: string | null) => (iso ? `${formatAcademyDateTime(iso, timeZone)}${timeZone ? '' : ' UTC'}` : TO_BE_CONFIRMED)
+  const when = (iso: string | null) => callTimeLabel(iso, timeZone)
   const rows = [
     { label: 'Your HR call', value: when(hrCallAt) },
     { label: 'Your team call', value: when(teamCallAt) },
