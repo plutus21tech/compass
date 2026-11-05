@@ -51,6 +51,12 @@ export function withSecurityChecksNav(config: SidebarConfig, access: SecurityChe
   return withItemAfter(config, entry, '/my-tasks')
 }
 
+/** The Company Dashboard link for a hire in onboarding. Module 14 sends them there, and it is all they can read. */
+export function withLockedHandbookNav(config: SidebarConfig, enabled: boolean, icon: NavItem['icon']): SidebarConfig {
+  if (!enabled) return config
+  return withItemAfter(config, { label: 'Company Dashboard', href: '/handbook', icon }, '/onboarding')
+}
+
 export interface AcademyNavIcons {
   library: NavItem['icon']
   contacts: NavItem['icon']

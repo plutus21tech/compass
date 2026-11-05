@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { BookOpen, CalendarCheck, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
-import { withAcademyNav, withGroupItem, withItemPatched, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
+import { withAcademyNav, withGroupItem, withItemPatched, withLockedHandbookNav, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
+import { shouldRedirectLockedPage } from '@/lib/academy/lockout'
 
 // Context so child pages can access user info
 interface LayoutUser {
@@ -68,8 +69,8 @@ export function SidebarLayout({
   const [weeklyMe, setWeeklyMe] = useState({ enabled: false, cycleActive: false, openCount: 0 })
   // Security Checks entries appear only when the module is on.
   const [securityChecksAccess, setSecurityChecksAccess] = useState<SecurityChecksNavAccess>({ enabled: false, console: false })
-  // Academy settings entries appear only when the flag is on (admin console only).
-  const [academyEnabled, setAcademyEnabled] = useState(false)
+  // Academy entries appear only when the flag is on. Null until /api/users/me answers.
+  const [academyEnabled, setAcademyEnabled] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -134,11 +135,10 @@ export function SidebarLayout({
     if (!user || loading) return
     if (user.onboardingCompleted !== false) return
 
-    const allowedOnboardingPath = pathname.startsWith('/onboarding') || pathname.startsWith('/profile')
-    if (!allowedOnboardingPath) {
+    if (shouldRedirectLockedPage(pathname, academyEnabled)) {
       router.push('/onboarding')
     }
-  }, [loading, pathname, router, user])
+  }, [academyEnabled, loading, pathname, router, user])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -199,8 +199,8 @@ export function SidebarLayout({
       : withSecurityChecksNav(sidebarConfigWithWeekly, securityChecksAccess, ShieldCheck)
   const finalSidebarConfig =
     baseSidebarConfig === onboardingSidebarConfig
-      ? sidebarConfigWithSecurity
-      : withAcademyNav(sidebarConfigWithSecurity, academyEnabled, { library: BookOpen, contacts: Users, links: Link2 })
+      ? withLockedHandbookNav(sidebarConfigWithSecurity, academyEnabled === true, BookOpen)
+      : withAcademyNav(sidebarConfigWithSecurity, academyEnabled === true, { library: BookOpen, contacts: Users, links: Link2 })
 
   return (
     <LayoutUserContext.Provider value={user}>
