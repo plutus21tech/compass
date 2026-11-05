@@ -2,7 +2,7 @@ import test, { after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { AcademyError } from '../lib/academy/errors'
-import { readOwnPayout, readPayout, savePayout } from '../lib/academy/service/payout'
+import { readPayout, savePayout } from '../lib/academy/service/payout'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
@@ -50,15 +50,6 @@ test('permanently deleting the owner leaves the reveal log rows', ACADEMY_DB_TES
   assert.equal(logs[0].viewerId, P.hr.id)
 })
 
-test('owner read is decrypted and writes no log', ACADEMY_DB_TEST, async () => {
-  await savePayout(prisma, P.hire.id, bank)
-  const own = await readOwnPayout(prisma, P.hire.id)
-  assert.equal(own?.fields.accountNumberOrIban, 'GB33BUKB20201555555555')
-  assert.equal(own?.accountHolderName, 'Cara Lindqvist')
-  assert.equal(await prisma.onboardingPaymentRevealLog.count(), 0)
-  assert.equal(await readOwnPayout(prisma, P.staff.id), null)
-})
-
 test('masked read hides values and writes no log', ACADEMY_DB_TEST, async () => {
   await savePayout(prisma, P.hire.id, bank)
   const view = await readPayout(prisma, P.hire.id, { reveal: false, viewerId: P.hr.id })
@@ -72,6 +63,7 @@ test('revealed read is unmasked and writes exactly one log row', ACADEMY_DB_TEST
   await savePayout(prisma, P.hire.id, bank)
   const view = await readPayout(prisma, P.hire.id, { reveal: true, viewerId: P.hr.id })
   assert.equal(view?.fields.accountNumberOrIban, 'GB33BUKB20201555555555')
+  assert.equal(view?.accountHolderName, 'Cara Lindqvist')
   const logs = await prisma.onboardingPaymentRevealLog.findMany()
   assert.equal(logs.length, 1)
   assert.equal(logs[0].paymentUserId, P.hire.id)
@@ -87,6 +79,15 @@ test('reveal returns nothing and writes no log when the log write fails', ACADEM
 test('reveal of a user with no payout returns null and logs nothing', ACADEMY_DB_TEST, async () => {
   assert.equal(await readPayout(prisma, P.hire.id, { reveal: true, viewerId: P.hr.id }), null)
   assert.equal(await prisma.onboardingPaymentRevealLog.count(), 0)
+})
+
+test('a view says when the details last changed', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  const first = await readPayout(prisma, P.hire.id, { reveal: false, viewerId: P.hr.id })
+  await savePayout(prisma, P.hire.id, wise)
+  const second = await readPayout(prisma, P.hire.id, { reveal: false, viewerId: P.hr.id })
+  assert.equal(second?.submittedAt, first?.submittedAt)
+  assert.ok(Date.parse(second?.updatedAt ?? '') > Date.parse(first?.updatedAt ?? ''))
 })
 
 test('PK employment is refused with 400', ACADEMY_DB_TEST, async () => {

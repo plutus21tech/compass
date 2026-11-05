@@ -4,8 +4,7 @@ import { canReadPayoutDetails } from '@/lib/permissions'
 
 export { canReadPayoutDetails }
 
-// encryptField passes through any value carrying its prefix, so a user could store a value
-// that later fails to decrypt. Reject the prefix on every encrypted free-text field.
+// Text that looks like a stored ciphertext is never a real detail: refused on every encrypted free-text field.
 const text = (schema: z.ZodString) => schema.refine((v) => !v.toLowerCase().includes('p21enc:'), 'This value is not allowed')
 
 const holder = text(z.string().trim().min(1).max(200))
@@ -40,19 +39,19 @@ export function canSavePayout(contractType: string | null | undefined): boolean 
   return contractType !== 'PK_EMPLOYMENT'
 }
 
-export type PayoutInput = z.infer<typeof payoutSchema>
-
 export type PayoutView = {
   method: OnboardingPaymentMethod
   accountHolderName: string | null
   currency: string | null
   fields: Record<string, string | null>
   submittedAt: string
+  updatedAt: string
 }
 
 const MASK = '••••'
 
-function maskAccount(value: string): string {
+/** Keeps the last 4 characters; everything before them is hidden. */
+export function maskAccount(value: string): string {
   return `${MASK}${value.slice(-4)}`
 }
 

@@ -4,11 +4,10 @@ import { stripHtml } from '../sanitize'
 
 const IBAN_PATTERN = /^PK\d{2}[A-Z]{4}\d{16}$/
 const IBAN_MESSAGE = "That IBAN doesn't look right. It should start with PK and have 24 characters."
-const MASK = '••••'
-const MASK_VISIBLE = 4
 
-// encryptField passes through any value carrying its prefix, so a stored value could later
-// fail to decrypt. Reject the prefix on every encrypted free-text field.
+export const BANK_LOCKED_MESSAGE = 'Your bank details are saved. To change them, email acct@plutus21.com.'
+
+// Text that looks like a stored ciphertext is never a real detail: refused on every encrypted free-text field.
 const plain = (max: number) =>
   z
     .string()
@@ -26,13 +25,6 @@ export const bankDetailsSchema = z.object({
     .transform((v) => v.replace(/\s+/g, '').toUpperCase())
     .refine((v) => IBAN_PATTERN.test(v), IBAN_MESSAGE),
 })
-
-export type BankDetailsInput = z.infer<typeof bankDetailsSchema>
-
-/** Keeps the last 4 characters; everything before them is hidden. */
-export function maskIban(iban: string): string {
-  return `${MASK}${iban.slice(-MASK_VISIBLE)}`
-}
 
 const DISCORD_PATTERN = /^[A-Za-z0-9_.#]{2,37}$/
 

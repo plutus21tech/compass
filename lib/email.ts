@@ -2312,26 +2312,26 @@ export async function sendTransitionPlanEscalation(requestId: string) {
   }
 }
 
-/** Tells O&A that a contractor changed payout details. Carries the person's name only, never the details. */
-export async function sendPayoutUpdatedNotification(personName: string) {
+/** Tells O&A that a hire changed bank or payout details. Carries the person's name only, never the details. */
+export async function sendPaymentDetailsUpdatedNotification(personName: string) {
   const oaUsers = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
   const recipients = mergeRecipientEmails(oaUsers.map((u) => u.email))
   if (recipients.length === 0) {
-    console.error('[academy] no O&A recipients configured for payout update notification')
+    console.error('[academy] no O&A recipients configured for payment details notification')
     return { success: false, message: 'No O&A recipients configured' }
   }
-  const subject = `Payout details updated for ${personName}`
+  const subject = `Payment details updated for ${personName}`
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Payout details updated</h2>
-      <p>${escapeHtml(personName)} updated their payout details. Open Compass to review them.</p>
+      <h2 style="color: #0D9488;">Payment details updated</h2>
+      <p>${escapeHtml(personName)} updated their payment details. Open Compass to review them.</p>
     </div>
   `
   try {
     const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients.join(', '), subject, html })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error) {
-    console.error('Failed to send payout updated notification')
+    console.error('Failed to send payment details updated notification')
     return { success: false, error: error instanceof Error ? error.message : 'send failed' }
   }
 }

@@ -1,6 +1,7 @@
 import type { OnboardingPaymentDetails, OnboardingPaymentMethod, PrismaClient } from '@prisma/client'
 import { AcademyError } from '../errors'
 import { decryptField, encryptField } from '../field-encryption'
+import { BANK_LOCKED_MESSAGE } from '../bank'
 import { canSavePayout, maskPayout, payoutSchema, type PayoutView } from '../payout'
 
 const ENCRYPTED_FIELDS = [
@@ -44,7 +45,9 @@ export async function savePayout(db: PrismaClient, userId: string, input: unknow
     throw new AcademyError('Payout details are for contractors. Pakistan-based employees add bank details instead.', 400)
   }
   const data = paymentColumns(parsed.method, parsed)
-  const existing = await db.onboardingPaymentDetails.findUnique({ where: { userId }, select: { id: true } })
+  const existing = await db.onboardingPaymentDetails.findUnique({ where: { userId }, select: { method: true } })
+  // A null contract type may save a payout, but HR blanking the type must not open a way round the bank lock.
+  if (existing?.method === 'PK_BANK' && user.contractType === null) throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
   await db.onboardingPaymentDetails.upsert({
     where: { userId },
     create: { userId, ...data },
@@ -66,16 +69,8 @@ function toView(row: OnboardingPaymentDetails): PayoutView {
     currency: row.currency,
     fields,
     submittedAt: row.submittedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   }
-}
-
-/**
- * Owner's own payout details, decrypted, no log. Only for GET /api/onboarding/payout. PK bank details
- * are not read back here: a PK hire gets the masked line from readOwnBankStatus.
- */
-export async function readOwnPayout(db: PrismaClient, userId: string): Promise<PayoutView | null> {
-  const row = await db.onboardingPaymentDetails.findUnique({ where: { userId } })
-  return row && row.method !== 'PK_BANK' ? toView(row) : null
 }
 
 /** Admin read. Reveal writes the log in the same transaction; if logging fails nothing is returned. */

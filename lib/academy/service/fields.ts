@@ -1,6 +1,7 @@
 import type { OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
-import { bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema, maskIban } from '../bank'
+import { BANK_LOCKED_MESSAGE, bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema } from '../bank'
 import { AcademyError } from '../errors'
+import { maskAccount } from '../payout'
 import { parseProgressState } from '../progress'
 import { renderBlocks } from '../view'
 import { buildAcademyContext } from './context'
@@ -39,7 +40,7 @@ export async function saveLinkedinUrl(db: PrismaClient, userId: string, value: u
 }
 
 /** PK hires only. Saved to the onboarding store, where HR and OA read them; OA enters them into payroll by hand. */
-export async function saveBankDetails(db: PrismaClient, userId: string, input: unknown): Promise<void> {
+export async function saveBankDetails(db: PrismaClient, userId: string, input: unknown): Promise<{ isUpdate: boolean }> {
   const details = bankDetailsSchema.parse(input)
   const user = await db.user.findUnique({ where: { id: userId }, select: { contractType: true } })
   if (!user) throw new AcademyError('User not found', 404)
@@ -48,15 +49,17 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
   }
 
   const data = paymentColumns('PK_BANK', details)
-  await db.$transaction(async (tx) => {
+  const isUpdate = await db.$transaction(async (tx) => {
     await assertBankEditable(tx, userId)
+    const existing = await tx.onboardingPaymentDetails.findUnique({ where: { userId }, select: { id: true } })
     await tx.onboardingPaymentDetails.upsert({ where: { userId }, create: { userId, ...data }, update: data })
+    return existing !== null
   }, COURSE_TX_OPTIONS)
   console.info('[academy] bank details saved', { userId })
+  return { isUpdate }
 }
 
 const BANK_MODULE_SLUG = 'getting-paid'
-const BANK_LOCKED_MESSAGE = 'Your bank details are saved. To change them, ask HR.'
 const BANK_UNAVAILABLE_MESSAGE = "This isn't available yet."
 
 /** Bank details change only while Module 11 is open and not completed. Locks that row for the transaction. */
@@ -84,9 +87,10 @@ export async function readOwnBankStatus(db: PrismaClient, userId: string): Promi
   if (row?.method !== 'PK_BANK') return { saved: false, ibanMasked: null }
   try {
     const plain = decryptPaymentField('iban', row.iban)
-    return { saved: true, ibanMasked: plain ? maskIban(plain) : null }
-  } catch {
-    console.error('[academy] stored IBAN could not be read', { userId })
+    return { saved: true, ibanMasked: plain ? maskAccount(plain) : null }
+  } catch (error) {
+    // Decryption errors never quote the stored value.
+    console.error('[academy] stored IBAN could not be read', { userId, error: error instanceof Error ? error.message : 'unknown' })
     return { saved: true, ibanMasked: null }
   }
 }

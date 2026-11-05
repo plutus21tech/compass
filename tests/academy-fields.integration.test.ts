@@ -5,7 +5,7 @@ import { AcademyError } from '../lib/academy/errors'
 import { decryptField } from '../lib/academy/field-encryption'
 import { loadModule } from '../lib/academy/service/course'
 import { completeModule, paymentFacts, recordEvent } from '../lib/academy/service/progress'
-import { readOwnPayout, readPayout, savePayout } from '../lib/academy/service/payout'
+import { readPayout, savePayout } from '../lib/academy/service/payout'
 import {
   readOwnBankStatus, saveBankDetails, saveDiscordUsername, saveLinkedinUrl, signAcknowledgement,
 } from '../lib/academy/service/fields'
@@ -85,13 +85,6 @@ test('bank status exposes only whether details are saved and a masked IBAN', ACA
   assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: true, ibanMasked: '••••6702' })
 })
 
-test('a PK hire never reads bank values back through the payout route', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  assert.equal(await readOwnPayout(prisma, HIRE_ID), null)
-})
-
 test('HR and OA read PK_BANK masked; a reveal is unmasked and logged', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openEverything()
@@ -137,6 +130,60 @@ test('a saved row only counts for the form the contract type chooses; the other 
   await setPersonAttributes(prisma, HIRE_ID, attrs)
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: false })
   assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: false, ibanMasked: null })
+})
+
+test('saveBankDetails reports a first save and an update', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  assert.deepEqual(await saveBankDetails(prisma, HIRE_ID, BANK), { isUpdate: false })
+  assert.deepEqual(await saveBankDetails(prisma, HIRE_ID, BANK), { isUpdate: true })
+})
+
+test('a contractor moved to PK replacing a payout row counts as an update and leaves none of it', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await openEverything()
+  await savePayout(prisma, HIRE_ID, WISE)
+  await prisma.user.update({ where: { id: HIRE_ID }, data: { contractType: 'PK_EMPLOYMENT' } })
+  assert.deepEqual(await saveBankDetails(prisma, HIRE_ID, BANK), { isUpdate: true })
+  const row = await storedRow()
+  assert.equal(row.method, 'PK_BANK')
+  for (const f of ['accountHolderName', 'payoutEmail', 'currency'] as const) assert.equal(row[f], null, f)
+})
+
+test('with the contract type blanked, a locked PK_BANK row cannot be replaced', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  await completeModule(prisma, HIRE_ID, 'getting-paid')
+  await prisma.user.update({ where: { id: HIRE_ID }, data: { contractType: null } })
+  await assert.rejects(savePayout(prisma, HIRE_ID, WISE), fails(409, /email acct@plutus21\.com/))
+  const row = await storedRow()
+  assert.equal(row.method, 'PK_BANK')
+  assert.equal(decryptField('onboardingPayment.iban', row.iban), IBAN)
+})
+
+test('with the contract type blanked, a payout row can still be changed', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await openEverything()
+  await savePayout(prisma, HIRE_ID, WISE)
+  await prisma.user.update({ where: { id: HIRE_ID }, data: { contractType: null } })
+  assert.deepEqual(await savePayout(prisma, HIRE_ID, { ...WISE, currency: 'EUR' }), { isUpdate: true })
+})
+
+test('a stored IBAN that cannot be read still says saved, without the value', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await prisma.onboardingPaymentDetails.create({ data: { userId: HIRE_ID, method: 'PK_BANK', iban: 'PK36-NOT-ENCRYPTED' } })
+  const logged: unknown[][] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { logged.push(args) }
+  try {
+    assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: true, ibanMasked: null })
+  } finally {
+    console.error = original
+  }
+  assert.equal(logged.length, 1)
+  assert.deepEqual(logged[0][1], { userId: HIRE_ID, error: 'Onboarding field is not encrypted' })
+  assert.doesNotMatch(JSON.stringify(logged), /PK36/)
 })
 
 test('two saves at once leave one row', ACADEMY_DB_TEST, async () => {
@@ -260,7 +307,7 @@ test('bank details are refused while Module 11 is locked, and after it is comple
   await completeModule(prisma, HIRE_ID, 'getting-paid')
   await assert.rejects(
     saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Changed Bank' }),
-    fails(409, /Your bank details are saved\. To change them, ask HR\./),
+    fails(409, /Your bank details are saved\. To change them, email acct@plutus21\.com\./),
   )
   const row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: HIRE_ID } })
   assert.equal(decryptField('onboardingPayment.bankName', row.bankName), 'Example Bank')

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { canSavePayout, payoutSchema, maskPayout, canReadPayoutDetails, type PayoutView } from '../lib/academy/payout'
+import { canSavePayout, payoutSchema, maskAccount, maskPayout, canReadPayoutDetails, type PayoutView } from '../lib/academy/payout'
 
 const bank = {
   method: 'BANK_TRANSFER', accountHolderName: 'Sam Rivers', bankName: 'Example Bank',
@@ -27,7 +27,7 @@ test('schema: OTHER needs instructions of 5+ characters', () => {
 
 test('maskPayout masks sensitive fields and keeps identifying ones', () => {
   const view: PayoutView = {
-    method: 'BANK_TRANSFER', accountHolderName: 'Sam Rivers', currency: 'GBP', submittedAt: '2026-11-01T00:00:00.000Z',
+    method: 'BANK_TRANSFER', accountHolderName: 'Sam Rivers', currency: 'GBP', submittedAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
     fields: {
       accountNumberOrIban: 'GB33BUKB20201555555555', payoutEmail: 'sam@example.com', instructions: 'secret text',
       swiftBic: 'BUKBGB22', bankAddress: '1 Example Street', bankName: 'Example Bank', bankCountry: 'GB',
@@ -45,9 +45,14 @@ test('maskPayout masks sensitive fields and keeps identifying ones', () => {
   assert.equal(view.fields.accountNumberOrIban, 'GB33BUKB20201555555555', 'input is not mutated')
 })
 
+test('maskAccount keeps the last 4 characters', () => {
+  assert.equal(maskAccount('PK36SCBL0000001123456702'), '••••6702')
+  assert.equal(maskAccount('ab'), '••••ab')
+})
+
 test('maskPayout hides a PK IBAN and branch, keeps the title and bank readable', () => {
   const masked = maskPayout({
-    method: 'PK_BANK', accountHolderName: null, currency: null, submittedAt: '2026-11-05T00:00:00.000Z',
+    method: 'PK_BANK', accountHolderName: null, currency: null, submittedAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z',
     fields: { accountTitle: 'Sam Rivers', bankName: 'Example Bank', branch: 'Main Branch', iban: 'PK36SCBL0000001123456702' },
   })
   assert.deepEqual(masked.fields, { accountTitle: 'Sam Rivers', bankName: 'Example Bank', branch: '••••', iban: '••••6702' })
@@ -60,7 +65,7 @@ test('PK_BANK cannot be sent through the payout form', () => {
 
 test('maskPayout leaves null fields null', () => {
   const masked = maskPayout({
-    method: 'WISE', accountHolderName: 'A', currency: 'USD', submittedAt: 'x',
+    method: 'WISE', accountHolderName: 'A', currency: 'USD', submittedAt: 'x', updatedAt: 'x',
     fields: { payoutEmail: null, instructions: null },
   })
   assert.equal(masked.fields.payoutEmail, null)

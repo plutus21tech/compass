@@ -1,17 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema, maskIban,
+  bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema,
 } from '../lib/academy/bank'
 
 // Fictional IBAN, shaped like a Pakistani one.
 const IBAN = 'PK36SCBL0000001123456702'
 const valid = { accountTitle: ' Cara Lindqvist ', bankName: 'Example Bank', branch: 'Main Branch', iban: IBAN }
-
-test('maskIban keeps the last 4 characters', () => {
-  assert.equal(maskIban(IBAN), '••••6702')
-  assert.equal(maskIban('ab'), '••••ab')
-})
 
 test('bankDetailsSchema trims, strips spaces and upper-cases the IBAN', () => {
   const parsed = bankDetailsSchema.parse({ ...valid, iban: ' pk36 scbl 0000 0011 2345 6702 ' })
