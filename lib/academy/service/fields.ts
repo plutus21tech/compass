@@ -17,7 +17,8 @@ import {
 } from './progress'
 
 const LINKEDIN_MODULE_SLUG = 'linkedin'
-const NAME_MESSAGE = 'Type your full name as it appears at the top of this page.'
+export const NAME_MESSAGE = 'Type your full name as it appears at the top of this page.'
+
 export async function saveDiscordUsername(db: PrismaClient, userId: string, value: unknown): Promise<void> {
   const discordUsername = discordUsernameSchema.parse(value)
   await db.user.update({ where: { id: userId }, data: { discordUsername } })
@@ -97,6 +98,12 @@ export async function readOwnBankStatus(db: PrismaClient, userId: string): Promi
 
 const squash = (name: string) => name.replace(/\s+/g, '').toLowerCase()
 
+/** Spaces and case don't matter. Shared by every acknowledgement, so they all ask the same thing. */
+export function isTypedNameValid(typedName: string, name: string): boolean {
+  const typed = squash(typedName)
+  return typed.length > 0 && typed === squash(name)
+}
+
 export interface AcknowledgementInput { kind: 'SECURITY_SOPS'; typedName: string; moduleSlug: string }
 
 /**
@@ -109,7 +116,7 @@ export async function signAcknowledgement(
   if (input.kind !== 'SECURITY_SOPS') throw new AcademyError('That acknowledgement is not available yet.', 400)
   const user = await db.user.findUnique({ where: { id: userId }, select: { name: true } })
   if (!user) throw new AcademyError('User not found', 404)
-  if (!squash(input.typedName) || squash(input.typedName) !== squash(user.name)) throw new AcademyError(NAME_MESSAGE, 400)
+  if (!isTypedNameValid(input.typedName, user.name)) throw new AcademyError(NAME_MESSAGE, 400)
 
   return db.$transaction(async (tx) => {
     const { module, index } = findCourseModule(await listCourseModules(tx), input.moduleSlug)

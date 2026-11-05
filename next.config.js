@@ -37,6 +37,7 @@ const nextConfig = {
   outputFileTracingIncludes: {
     '/api/assets/**/qr-label*': ['./node_modules/pdfkit/js/data/**/*'],
     '/api/payroll/**/send-payslips': ['./node_modules/pdfkit/js/data/**/*'],
+    '/api/onboarding/academy/certificate': ['./node_modules/pdfkit/js/data/**/*'],
   },
   async headers() {
     return [
