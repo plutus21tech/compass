@@ -27,6 +27,13 @@ async function signIn(page: Page, email: string): Promise<void> {
   await page.waitForURL((url) => !url.pathname.startsWith('/login'))
 }
 
+// Login limits persist in the database, so repeat runs would otherwise lock these accounts out.
+test.beforeEach(async () => {
+  // Never touch a database the guard refused.
+  if (academyE2eSkipReason() !== null) return
+  await prisma.$executeRaw`DELETE FROM "RateLimit" WHERE "key" LIKE 'login:%'`
+})
+
 test.afterAll(async () => {
   // Never touch a database the guard refused.
   if (academyE2eSkipReason() !== null) return
@@ -55,10 +62,13 @@ test('a hire finishes Day 1 Module 5 (How We Work)', async ({ page }) => {
   await page.locator('div.h-px[aria-hidden]').last().scrollIntoViewIfNeeded()
   await expect(complete).not.toHaveAttribute('aria-disabled', 'true')
   await complete.click()
-  await expect(page.getByRole('status').filter({ hasText: 'Module complete' })).toBeVisible()
 
-  const row = await prisma.onboardingProgress.findFirstOrThrow({ where: { userId: HIRE_ID, module: { slug: 'how-we-work' } } })
-  expect(row.status).toBe('COMPLETED')
+  // The completed row, not the "Module complete" status: that goes as soon as the next module opens.
+  const status = async () => {
+    const row = await prisma.onboardingProgress.findFirstOrThrow({ where: { userId: HIRE_ID, module: { slug: 'how-we-work' } } })
+    return row.status
+  }
+  await expect.poll(status, { timeout: 15_000 }).toBe('COMPLETED')
 })
 
 test('HR releases a course from the setup section', async ({ page }) => {
