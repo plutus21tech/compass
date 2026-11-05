@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { ModuleCardView } from '../lib/academy/view'
-import { callTimeLabel, moduleCardCopy } from '../lib/academy/view-labels'
+import type { ModuleCardView, ReleasedHomeView } from '../lib/academy/view'
+import { callTimeLabel, homeNextStep, homePanel, moduleCardCopy } from '../lib/academy/view-labels'
 
 function card(over: Partial<ModuleCardView> = {}): ModuleCardView {
   return {
@@ -53,4 +53,40 @@ test('callTimeLabel: a missing time reads "Time to be confirmed"', () => {
 test('callTimeLabel: a time is in the hire own zone, or marked UTC when the zone is unknown', () => {
   assert.match(callTimeLabel('2026-11-25T09:00:00Z', 'Asia/Karachi'), /25 Nov, 2:00 pm$/)
   assert.match(callTimeLabel('2026-11-25T09:00:00Z', null), /25 Nov, 9:00 am UTC$/)
+})
+
+const released = (over: Partial<ReleasedHomeView> = {}): ReleasedHomeView => ({
+  released: true,
+  greeting: 'WELCOME TO THE TEAM, Cara',
+  title: 'Analyst',
+  department: 'Research',
+  doneCount: 0,
+  total: 14,
+  courseDueAt: null,
+  nextModule: card({ status: 'AVAILABLE' }),
+  yourCalls: { hrCallAt: null, teamCallAt: null, blockersCall: 'WED 07:00', timeZone: null },
+  yourBuddy: null,
+  phases: [],
+  ...over,
+})
+
+test('homeNextStep: nothing started and mid-course both point at the next module', () => {
+  assert.equal(homeNextStep(released()), 'next')
+  assert.equal(homeNextStep(released({ doneCount: 6, nextModule: card({ status: 'IN_PROGRESS' }) })), 'next')
+})
+
+test('homeNextStep: all 14 done', () => {
+  assert.equal(homeNextStep(released({ doneCount: 14, nextModule: null })), 'all-done')
+})
+
+test('homeNextStep: nothing open but not finished', () => {
+  assert.equal(homeNextStep(released({ doneCount: 6, nextModule: null })), 'waiting-next')
+  assert.equal(homeNextStep(released({ doneCount: 0, total: 0, nextModule: null })), 'waiting-next')
+})
+
+test('homePanel: released, waiting hire and existing employee', () => {
+  assert.equal(homePanel({ released: false }, true), 'waiting')
+  assert.equal(homePanel({ released: false }, false), 'nothing-to-do')
+  assert.equal(homePanel(released(), true), 'home')
+  assert.equal(homePanel(released(), false), 'home')
 })

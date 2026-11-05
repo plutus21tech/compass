@@ -1,7 +1,7 @@
 // Pure wording and mapping for the module page. No server-only imports: safe for client components.
 import type { KeyContactGroup, PayoutMethod, TransportMode } from '@prisma/client'
 import { applyEvent, type ProgressEvent, type ProgressState } from './progress'
-import type { CommuteRow, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView } from './view'
+import type { CommuteRow, HomeView, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView, ReleasedHomeView } from './view'
 
 const SAVING_REASON = 'Saving your progress...'
 const DATE_LOCALE = 'en-GB'
@@ -67,6 +67,22 @@ const TO_BE_CONFIRMED = 'Time to be confirmed'
 export function callTimeLabel(iso: string | null, timeZone: string | null): string {
   if (!iso) return TO_BE_CONFIRMED
   return `${formatAcademyDateTime(iso, timeZone)}${timeZone ? '' : ' UTC'}`
+}
+
+export type HomeNextStep = 'next' | 'all-done' | 'waiting-next'
+
+/** What the top of Home shows: the next module, the finished message, or a note that nothing is open yet. */
+export function homeNextStep(view: ReleasedHomeView): HomeNextStep {
+  if (view.total > 0 && view.doneCount === view.total) return 'all-done'
+  return view.nextModule ? 'next' : 'waiting-next'
+}
+
+export type HomePanel = 'home' | 'waiting' | 'nothing-to-do'
+
+/** A hire with no released course waits; anyone else with no course has nothing to do here. */
+export function homePanel(view: HomeView, hireWaiting: boolean): HomePanel {
+  if (view.released) return 'home'
+  return hireWaiting ? 'waiting' : 'nothing-to-do'
 }
 
 const OVERDUE_CHIP = 'Overdue'

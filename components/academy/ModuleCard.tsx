@@ -59,11 +59,8 @@ export function ModuleCard({ card, timeZone }: ModuleCardProps) {
       <div className="mt-auto pt-4">
         <StatusLine card={card} label={label} />
       </div>
-      {card.status === 'IN_PROGRESS' ? (
-        <span aria-hidden className="absolute inset-x-0 bottom-0 h-1 bg-academy-blue-tint">
-          <span className="block h-full w-2/5 bg-academy-blue" />
-        </span>
-      ) : null}
+      {/* A line, not a gauge: it says "started" without claiming an amount. */}
+      {card.status === 'IN_PROGRESS' ? <span aria-hidden className="absolute inset-x-0 bottom-0 h-1 bg-academy-blue" /> : null}
     </>
   )
   const shared = 'relative flex h-full min-h-[11.5rem] flex-col overflow-hidden rounded-2xl border p-5'

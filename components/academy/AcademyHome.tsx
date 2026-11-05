@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { ArrowRight, Clock, PartyPopper } from 'lucide-react'
 import type { HomeView, ModuleCardView, ReleasedHomeView } from '@/lib/academy/view'
-import { formatAcademyDate } from '@/lib/academy/view-labels'
+import { formatAcademyDate, homeNextStep, homePanel } from '@/lib/academy/view-labels'
 import { cn } from '@/lib/utils'
 import { ACADEMY_THEME_VARS } from './brand'
 import { academySans, academySerif } from './fonts'
@@ -94,6 +94,14 @@ function AllDone({ total }: { total: number }) {
   )
 }
 
+function WaitingNext() {
+  return (
+    <section aria-labelledby="home-waiting-next" className="flex flex-col justify-center rounded-2xl border border-academy-line bg-white p-6 sm:p-8">
+      <h2 id="home-waiting-next" className="text-xl font-semibold">Your next module isn&apos;t open yet.</h2>
+    </section>
+  )
+}
+
 function PhaseGroup({ heading, children }: { heading: string; children: React.ReactNode }) {
   return (
     <section className="mt-10">
@@ -105,13 +113,15 @@ function PhaseGroup({ heading, children }: { heading: string; children: React.Re
 
 function Released({ view }: { view: ReleasedHomeView }) {
   const timeZone = view.yourCalls.timeZone
-  const allDone = view.total > 0 && view.doneCount === view.total
+  const step = homeNextStep(view)
   return (
     <>
       <Hero view={view} timeZone={timeZone} />
       <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:py-10">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-          {allDone ? <AllDone total={view.total} /> : view.nextModule ? <NextUp card={view.nextModule} /> : <div />}
+          {step === 'all-done' ? <AllDone total={view.total} /> : null}
+          {step === 'next' && view.nextModule ? <NextUp card={view.nextModule} /> : null}
+          {step === 'waiting-next' ? <WaitingNext /> : null}
           <div className="space-y-5">
             <CallsCard calls={view.yourCalls} />
             <BuddyCard buddy={view.yourBuddy} />
@@ -135,7 +145,9 @@ function Released({ view }: { view: ReleasedHomeView }) {
 }
 
 export function AcademyHome({ view, hireWaiting }: AcademyHomeProps) {
-  if (!view.released) return hireWaiting ? <WaitingPanel /> : <NothingToDoPanel />
+  const panel = homePanel(view, hireWaiting)
+  if (panel === 'waiting') return <WaitingPanel />
+  if (panel === 'nothing-to-do' || !view.released) return <NothingToDoPanel />
   return (
     <div
       style={ACADEMY_THEME_VARS}
