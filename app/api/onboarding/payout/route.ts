@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { academyErrorResponse, guardAcademyMutation, requireAcademySession } from '@/lib/academy/http'
 import { notifyPaymentDetailsChanged } from '@/lib/academy/service/notify-oa'
@@ -18,7 +18,7 @@ export async function PUT(request: NextRequest) {
     await guardAcademyMutation(request, user.id)
     const body: unknown = await request.json()
     const { isUpdate } = await savePayout(prisma, user.id, body)
-    if (isUpdate) await notifyPaymentDetailsChanged(user.id, user.name)
+    if (isUpdate) after(() => notifyPaymentDetailsChanged(user.id, user.name))
     // Writes never echo details back.
     return NextResponse.json({ success: true }, { headers: NO_STORE })
   } catch (error) {

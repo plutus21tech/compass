@@ -273,8 +273,12 @@ Carried forward. None of this is built in stage 3.
 
 **Stage 4 (HR operations)**
 - HR downloads of acknowledgements, with the tracker.
-- **Stalled-email timeouts.** The quiz fail alert, the completion notice and the OA notice are awaited inside the request, so an email that stalls holds the response. Give each a timeout.
 - **The HR module page's switch stays flipped until reload after a 409.** Course modules can't be switched off, the server refuses, and the page doesn't put the switch back.
+- **The module editor must keep Module 7's acknowledgement block.** `CHECKLIST_AND_ACK` no longer falls back to scroll-to-end, and finishing the course needs the SECURITY_SOPS signature, so a Module 7 without that block would block the hire for good.
+- **Sends run in `after`.** The platform has to finish them, and a crash loses the notice, so the tracker must show finished hires.
+- **The quiz editor retires questions, it doesn't delete them.** An HR hard delete of a question thins old reviews.
+- **`blocksModuleSwitch` isn't flag-gated.** It matters only if the seed ran and the flag went off.
+- **The reset route needs same-origin and rate-limit checks** in the stage 4 HR pass.
 - **The quiz editor must keep `explanation`.** The legacy HR quiz page can blank it, and a blank explanation makes a question unusable and lets a re-seed retire it.
 
 **Stage 5 (video and polish)**

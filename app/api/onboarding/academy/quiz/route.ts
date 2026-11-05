@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { academyErrorResponse, guardAcademyMutation, requireAcademySession } from '@/lib/academy/http'
 import { loadQuiz, notifyQuizFailAlert, submitQuiz } from '@/lib/academy/service/quiz'
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const user = await requireAcademySession()
     await guardAcademyMutation(request, user.id)
     const { result, failAlertDue, failedCount } = await submitQuiz(prisma, user.id, await request.json())
-    if (failAlertDue) await notifyQuizFailAlert(user.id, failedCount)
+    if (failAlertDue) after(() => notifyQuizFailAlert(user.id, failedCount))
     return NextResponse.json({ success: true, data: result }, { headers: NO_STORE })
   } catch (error) {
     return failure(error)

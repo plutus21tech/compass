@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { ArrowRight, Clock, PartyPopper } from 'lucide-react'
 import type { QuizStatus } from '@/lib/academy/quiz'
 import type { HomeQuizView, HomeView, ModuleCardView, ReleasedHomeView } from '@/lib/academy/view'
-import { formatAcademyDate, homeNextStep, homePanel, quizCardCopy } from '@/lib/academy/view-labels'
+import { allDoneTail, formatAcademyDate, homeNextStep, homePanel, quizCardCopy } from '@/lib/academy/view-labels'
 import { cn } from '@/lib/utils'
 import { ACADEMY_THEME_VARS } from './brand'
 import { academySans, academySerif } from './fonts'
@@ -83,13 +83,6 @@ function NextUp({ card }: { card: ModuleCardView }) {
 }
 
 const OPEN_QUIZ_STATES: readonly QuizStatus[] = ['READY', 'COOLDOWN', 'PASSED_UNSIGNED']
-
-/** What comes after the modules, by quiz state. DONE (and anything else) adds nothing. */
-function allDoneTail(status: QuizStatus): string | null {
-  if (status === 'READY' || status === 'COOLDOWN') return 'Your culture quiz is next.'
-  if (status === 'PASSED_UNSIGNED') return 'Sign your acknowledgement to finish.'
-  return null
-}
 
 function AllDone({ total, quiz, timeZone }: { total: number; quiz: HomeQuizView; timeZone: string | null }) {
   const { label, href } = quizCardCopy(quiz, timeZone)

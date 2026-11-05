@@ -1,5 +1,6 @@
 // Pure wording and mapping for the module page. No server-only imports: safe for client components.
 import type { KeyContactGroup, OnboardingPaymentMethod, TransportMode } from '@prisma/client'
+import type { QuizStatus } from './quiz'
 import { applyEvent, type ProgressEvent, type ProgressState } from './progress'
 import type { CommuteRow, HomeQuizView, HomeView, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView, ReleasedHomeView } from './view'
 
@@ -105,6 +106,14 @@ export function moduleCardCopy(card: ModuleCardView, timeZone: string | null = n
 }
 
 const QUIZ_HREF = '/onboarding/quiz'
+/** What comes after the modules, by quiz state. DONE here means the hire is on Home but not finished: HR must step in. */
+export function allDoneTail(status: QuizStatus): string | null {
+  if (status === 'READY' || status === 'COOLDOWN') return 'Your culture quiz is next.'
+  if (status === 'PASSED_UNSIGNED') return 'Sign your acknowledgement to finish.'
+  if (status === 'DONE') return 'Something still needs HR. Please get in touch.'
+  return null
+}
+
 export const QUIZ_UNAVAILABLE_MESSAGE = "The quiz isn't available right now. Please contact HR."
 
 function quizCardLabel(quiz: HomeQuizView, timeZone: string | null): string {

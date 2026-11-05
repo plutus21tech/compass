@@ -140,9 +140,9 @@ test('CHECKLIST_AND_FIELD falls back without a filled checklist or the Discord f
   assert.equal(effectiveRule(rule, [checklist('a'), input('linkedinUrl')], FACTS), 'SCROLL_END')
 })
 
-test('CHECKLIST_AND_ACK falls back without an acknowledgement block', () => {
+test('CHECKLIST_AND_ACK never falls back, even without an acknowledgement block', () => {
   assert.equal(effectiveRule('CHECKLIST_AND_ACK', [checklist('a'), ack], FACTS), 'CHECKLIST_AND_ACK')
-  assert.equal(effectiveRule('CHECKLIST_AND_ACK', [checklist('a')], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule('CHECKLIST_AND_ACK', [checklist('a')], FACTS), 'CHECKLIST_AND_ACK')
 })
 
 test('FIELD_SUBMITTED falls back without the LinkedIn field', () => {

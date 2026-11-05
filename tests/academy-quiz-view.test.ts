@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import type { QuizStatus } from '../lib/academy/quiz'
 import { screenFor } from '../lib/academy/quiz-flow'
 import type { HomeQuizView, QuizResultView, QuizView } from '../lib/academy/view'
-import { callTimeLabel, countdownLabel, passMarkLabel, quizCardCopy } from '../lib/academy/view-labels'
+import { allDoneTail, callTimeLabel, countdownLabel, passMarkLabel, quizCardCopy } from '../lib/academy/view-labels'
 
 const QUIZ_HREF = '/onboarding/quiz'
 const UNAVAILABLE = "The quiz isn't available right now. Please contact HR."
@@ -112,4 +112,11 @@ test('screenFor: an unavailable quiz, and states with nothing to show, fall back
 
 test('screenFor: locked goes home', () => {
   assert.deepEqual(screenFor(view('LOCKED')), { kind: 'home' })
+})
+
+test('allDoneTail: DONE on Home means HR must step in', () => {
+  assert.equal(allDoneTail('READY'), 'Your culture quiz is next.')
+  assert.equal(allDoneTail('PASSED_UNSIGNED'), 'Sign your acknowledgement to finish.')
+  assert.equal(allDoneTail('DONE'), 'Something still needs HR. Please get in touch.')
+  assert.equal(allDoneTail('LOCKED'), null)
 })

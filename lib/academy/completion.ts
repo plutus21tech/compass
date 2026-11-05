@@ -52,7 +52,8 @@ function canMeetRule(rule: OnboardingCompletionRule, blocks: readonly Block[], f
     case 'CHECKLIST_AND_FIELD':
       return hasFilledChecklist(blocks) && hasInputField(blocks, 'discordUsername')
     case 'CHECKLIST_AND_ACK':
-      return blocks.some((b) => b.type === 'acknowledgement')
+      // No fallback: finishing the course needs the SECURITY_SOPS signature, so the module must block instead.
+      return true
     case 'FIELD_SUBMITTED':
       return hasInputField(blocks, 'linkedinUrl')
     case 'PAYMENT_SETUP':
