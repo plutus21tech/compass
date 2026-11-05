@@ -1697,6 +1697,50 @@ export async function sendOnboardingCompletedNotification(userId: string) {
   }
 }
 
+/** Goes to HR at every failAlertThreshold failed attempts. Never carries the hire's answers. */
+export async function sendQuizFailAlert(userId: string, failedCount: number) {
+  const hire = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true, department: true },
+  })
+
+  if (!hire) {
+    return { success: false, message: 'User not found' }
+  }
+
+  const recipients = mergeRecipientEmails(await getHrRecipientEmails())
+
+  if (recipients.length === 0) {
+    return { success: false, message: 'No recipients configured for quiz fail alert' }
+  }
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">Culture Quiz: Please Arrange a Short Conversation</h2>
+      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>User:</strong> ${escapeHtml(hire.name)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(hire.email || 'N/A')}</p>
+        <p><strong>Department:</strong> ${escapeHtml(hire.department || 'N/A')}</p>
+        <p><strong>Failed attempts:</strong> ${failedCount}</p>
+      </div>
+      <p>Retakes stay open, so nothing is blocked while you talk.</p>
+    </div>
+  `
+
+  try {
+    const info = await transporter.sendMail({
+      from: `P21 Compass <${FROM_EMAIL}>`,
+      to: recipients.join(', '),
+      subject: `Culture Quiz Failed ${failedCount} Times: ${hire.name}`,
+      html: htmlContent,
+    })
+    return { success: true, data: { messageId: info.messageId } }
+  } catch (error: any) {
+    console.error('Failed to send quiz fail alert:', error)
+    return { success: false, error: error.message }
+  }
+}
+
 function getLeavePageUrl() {
   return compassUrl('/leave')
 }

@@ -44,6 +44,7 @@ export default function AdminOnboardingQuizPage() {
   const [questions, setQuestions] = useState<QuizQuestionRow[]>([])
   const [users, setUsers] = useState<UserOption[]>([])
   const [selectedResetUserId, setSelectedResetUserId] = useState('')
+  const [academyEnabled, setAcademyEnabled] = useState<boolean | null>(null)
   const [form, setForm] = useState({
     questionText: '',
     optionsText: '',
@@ -77,6 +78,10 @@ export default function AdminOnboardingQuizPage() {
 
   useEffect(() => {
     loadData()
+    fetch('/api/users/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { academyEnabled?: boolean } | null) => setAcademyEnabled(body?.academyEnabled === true))
+      .catch(() => setAcademyEnabled(false))
   }, [])
 
   const parseOptions = (text: string) =>
@@ -180,7 +185,7 @@ export default function AdminOnboardingQuizPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to reset attempts')
-      toast.success('Quiz attempts reset')
+      toast.success(academyEnabled ? 'Quiz attempts cleared' : 'Quiz attempts reset')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to reset attempts')
     } finally {
@@ -193,7 +198,7 @@ export default function AdminOnboardingQuizPage() {
     [questions]
   )
 
-  if (loading) {
+  if (loading || academyEnabled === null) {
     return <LoadingScreen message="Loading quiz management..." />
   }
 
@@ -201,7 +206,11 @@ export default function AdminOnboardingQuizPage() {
     <div className="p-6 sm:p-8 max-w-6xl mx-auto">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-display font-light text-foreground tracking-tight">Quiz Management</h1>
-        <p className="text-muted-foreground mt-1">Manage onboarding quiz questions and reset locked users.</p>
+        <p className="text-muted-foreground mt-1">
+          {academyEnabled
+            ? "Manage onboarding quiz questions and clear a hire's quiz attempts."
+            : 'Manage onboarding quiz questions and reset locked users.'}
+        </p>
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>

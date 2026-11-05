@@ -2,9 +2,12 @@ import { Prisma, type OnboardingProgress, type PrismaClient } from '@prisma/clie
 import { AcademyError } from '../errors'
 import { parseProgressState } from '../progress'
 import {
+  latestDue,
   renderBlocks,
   resolveLinkHrefs,
+  toHomeQuizView,
   toModuleCard,
+  type HomeQuizView,
   type HomeView,
   type ModuleCardView,
   type ModuleView,
@@ -24,6 +27,7 @@ import {
   versionIdFor,
   type CourseModule,
 } from './progress'
+import { readQuizState } from './quiz'
 import { loadSetup } from './setup'
 
 export type { HomeView, ModuleCardView, ModuleProgressView, ModuleView } from '../view'
@@ -159,12 +163,7 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
   }
 }
 
-function latestDue(cards: readonly ModuleCardView[]): string | null {
-  const dates = cards.flatMap((c) => (c.dueAt ? [c.dueAt] : [])).sort()
-  return dates.at(-1) ?? null
-}
-
-function toHomeView(context: AcademyContext, cards: ModuleCardView[]): ReleasedHomeView {
+function toHomeView(context: AcademyContext, cards: ModuleCardView[], quiz: HomeQuizView): ReleasedHomeView {
   return {
     released: true,
     greeting: `WELCOME TO THE TEAM, ${context.placeholders['preferred name']}`,
@@ -173,6 +172,7 @@ function toHomeView(context: AcademyContext, cards: ModuleCardView[]): ReleasedH
     doneCount: cards.filter((c) => c.status === 'COMPLETED').length,
     total: cards.length,
     courseDueAt: latestDue(cards),
+    quiz,
     nextModule: cards.find((c) => c.status === 'AVAILABLE' || c.status === 'IN_PROGRESS') ?? null,
     yourCalls: context.callTimes,
     yourBuddy: context.buddy,
@@ -184,5 +184,8 @@ export async function loadHome(db: PrismaClient, userId: string): Promise<HomeVi
   const context = await buildAcademyContext(db, userId)
   if (!context) return { released: false }
   const modules = await listCourseModules(db)
-  return toHomeView(context, cardsFor(modules, await readRows(db, userId, modules), new Date()))
+  const now = new Date()
+  const { status, dueAt, retakeAt, failedCount } = await readQuizState(db, userId, context.config.retakeCooldownMinutes, now)
+  const quiz = toHomeQuizView({ status, dueAt, retakeAt: retakeAt?.toISOString() ?? null, failedCount }, now)
+  return toHomeView(context, cardsFor(modules, await readRows(db, userId, modules), now), quiz)
 }

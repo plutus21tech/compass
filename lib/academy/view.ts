@@ -13,6 +13,7 @@ import { attributeValueLabel } from './labels'
 import { libraryCardSchema, resolveAcademyLink, resolveCardLink, type AcademyLink, type AcademyLinkKey } from './links'
 import { renderPlaceholders, type PlaceholderKey } from './placeholders'
 import { moduleCardState, type CardStatus, type ProgressState } from './progress'
+import type { QuizPaper, QuizStatus } from './quiz'
 import { blockersCallLocal, formatClock, overlapWindowLocal, timeZoneFor } from './time'
 
 const COMMUTE_TOKEN = '{commute rate table}'
@@ -121,6 +122,33 @@ export interface ModuleView {
   nextSlug: string | null
 }
 
+export interface QuizResultView {
+  score: number
+  total: number
+  passed: boolean
+  passPercent: number
+  review: Array<{
+    question: string
+    chosen: string
+    correctAnswer: string
+    correct: boolean
+    explanation: string
+    valueKey: string | null
+  }>
+}
+
+export interface QuizView {
+  status: QuizStatus
+  dueAt: string | null
+  /** Only in READY. Holds no answer key. */
+  paper: QuizPaper | null
+  lastResult: QuizResultView | null
+  retakeAt: string | null
+  failedCount: number
+}
+
+export type HomeQuizView = Pick<QuizView, 'status' | 'dueAt' | 'retakeAt' | 'failedCount'> & { overdue: boolean }
+
 export interface ReleasedHomeView {
   released: true
   greeting: string
@@ -129,6 +157,7 @@ export interface ReleasedHomeView {
   doneCount: number
   total: number
   courseDueAt: string | null
+  quiz: HomeQuizView
   nextModule: ModuleCardView | null
   yourCalls: CallTimesView
   yourBuddy: PersonView | null
@@ -320,6 +349,17 @@ export interface RowForCard {
 }
 
 const NO_ROW: RowForCard = { status: 'LOCKED', startedAt: null, dueAt: null, completedAt: null }
+
+/** The course due date: the last due date of any module. */
+export function latestDue(items: ReadonlyArray<{ dueAt: string | null }>): string | null {
+  const dates = items.flatMap((item) => (item.dueAt ? [item.dueAt] : [])).sort()
+  return dates.at(-1) ?? null
+}
+
+export function toHomeQuizView(quiz: Omit<HomeQuizView, 'overdue'>, now: Date): HomeQuizView {
+  const overdue = quiz.status !== 'DONE' && quiz.dueAt !== null && now.getTime() > new Date(quiz.dueAt).getTime()
+  return { ...quiz, overdue }
+}
 
 export function toModuleCard(module: ModuleForCard, number: number, row: RowForCard | undefined, now: Date): ModuleCardView {
   const source = row ?? NO_ROW

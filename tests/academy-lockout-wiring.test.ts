@@ -37,3 +37,10 @@ test('the middleware sets the path header on every request it lets through', () 
   assert.equal((source.match(/NextResponse\.next\(/g) ?? []).length, 1)
   assert.equal((source.match(/return nextWithPathname\(request\)/g) ?? []).length, 2)
 })
+
+test('the quiz reset clears attempts with the flag on and keeps the legacy path with it off', () => {
+  const source = read('app/api/admin/onboarding/quiz-attempts/reset/route.ts')
+  assert.match(source, /if \(academyEnabled\) \{\s*await clearQuizAttempts\(prisma, userId\)\s*return /)
+  assert.ok(source.indexOf('clearQuizAttempts(prisma') < source.indexOf('prisma.$transaction'), 'the Academy path returns before the legacy one')
+  assert.match(source, /data: quizResetUserData\(academyEnabled\)/)
+})

@@ -50,7 +50,7 @@ function assertSameQuestions(questions: StoredQuestion[], answers: Submission['a
   const submitted = answers.map((a) => a.questionId)
   const active = new Set(questions.map((q) => q.id))
   const exact = submitted.length === active.size && new Set(submitted).size === active.size && submitted.every((id) => active.has(id))
-  if (!exact) throw new AcademyError('The quiz has changed. Please reload and try again.', 409)
+  if (!exact) throw new AcademyError('The quiz has been updated. Please start again.', 409)
 }
 
 // shownIndex is the client's question order (position in the submitted answers): HR analysis only, never grading.

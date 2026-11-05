@@ -39,6 +39,7 @@ test('allowlisted pages and APIs are allowed, including anything under a prefix'
     '/api/onboarding/academy/bank',
     '/api/onboarding/academy/modules/welcome/complete',
     '/api/onboarding/academy/modules/welcome/events',
+    '/api/onboarding/academy/quiz',
     '/api/handbook',
     '/api/handbook/leave-policy',
     '/api/onboarding/payout',
