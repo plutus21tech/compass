@@ -68,8 +68,9 @@ The user wants it to feel **friendly**. The reference point is compliance-traini
 | D1 | Positions, the team lead form and the security checklist **stay**. They are HR's side of onboarding. Positions is HR's pre-onboarding step. The Academy is added on top. |
 | D2 | **New hires stay locked out of Compass until they finish the Academy.** The lockout applies only to new hires (`onboardingCompleted = false`). Existing staff assigned a single module are not locked. |
 | D3 | **Do not wipe benefit data.** `BenefitCategory` and `Benefit` are used today and must be left as they are. |
-| D4 | Joining date and bank details for **Pakistan employment contracts** use the existing **payroll profile**. Bank details are visible only to **HR and OA** (O&A: operations and accounting, role `OA`). "Accounts" in the spec means OA. |
-| D4a | **Contractors never get a payroll profile.** Their payout details are kept separately (§5.9), entered by the hire and read-only for HR and OA. They may be paid by Wise, bank transfer, Payoneer or anything else. |
+| D4 | **Onboarding never writes to payroll and has no hooks inside it** (user decision, 2026-11-05, replacing the earlier D4). A few read-only lookups of non-personal shared data live in `lib/academy/service/shared-reads.ts`, and nothing reads any person's pay or bank data. Module 11 only collects bank details or a preferred way of being paid, in onboarding's own table (§5.9). HR and OA read them, and OA enters them into payroll by hand. Bank details are visible only to **HR and OA** (O&A: operations and accounting, role `OA`). "Accounts" in the spec means OA. |
+| D4a | **Onboarding never creates or changes a payroll profile**, for anyone. Pakistan-employment hires and contractors save to the same table (§5.9), and contract type chooses the form. Contractors may be paid by Wise, bank transfer, Payoneer or anything else. |
+| D4b | **Sensitive modules are changed only by the team that owns them.** Other modules may collect details for that team, but never write to a sensitive module, gate its writes or depend on its code. This applies to payroll and to any module like it. |
 | D10 | Location, work mode, contract type and employment status are stored on **every employee's profile**, not only on new hires, so single-module assignments and re-reads can filter content. **HR backfills current staff.** |
 | D11 | At cutover, users already marked `onboardingCompleted = false` are test accounts. **Mark them complete.** |
 | D5 | Drop KPIs from Module 4. |
@@ -109,9 +110,9 @@ Spec section 3 lists the fields. Here is where each one lives:
 | Client account | `NewHire.clientAccount` (new, optional). Free text with suggestions: 3Echo, Noble, Lambda Surgical, Internal. |
 | Office location | **Profile attribute** (§5.3): `officeLocation` (enum: KARACHI, CASABLANCA, BOGOTA, DALLAS, REMOTE) + `remoteCountry` (when REMOTE) |
 | Work mode | **Profile attribute** (§5.3): `workMode` (enum: OFFICE, HYBRID, REMOTE) |
-| Contract type | **Profile attribute** (§5.3): `contractType` (enum: PK_EMPLOYMENT, INDEPENDENT_CONTRACTOR, OTHER_EMPLOYMENT). Prefilled from `PayrollEmployeeProfile.employmentType` where a payroll profile exists. Contract type is never written to payroll, and no payroll profile is created for contractors (D4a). |
+| Contract type | **Profile attribute** (§5.3): `contractType` (enum: PK_EMPLOYMENT, INDEPENDENT_CONTRACTOR, OTHER_EMPLOYMENT). Entered by HR. It chooses the Module 11 form and is never read from or written to payroll (D4). |
 | Employment status | **Profile attribute** (§5.3): `employmentStatus` (enum: PERMANENT, FIXED_TERM, INTERN) |
-| Date of joining | `NewHire.onboardingDate` (exists). For PK_EMPLOYMENT hires with a payroll profile, copy it into `PayrollEmployeeProfile.joiningDate` when linking, if empty. |
+| Date of joining | `NewHire.onboardingDate` (exists). Never copied to payroll (D4): OA enters it there. |
 | HR onboarding call, team onboarding call | `NewHire.hrCallAt`, `NewHire.teamCallAt` (new, DateTime) |
 | Team lead | `NewHire.teamLeadId` (exists) |
 | Team members | New join table `NewHireTeamMember (newHireId, userId)` |
@@ -146,7 +147,6 @@ These are what eligibility filtering, `conditional` blocks and Module 11's A/B s
 - **New hires:** HR enters them in the new-hire setup. Before an account is linked they are held on `NewHire` (same columns); at link time they are copied to `User`, and `User` is the source of truth from then on.
 - **Existing staff:** HR backfills them in Admin › Users (an editable column set, with a "missing attributes" filter). The form is prefilled where data exists:
   - location from `teamTag` (PAKISTAN → Karachi, MOROCCO → Casablanca, COLOMBIA → Bogotá)
-  - contract type from the payroll employment type
 - **Missing attributes:** a person with any attribute still empty only sees library cards and conditional content that apply to everyone, never content restricted to a group. The tracker and settings show a count of staff with missing attributes.
 - **Editing:** only HR can edit these attributes. Employees can see them on their profile but not change them.
 
@@ -192,7 +192,7 @@ HR can download these from the tracker drawer, one at a time as a PDF, or all of
   - Seed from the spec's benefits matrix and the Module 12 copy.
   - Cells the spec marks "HR to confirm" are seeded as **not eligible**, so they stay hidden until HR sets them.
 - **`OnboardingKeyContact`** (new): `group` (HR | SECURITY_IT | ACCOUNTS | EXECUTION), `userId?` (a Compass profile gives the photo, title and Discord), `label?`, `email?`, `orderIndex`.
-- **Karachi commute rate table:** payroll already holds travel allowance data. The builder checks whether those rates can be shown directly. If not, store an editable table in settings (JSON on `OnboardingConfig`).
+- **Karachi commute rate table:** a read-only lookup of the company rates in `PayrollTravelAllowanceTier`, in `shared-reads.ts`, with no second table to keep in step. An empty result shows "Ask HR for the current rates."
 - **Policy links come from the Compass handbook.** A link field in settings can point either at a handbook page (picked from a list) or at an external URL. Seed these handbook links:
   - travel-policy
   - company-equipment-policy
@@ -249,26 +249,27 @@ HR can download these from the tracker drawer, one at a time as a PDF, or all of
 
 - "Completion of Manager's Onboarding Checklist" is owned by the team lead and is never auto-ticked.
 
-### 5.9 Contractor payout details (Module 11, version B)
+### 5.9 Payment details (Module 11)
 
-Contractors are kept **out of payroll** (D4a). New model **`ContractorPayoutDetails`**, one row per user:
+Onboarding keeps these **out of payroll** (D4). Model **`OnboardingPaymentDetails`**, one row per user, whichever form saved it:
 - `userId` (unique)
-- `method` (WISE | BANK_TRANSFER | PAYONEER | OTHER)
-- `accountHolderName`
+- `method` (PK_BANK | WISE | BANK_TRANSFER | PAYONEER | OTHER)
+- `accountHolderName` (every method except PK_BANK)
 - method-specific fields:
   - **Wise or Payoneer:** `payoutEmail`
   - **Bank transfer:** `bankName`, `accountNumberOrIban`, `swiftBic`, `bankCountry`, `bankAddress?`
   - **Other:** `instructions` (free text)
-- `currency`
+  - **PK bank (version A):** `accountTitle`, `bankName`, `branch`, `iban`
+- `currency` (every method except PK_BANK)
 - `submittedAt`, `updatedAt`
 
-The Module 11 form shows only the fields for the method the hire picks.
+Contract type chooses the form: PK employment gets the bank form (version A), everyone else the payout form (version B), which shows only the fields for the method the hire picks. A row saved through one form does not count for the other, and saving through the other replaces it. Bank details lock once Module 11 is complete.
 
-**Security.** Account numbers, IBANs, emails and instructions are encrypted at rest, reusing the payroll sensitive-field encryption helper (`lib/payroll/sensitive-fields.ts`) without touching payroll tables.
+**Security.** Names, account numbers, IBANs, branches, emails and instructions are encrypted at rest by `lib/academy/field-encryption.ts`, with its own key, `ONBOARDING_FIELD_ENCRYPTION_KEY`. Nothing here uses payroll's helper or key.
 
 **Access.**
-- The hire enters and can update their own details.
-- **HR and OA can read them only**: read-only, masked by default, with a "Reveal" action that is logged.
+- The hire enters and can update their own details. A PK hire sees only a masked IBAN after saving, never the values.
+- **HR and OA can read them only**: read-only, masked by default, with a "Reveal" action that is logged in `OnboardingPaymentRevealLog`. This is an API until the stage 4 tracker shows them.
 - No other role can see them.
 
 Changing the details later notifies OA.
@@ -318,7 +319,7 @@ These blocks pull it at render time, so HR never edits those per hire inside the
 | `CHECKLIST_AND_FIELD` | 6 | Every checklist item ticked and the Discord username saved. |
 | `CHECKLIST_AND_ACK` | 7 | 2FA checklist ticked and the acknowledgement signed. |
 | `FIELD_SUBMITTED` | 8 | LinkedIn URL submitted. The module completes for the hire. HR's Verify step is a separate checklist tick. *(Builder's call: verification doesn't block the hire.)* |
-| `PAYMENT_SETUP` | 11 | Version A (PK employment): bank fields saved to the payroll profile. Version B (everyone else): `ContractorPayoutDetails` saved (§5.9) and "I've copied my invoice template" ticked. Notifies OA. |
+| `PAYMENT_SETUP` | 11 | Version A (PK employment): bank fields saved (§5.9). Version B (everyone else): payout details saved (§5.9) and "I've copied my invoice template" ticked. Notifies OA. |
 | `LINK_OPENED` | 14 | The Company Dashboard link has been opened. |
 
 Completion is **validated on the server** against `state` (for example, the server checks that the checklist ticks and the field are present). The client only reports events.
@@ -431,10 +432,7 @@ If the Vercel plan doesn't allow hourly crons, fall back to one run per time zon
   - the APIs those pages need
 - **Server-side enforcement:** add it to the existing client redirect, in `middleware.ts` or the API auth helpers, whichever the session model allows.
 - **Module 9's "Go to Leave in Compass" button** shows as "Available after onboarding" for locked hires. Leave isn't needed in week one. *(Builder's call.)*
-- **Bank details (PK employment)** are written to the payroll profile. Only HR, OA and the hire can read them; the hire sees them masked after submission.
-  - Add `branch` and `iban` to `PayrollEmployeeProfile`. `bankName` and `accountTitle` already exist.
-  - If a PK-employment hire has no payroll profile yet, the details are held until HR/OA creates the profile. Module 11 never creates a payroll profile itself, so nobody is pulled into payroll runs by accident.
-- **Contractor payout details** follow §5.9: separate from payroll, read-only for HR and OA.
+- **Payment details**, bank or payout, follow §5.9: kept in onboarding's own table, separate from payroll, read-only for HR and OA. Only HR, OA and the hire can read them; a PK hire sees them masked after submission. Module 11 never creates or changes a payroll profile, so nobody is pulled into payroll runs by accident.
 - **Permissions:**
   - **Onboarding settings and the tracker:** HR only.
   - **Tracker read access:** OA can read the payment-related columns.
@@ -450,6 +448,8 @@ If the Vercel plan doesn't allow hourly crons, fall back to one run per time zon
 There is no switch-on step (user decision, 2026-11-05). Nothing reaches main until the whole Academy is ready; it then becomes the default, and the last stage removes the flag and the branches it guards.
 
 The flag is server-read and exposed to the layout the same way `SECURITY_CHECKS_ENABLED` is.
+
+**Encryption key.** `ONBOARDING_FIELD_ENCRYPTION_KEY` must be set on every environment before the Academy goes live. It is separate from payroll's key. Without it, saving payment details fails.
 
 **Cutover (D11).** Before the server-side lockout goes live, a script marks every user with `onboardingCompleted = false` as complete. These are test accounts from March–April 2026. The script prints the names it changes, and it is run once, deliberately, not on every build.
 
@@ -484,7 +484,7 @@ The stages are built in order on the Academy branch, behind the flag. Nothing re
    - setup fields on the new-hire page
    - lead-input extension
    - profile fields, the four content-adapting attributes, and the HR backfill view in Admin › Users
-   - `ContractorPayoutDetails` model and its access rules
+   - `OnboardingPaymentDetails` model and its access rules
    - libraries and settings data (basic editors)
    - seed script
 2. **Course:**
@@ -529,5 +529,5 @@ The stages are built in order on the Academy branch, behind the flag. Nothing re
 - A Day 1 goal is included as an optional field.
 - Quiz retakes are never capped. After 3 failed attempts, HR is told.
 - There is one hourly cron, with a documented fallback if the plan disallows it.
-- **No new invite flow.** HR keeps creating the account in Admin › Users and linking it to the NewHire, as today. "Release course" is blocked until a user is linked, and the setup page lists "No Compass account linked" among the missing items. Contract type and joining date are copied into payroll at link time.
+- **No new invite flow.** HR keeps creating the account in Admin › Users and linking it to the NewHire, as today. "Release course" is blocked until a user is linked, and the setup page lists "No Compass account linked" among the missing items. Setup attributes are copied to the `User` at link time, and nothing is copied to payroll (D4).
 - **Holidays for due dates.** Use the hire's `teamTag` holidays (`PayrollPublicHoliday`) when a tag is set. Otherwise map the location: Karachi → PAKISTAN, Casablanca → MOROCCO, Bogotá → COLOMBIA. Dallas and unmapped remote countries skip holidays and count weekends only.

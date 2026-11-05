@@ -535,21 +535,19 @@ Everything new is gated by `ONBOARDING_ACADEMY_ENABLED`. With the flag off, Comp
 
 ## After stage 1: blockers before switch-on, and notes for stage 2
 
+The task bodies above describe stage 1 as built. `2026-11-05-onboarding-academy-payroll-separation.md` replaced their payroll links; this section is current.
+
 Stage 1 ships dark. None of these affect production while `ONBOARDING_ACADEMY_ENABLED` is off.
 
 **Must be settled before the flag goes on:**
-- **Contractors can still get a payroll profile.** `PUT /api/admin/users` upserts `payrollProfile` on every edit, and the Users page always sends it, so the first HR edit of a contractor creates a profile (D4a). The same class of write exists in the deactivate branch of that route and in `app/api/admin/users/reactivate/route.ts`. `app/api/payroll/employees/[id]/profile/route.ts` and the attendance import also upsert; they weren't assessed. This pre-dates the Academy.
-- **Payroll entries for a linked contractor are dropped without a message** on create. Show HR a notice, or hide the payroll section for contractors.
-- **Null contract type at link time:** a hire linked before HR sets the contract type still gets a profile, and the joining-date fill doesn't run on a later PK setup save.
+- **Set `ONBOARDING_FIELD_ENCRYPTION_KEY`** on every environment. It is separate from payroll's key, and saving payment details fails without it.
 - **Lead request after a failed email:** `leadInputDueAt` is stamped before sending, and a failed send isn't retried unless the lead changes.
 - **Run the seed only at switch-on, and run `completeTestUsers` dry first.** It marks every user with `onboardingCompleted = false`, so check the names for any real hire.
 
 **Stage 2 carry-forward:**
-- PK bank details held until a profile exists (§9) have no storage yet. Don't use `OnboardingProgress.state`, which is unencrypted.
 - First payout save doesn't notify OA; do that at `PAYMENT_SETUP`.
 - `/api/onboarding/payout` must be on the lockout allowlist.
 - `HEALTH_*` and `TRAVEL_POLICY` config keys aren't connected to card `links`.
-- Once `iban` is written, `GET /api/admin/users` returns it unmasked and unlogged, like `accountNumber` today. That conflicts with "masked by default".
 - `{commute rate table}` in the Commute card body must be substituted.
 - Legacy `POST /api/admin/users` still creates progress rows for all active modules, with no `dueAt` or `versionId`.
 - Stage 3 questions must have an `explanation`, or a re-seed retires them.

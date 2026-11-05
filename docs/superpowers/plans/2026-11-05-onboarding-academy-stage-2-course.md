@@ -497,19 +497,18 @@ Rules, per spec section 6 screens 1 and 2 and design §7:
 
 ## After stage 2
 
-Carried forward. None of this is built in stage 2.
+Carried forward. None of this is built in stage 2. `2026-11-05-onboarding-academy-payroll-separation.md` replaced the payroll links in the tasks above.
 
 **Needs a user decision before main**
-- **Contractor profile creation (R11).** Whether the admin and payroll routes may create a payroll profile for a contractor is still open. Stage 2 never creates one: contractors save a payout and no profile appears at any point (pinned in `tests/academy-course-flow.integration.test.ts`).
 - **Header forwarding on a preview build.** The lockout reads the path the middleware forwards in `x-compass-pathname`. It was proven on `next dev`. Verify it on a Vercel preview build before main. `tests/academy-lockout-wiring.test.ts` fails if the `isLockedOut` check leaves `getSession` or the middleware stops setting the header, but only a deployed build proves the header arrives.
 
 **Stage 3 first**
 - Quiz reset still sets the linked `NewHire` to ONBOARDING, and the HR quiz page still says "reset locked users".
 
 **Must close before main**
-- The IBAN and branch a hire saves are readable by nobody, and no payroll path uses them yet. Stage 4 must add the logged reveal view (D4), and payroll must consume the field.
-- `applyPendingBankDetails` silently replaces what HR typed. Stage 4 must show held details and make the apply visible, or ask HR to confirm.
-- Modules 1 and 2 complete on open until the real video player (VIDEO_95) ships. Bank changes are only a log line, so they need an audit row.
+- **`ONBOARDING_FIELD_ENCRYPTION_KEY`** must be set on every environment. There is no root `.env.example` to document it in.
+- Modules 1 and 2 complete on open until the real video player (VIDEO_95) ships.
+- Saves of payment details are only a log line, so they need an audit row.
 
 **Stage 3 (quiz)**
 - Stage 3's test pass: route-level tests for the new routes.
@@ -520,9 +519,9 @@ Carried forward. None of this is built in stage 2.
 - Module management must create progress rows for hires whose course is already released.
 - Reuse `linkedinUrlSchema` for Verify.
 - Route-level tests.
-- **HR and OA cannot read IBAN, branch or held (pending) bank details** until the tracker exists.
+- **OA's read view of payment details.** The tracker shows `OnboardingPaymentDetails` through the existing masked API (`GET /api/admin/onboarding/payout/[userId]`) and its logged reveal, for PK and contractor rows alike. Until then OA can only reach them through that API. Show OA what is new, since they enter it into payroll by hand.
 - Checklist auto-ticks are derived from stored data at backfill, not recorded as events.
-- `savePayout` must notify OA when a contractor changes their payout details. It already returns `isUpdate` for this.
+- `savePayout` must notify OA when a contractor changes their payout details. It already returns `isUpdate` for this. Decide whether a PK hire changing bank details before finishing Module 11 notifies OA the same way: `saveBankDetails` sends nothing today.
 - Early-unlocked modules need `ModuleCardView` support, so Home can show them as such.
 - The bank letter download, once HR sends the text. Until then Module 11 says "HR will share your bank letter".
 
