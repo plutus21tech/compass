@@ -16,6 +16,7 @@ import {
 import { ATTRIBUTE_SELECT } from './attributes'
 import { buildAcademyContext, type AcademyContext } from './context'
 import {
+  COURSE_MODULE_COUNT,
   COURSE_TX_OPTIONS,
   assertModuleOpen,
   courseDueDates,
@@ -31,9 +32,7 @@ import { readQuizState } from './quiz'
 import { loadSetup } from './setup'
 
 export type { HomeView, ModuleCardView, ModuleProgressView, ModuleView } from '../view'
-export { recomputeDueDates } from './progress'
-
-const COURSE_MODULE_COUNT = 14
+export { COURSE_MODULE_COUNT, recomputeDueDates } from './progress'
 
 /**
  * The NewHire row lock makes this once-only and keeps saveSetup from moving the joining date halfway.

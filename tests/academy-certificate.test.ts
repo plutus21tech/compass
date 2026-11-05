@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildCertificatePdf, formatCertificateDate, pdfSafeName } from '../lib/academy/certificate'
+import { buildCertificatePdf, pdfSafeName } from '../lib/academy/certificate'
 import { certificateLogoBuffer } from '../lib/academy/certificate-assets'
+import { formatCertificateDate } from '../lib/academy/view-labels'
 
 const FALLBACK = 'Plutus21 team member'
 const COMPLETED_ON = '4 December 2026'
@@ -30,7 +31,29 @@ test('the page is A4 landscape', async () => {
 test('pdfSafeName keeps Latin-1 and drops the rest', () => {
   assert.equal(pdfSafeName('Zoë'), 'Zoë')
   assert.equal(pdfSafeName('Zoë Ñandú'), 'Zoë Ñandú')
-  assert.equal(pdfSafeName('Cara 李 Lindqvist'), 'Cara Lindqvist')
+  assert.equal(pdfSafeName('Søren Ørsted'), 'Søren Ørsted')
+})
+
+test('pdfSafeName folds letters outside Latin-1 to their base letter', () => {
+  assert.equal(pdfSafeName('Šimić'), 'Simic')
+  assert.equal(pdfSafeName('Łukasz Dvořák'), 'Lukasz Dvorák')
+  assert.equal(pdfSafeName('Nguyễn Văn'), 'Nguyen Van')
+  assert.equal(pdfSafeName('Đorđe'), 'Dorde')
+})
+
+test('pdfSafeName keeps an apostrophe in either form', () => {
+  assert.equal(pdfSafeName("O'Brien"), "O'Brien")
+  assert.equal(pdfSafeName('O’Brien'), "O'Brien")
+})
+
+test('pdfSafeName never prints a fragment: a lost letter means the fallback', () => {
+  assert.equal(pdfSafeName('Lind李qvist'), FALLBACK)
+  assert.equal(pdfSafeName('زارا Khan'), FALLBACK)
+  assert.equal(pdfSafeName('Cara 李 Lindqvist'), FALLBACK)
+})
+
+test('pdfSafeName drops what is not a letter without giving up the name', () => {
+  assert.equal(pdfSafeName('Cara \u{1F600} Lindqvist'), 'Cara Lindqvist')
 })
 
 test('pdfSafeName composes accents that arrive as separate marks', () => {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { blocksModuleSwitch } from '@/lib/academy/service/progress'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
@@ -83,6 +84,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const isActive = typeof body.isActive === 'boolean' ? body.isActive : undefined
     const orderIndex =
       typeof body.orderIndex === 'number' && Number.isInteger(body.orderIndex) ? body.orderIndex : undefined
+
+    if (blocksModuleSwitch(module, isActive)) {
+      return NextResponse.json({ error: "Course modules can't be switched off." }, { status: 409 })
+    }
 
     if (orderIndex !== undefined && orderIndex < 1) {
       return NextResponse.json({ error: 'orderIndex must be >= 1' }, { status: 400 })

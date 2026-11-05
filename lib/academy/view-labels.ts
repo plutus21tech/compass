@@ -26,14 +26,23 @@ export function displayedState(confirmed: ProgressState, pending: readonly Progr
   return pending.reduce((state, event) => applyEvent(state, event, now), confirmed)
 }
 
-/** A time zone is always passed, so the server and the browser print the same date. */
-export function formatAcademyDate(iso: string, timeZone: string | null): string {
+function formatDate(iso: string, timeZone: string | null, month: 'short' | 'long'): string {
   return new Intl.DateTimeFormat(DATE_LOCALE, {
     day: 'numeric',
-    month: 'short',
+    month,
     year: 'numeric',
     timeZone: timeZone ?? DEFAULT_TIME_ZONE,
   }).format(new Date(iso))
+}
+
+/** A time zone is always passed, so the server and the browser print the same date. */
+export function formatAcademyDate(iso: string, timeZone: string | null): string {
+  return formatDate(iso, timeZone, 'short')
+}
+
+/** "4 December 2026", on the day it was for the hire. */
+export function formatCertificateDate(iso: string, timeZone: string | null): string {
+  return formatDate(iso, timeZone, 'long')
 }
 
 export function formatAcademyDateTime(iso: string, timeZone: string | null): string {

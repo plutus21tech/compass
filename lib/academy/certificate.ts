@@ -27,8 +27,9 @@ const COURSE_TOP = 395
 const DATE_TOP = 441
 
 const FALLBACK_NAME = 'Plutus21 team member'
-const DATE_LOCALE = 'en-GB'
-const DEFAULT_TIME_ZONE = 'UTC'
+const LATIN_1 = /^[\x20-\x7E\xA0-\xFF]*$/
+/** Common characters with no decomposition. */
+const FOLDS: Readonly<Record<string, string>> = { Ł: 'L', ł: 'l', Đ: 'D', đ: 'd', '’': "'" }
 
 type Doc = PDFKit.PDFDocument
 
@@ -37,27 +38,25 @@ export interface CertificateInput {
   completedOn: string
 }
 
-/**
- * PDFKit's built-in fonts draw Latin-1 only, so anything else is removed. A name with no letters
- * left falls back to a generic one, so a PDF always results.
- */
-export function pdfSafeName(name: string): string {
-  const safe = name
-    .normalize('NFC')
-    .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return /\p{L}/u.test(safe) ? safe : FALLBACK_NAME
+/** What to draw for one character, or null for a letter that can't be drawn. */
+function latin1Form(char: string): string | null {
+  if (LATIN_1.test(char)) return char
+  if (FOLDS[char]) return FOLDS[char]
+  if (/\p{M}/u.test(char)) return ''
+  if (!/\p{L}/u.test(char)) return ' '
+  const folded = char.normalize('NFD').replace(/\p{M}/gu, '')
+  return LATIN_1.test(folded) ? folded : null
 }
 
-/** "4 December 2026", on the day it was for the hire. An unknown zone prints UTC. */
-export function formatCertificateDate(iso: string, timeZone: string | null): string {
-  return new Intl.DateTimeFormat(DATE_LOCALE, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: timeZone ?? DEFAULT_TIME_ZONE,
-  }).format(new Date(iso))
+/**
+ * PDFKit's built-in fonts draw Latin-1 only. Other accented letters fold to their base letter. If a
+ * letter still can't be drawn the generic name is used, never a fragment, so a PDF always results.
+ */
+export function pdfSafeName(name: string): string {
+  const forms = Array.from(name.normalize('NFC'), latin1Form)
+  if (forms.includes(null)) return FALLBACK_NAME
+  const safe = forms.join('').replace(/\s+/g, ' ').trim()
+  return /\p{L}/u.test(safe) ? safe : FALLBACK_NAME
 }
 
 /** One centred line. No line breaking, so nothing can spill onto a second page. */

@@ -7,7 +7,7 @@ import { resolveAcademyLink } from '../links'
 import { applyEvent, moduleCardState, nextToUnlock, parseProgressState, type ProgressEvent, type ProgressState } from '../progress'
 import { holidayTeamFor, moduleDueAt } from '../schedule'
 import { timeZoneFor } from '../time'
-import { eventKeysFor, type ModuleProgressView } from '../view'
+import { eventKeysFor, latestDue, type ModuleProgressView } from '../view'
 import { ATTRIBUTE_SELECT } from './attributes'
 import { loadHireFacts, type HireFacts } from './context'
 import { getAcademyConfig } from './library'
@@ -19,6 +19,8 @@ type Tx = Prisma.TransactionClient
 /** A hire's ticks queue on the row lock, and the database may be a cold serverless one. */
 export const COURSE_TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const
 
+export const COURSE_MODULE_COUNT = 14
+
 const PHASES: readonly OnboardingPhase[] = ['DAY_1', 'WEEK_1']
 const notFound = () => new AcademyError('Module not found', 404)
 
@@ -28,13 +30,38 @@ export type CourseModule = OnboardingModule & {
   currentVersionId: string
 }
 
-const isCourseModule = (m: OnboardingModule): m is CourseModule =>
+export const isCourseModule = (m: OnboardingModule): m is CourseModule =>
   m.phase !== null && m.completionRule !== null && m.currentVersionId !== null
+
+/**
+ * For the legacy module editor, whose page sends `isActive` on every save, so only a change counts.
+ * Switching a course module off would open the quiz early, and back on would strand a hire on a locked row.
+ */
+export function blocksModuleSwitch(module: OnboardingModule, isActive: boolean | undefined): boolean {
+  return isActive !== undefined && isActive !== module.isActive && isCourseModule(module)
+}
 
 /** Active modules with content, in order. Legacy modules have no rule or version and never count. */
 export async function listCourseModules(db: Db): Promise<CourseModule[]> {
   const modules = await db.onboardingModule.findMany({ where: { isActive: true }, orderBy: { orderIndex: 'asc' } })
   return modules.filter(isCourseModule)
+}
+
+/**
+ * The one test of "the modules are done", for the quiz and for finishing. Anything but the whole
+ * course, each module finished as a course row, counts as not done: it fails closed.
+ */
+export async function readCourseProgress(db: Db, userId: string): Promise<{ modulesDone: boolean; dueAt: string | null }> {
+  const modules = await listCourseModules(db)
+  const rows = await db.onboardingProgress.findMany({
+    where: { userId, moduleId: { in: modules.map((m) => m.id) }, source: 'COURSE' },
+    select: { moduleId: true, status: true, dueAt: true },
+  })
+  const completed = new Set(rows.filter((r) => r.status === 'COMPLETED').map((r) => r.moduleId))
+  return {
+    modulesDone: modules.length === COURSE_MODULE_COUNT && modules.every((m) => completed.has(m.id)),
+    dueAt: latestDue(rows.map((r) => ({ dueAt: r.dueAt?.toISOString() ?? null }))),
+  }
 }
 
 /** `index` is zero-based, so it is also the number of the module before. */

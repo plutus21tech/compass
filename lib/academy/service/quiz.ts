@@ -13,11 +13,11 @@ import {
   type StoredQuestion,
 } from '../quiz'
 import { timeZoneFor } from '../time'
-import { latestDue, type QuizResultView, type QuizView } from '../view'
+import type { QuizResultView, QuizView } from '../view'
 import { callTimeLabel } from '../view-labels'
 import { buildAcademyContext, loadHireFacts } from './context'
 import { getAcademyConfig } from './library'
-import { COURSE_TX_OPTIONS, listCourseModules } from './progress'
+import { COURSE_TX_OPTIONS, readCourseProgress } from './progress'
 
 export type { QuizResultView, QuizView } from '../view'
 
@@ -93,20 +93,6 @@ export interface QuizState {
   /** Only in COOLDOWN. */
   retakeAt: Date | null
   failedCount: number
-}
-
-async function readCourseProgress(db: Db, userId: string): Promise<{ modulesDone: boolean; dueAt: string | null }> {
-  const modules = await listCourseModules(db)
-  const moduleIds = modules.map((m) => m.id)
-  const rows = await db.onboardingProgress.findMany({
-    where: { userId, moduleId: { in: moduleIds } },
-    select: { moduleId: true, status: true, dueAt: true },
-  })
-  const completed = new Set(rows.filter((r) => r.status === 'COMPLETED').map((r) => r.moduleId))
-  return {
-    modulesDone: moduleIds.length > 0 && moduleIds.every((id) => completed.has(id)),
-    dueAt: latestDue(rows.map((r) => ({ dueAt: r.dueAt?.toISOString() ?? null }))),
-  }
 }
 
 /** Under lockUserRow this is the truth a submission is judged on; without it, it is what a page shows. */

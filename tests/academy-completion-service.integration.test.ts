@@ -5,7 +5,7 @@ import { AcademyError } from '../lib/academy/errors'
 import { VALUES_STATEMENT, type Submission } from '../lib/academy/quiz'
 import { finishCourseIfDone, loadCompletion, notifyCourseCompleted, signValuesAcknowledgement } from '../lib/academy/service/completion'
 import { signAcknowledgement } from '../lib/academy/service/fields'
-import { lockUserRow, submitQuiz } from '../lib/academy/service/quiz'
+import { loadQuiz, lockUserRow, submitQuiz } from '../lib/academy/service/quiz'
 import { ACADEMY_QUIZ_QUESTIONS } from '../prisma/seed-academy-quiz'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import { HIRE_ID, NEW_HIRE_ID, cleanCourse, createReadyHire, createReleasedHire } from './helpers/academy-course-fixtures'
@@ -214,6 +214,29 @@ test('finishCourseIfDone: a missing row holds it back', ACADEMY_DB_TEST, async (
   await passedAndSecuritySigned()
   await addValuesRow()
   await prisma.onboardingProgress.deleteMany({ where: { userId: HIRE_ID, module: { slug: 'welcome' } } })
+  assert.equal(await finishDirectly(), false)
+  await assertStillLocked()
+})
+
+test('13 active modules, all complete: not the course, so it fails closed and the quiz stays locked', ACADEMY_DB_TEST, async () => {
+  await passedAndSecuritySigned()
+  await addValuesRow()
+  await prisma.onboardingModule.updateMany({ where: { slug: 'welcome' }, data: { isActive: false } })
+  assert.equal(await finishDirectly(), false)
+  await assertStillLocked()
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'LOCKED')
+})
+
+test('a completed row that is not a course row keeps the quiz locked too', ACADEMY_DB_TEST, async () => {
+  await modulesDone()
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, module: { slug: 'welcome' } }, data: { source: 'REREAD' } })
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'LOCKED')
+})
+
+test('finishCourseIfDone: a course that was never released holds it back', ACADEMY_DB_TEST, async () => {
+  await passedAndSecuritySigned()
+  await addValuesRow()
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { academyReleasedAt: null } })
   assert.equal(await finishDirectly(), false)
   await assertStillLocked()
 })

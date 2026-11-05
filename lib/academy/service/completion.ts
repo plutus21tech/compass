@@ -2,9 +2,12 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 import { sendOnboardingCompletedNotification } from '@/lib/email'
 import { AcademyError } from '../errors'
 import { VALUES_STATEMENT } from '../quiz'
+import type { CompletionView } from '../view'
 import { NAME_MESSAGE, isTypedNameValid } from './fields'
-import { COURSE_TX_OPTIONS, listCourseModules } from './progress'
+import { COURSE_TX_OPTIONS, readCourseProgress } from './progress'
 import { lockUserRow, readAcademyAttempts } from './quiz'
+
+export type { CompletionView } from '../view'
 
 type Db = PrismaClient | Prisma.TransactionClient
 type Tx = Prisma.TransactionClient
@@ -12,23 +15,8 @@ type Tx = Prisma.TransactionClient
 const VALUES_KIND = 'VALUES_CODE_OF_CONDUCT'
 const REQUIRED_KINDS = ['SECURITY_SOPS', VALUES_KIND] as const
 
-export interface CompletionView {
-  name: string
-  preferredName: string
-  completedAt: string
-}
-
 const hasPassed = async (db: Db, userId: string): Promise<boolean> =>
   (await readAcademyAttempts(db, userId)).some((attempt) => attempt.passed)
-
-/** Every active course module has its course row completed. A row of any other source is not the course. */
-async function courseRowsDone(tx: Tx, userId: string): Promise<boolean> {
-  const modules = await listCourseModules(tx)
-  const done = await tx.onboardingProgress.count({
-    where: { userId, moduleId: { in: modules.map((m) => m.id) }, source: 'COURSE', status: 'COMPLETED' },
-  })
-  return modules.length > 0 && done === modules.length
-}
 
 async function bothAcknowledged(tx: Tx, userId: string): Promise<boolean> {
   const signed = await tx.onboardingAcknowledgement.findMany({
@@ -44,11 +32,10 @@ async function bothAcknowledged(tx: Tx, userId: string): Promise<boolean> {
  * writing. The conditional write decides who finished: only the call that changed the user gets true.
  */
 export async function finishCourseIfDone(tx: Tx, userId: string): Promise<boolean> {
-  const done =
-    (await courseRowsDone(tx, userId)) && (await hasPassed(tx, userId)) && (await bothAcknowledged(tx, userId))
-  if (!done) return false
+  const { modulesDone } = await readCourseProgress(tx, userId)
+  if (!modulesDone || !(await hasPassed(tx, userId)) || !(await bothAcknowledged(tx, userId))) return false
   const { count } = await tx.user.updateMany({
-    where: { id: userId, onboardingCompleted: false },
+    where: { id: userId, onboardingCompleted: false, newHireRecord: { is: { academyReleasedAt: { not: null } } } },
     data: { onboardingCompleted: true },
   })
   if (count === 0) return false

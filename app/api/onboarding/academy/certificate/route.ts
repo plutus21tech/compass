@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { buildCertificatePdf, formatCertificateDate } from '@/lib/academy/certificate'
+import { buildCertificatePdf } from '@/lib/academy/certificate'
 import { AcademyError, academyErrorResponse, requireAcademySession } from '@/lib/academy/http'
 import { loadCompletion } from '@/lib/academy/service/completion'
 import { loadHireFacts } from '@/lib/academy/service/context'
 import { timeZoneFor } from '@/lib/academy/time'
+import { formatCertificateDate } from '@/lib/academy/view-labels'
 
 export const runtime = 'nodejs'
 

@@ -22,6 +22,12 @@ const SECURITY_FALLBACK = 'Security and IT'
 const ACCOUNTS_FALLBACK = 'Accounts'
 export const DASHBOARD_EVENT_KEY = 'COMPANY_DASHBOARD'
 
+export interface CompletionView {
+  name: string
+  preferredName: string
+  completedAt: string
+}
+
 export interface PersonView {
   id: string
   name: string
