@@ -38,7 +38,7 @@ export { COURSE_MODULE_COUNT, recomputeDueDates } from './progress'
  * The NewHire row lock makes this once-only and keeps saveSetup from moving the joining date halfway.
  * Rows are written in full, so anything the legacy path created is corrected. Emails come in stage 4.
  */
-export async function releaseCourse(db: PrismaClient, newHireId: string, _actorId: string): Promise<{ releasedAt: Date }> {
+export async function releaseCourse(db: PrismaClient, newHireId: string, actorId: string): Promise<{ releasedAt: Date }> {
   return db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "NewHire" WHERE id = ${newHireId} FOR UPDATE`
     const hire = await tx.newHire.findUnique({
@@ -81,7 +81,7 @@ export async function releaseCourse(db: PrismaClient, newHireId: string, _actorI
       })
     }
     const releasedAt = new Date()
-    await tx.newHire.update({ where: { id: newHireId }, data: { academyReleasedAt: releasedAt } })
+    await tx.newHire.update({ where: { id: newHireId }, data: { academyReleasedAt: releasedAt, academyReleasedById: actorId } })
     return { releasedAt }
   }, COURSE_TX_OPTIONS)
 }

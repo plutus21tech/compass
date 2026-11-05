@@ -3,6 +3,7 @@ import { AcademyError } from '../errors'
 import { ATTRIBUTE_SELECT, setPersonAttributes } from './attributes'
 import { describeSetupIssues } from '../labels'
 import { recomputeDueDates } from './progress'
+import { createChecklist } from './checklist'
 import { isAccountInactive } from './shared-reads'
 import {
   getSetupReadiness,
@@ -94,6 +95,7 @@ export async function saveSetup(
       create: { newHireId, leadInputDueAt: dueAt },
       update: { leadInputDueAt: dueAt },
     })
+    await createChecklist(tx, newHireId)
     const dateMoved = data.onboardingDate.getTime() !== hire.onboardingDate.getTime()
     if (hire.userId && hire.academyReleasedAt && dateMoved) await recomputeDueDates(tx, hire.userId)
     const noRequestYet = !hire.teamLeadForm?.leadInputDueAt

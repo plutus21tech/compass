@@ -1618,6 +1618,8 @@ model NewHire {
   coreHoursStart    String?
   coreHoursEnd      String?
   academyReleasedAt DateTime?
+  academyReleasedById String?
+  securityCallAt    DateTime?
 
   teamMembers       NewHireTeamMember[]
   checklistItems    OnboardingChecklistItem[]
@@ -1683,6 +1685,7 @@ model OnboardingModule {
   completionRule   OnboardingCompletionRule?
   currentVersionId String?
   heroImageUrl     String?
+  draftBlocks      Json?
 
   versions         OnboardingModuleVersion[]
 }
@@ -3340,6 +3343,7 @@ model OnboardingChecklistItem {
   newHireId      String
   templateItemId String
   dueAt          DateTime
+  dueOffsetDays  Int?
   doneAt         DateTime?
   doneById       String?
   autoTicked     Boolean                         @default(false)
@@ -3386,4 +3390,23 @@ model OnboardingPaymentRevealLog {
   createdAt     DateTime @default(now())
 
   @@index([paymentUserId, createdAt])
+}
+
+/// Keys of notices already sent, so a notice goes out once.
+model OnboardingNotificationLog {
+  id     String   @id @default(cuid())
+  key    String   @unique
+  sentAt DateTime @default(now())
+}
+
+/// Who saved payment details and when. Plain ids, no relations: the trail must survive user deletion.
+model OnboardingPaymentChangeLog {
+  id          String   @id @default(cuid())
+  userId      String
+  actorId     String
+  method      String
+  isFirstSave Boolean
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

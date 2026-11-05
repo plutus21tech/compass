@@ -17,12 +17,12 @@ const BANK_TEXTS = ACADEMY_QUIZ_QUESTIONS.map((q) => q.questionText)
 const slugs = ACADEMY_MODULES.map((m) => m.slug)
 
 async function clean() {
+  await resetAcademyFixtures(prisma)
   await prisma.onboardingModule.deleteMany({ where: { slug: { in: [...slugs, OLD_SLUG, LEGACY_BENEFITS_SLUG] } } })
   await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { in: [OLD_QUESTION_TEXT, NEW_QUESTION_TEXT, ...BANK_TEXTS] } } })
   for (const c of ACADEMY_CARDS) await prisma.onboardingLibraryCard.deleteMany({ where: { kind: c.kind, title: c.title } })
   await prisma.onboardingChecklistTemplateItem.deleteMany({ where: { key: { in: ACADEMY_CHECKLIST.map((i) => i.key) } } })
   await prisma.onboardingConfig.deleteMany({ where: { id: 'singleton' } })
-  await resetAcademyFixtures(prisma)
 }
 
 beforeEach(async () => {

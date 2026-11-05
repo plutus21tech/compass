@@ -40,11 +40,11 @@ export const LEAD_INPUT = {
 }
 
 export async function cleanCourse(): Promise<void> {
+  await resetAcademyFixtures(prisma)
   await prisma.onboardingModule.deleteMany({ where: { slug: { in: SLUGS } } })
   for (const c of ACADEMY_CARDS) await prisma.onboardingLibraryCard.deleteMany({ where: { kind: c.kind, title: c.title } })
   await prisma.onboardingChecklistTemplateItem.deleteMany({ where: { key: { in: ACADEMY_CHECKLIST.map((i) => i.key) } } })
   await prisma.onboardingConfig.deleteMany({ where: { id: 'singleton' } })
-  await resetAcademyFixtures(prisma)
 }
 
 /** Fresh content, people and a linked hire, with everything release needs unless overridden. */
