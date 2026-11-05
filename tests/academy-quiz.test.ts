@@ -89,7 +89,24 @@ test('gradeAttempt scores all wrong as 0 and records each answer', () => {
   assert.equal(result.answersJson.length, 12)
   assert.equal(result.answersJson[0].correct, false)
   const q1 = stored[0]
-  assert.equal(result.answersJson[0].shownIndex, q1.options.indexOf(wrongOption(q1)))
+  assert.equal(result.answersJson[0].questionId, q1.id)
+  assert.equal(result.answersJson[0].shownIndex, 0)
+})
+
+test('shownIndex is the position in the submitted answers', () => {
+  const order = shuffled(correctAll, seeded(5))
+  const result = gradeAttempt(stored, order, 80)
+  result.answersJson.forEach((a, i) => {
+    assert.equal(a.shownIndex, i)
+    assert.equal(a.questionId, order[i].questionId)
+  })
+})
+
+test('submissionSchema caps questionId at 100 and chosen at 500 characters', () => {
+  const ok = { answers: [{ questionId: 'q'.repeat(100), chosen: 'c'.repeat(500) }] }
+  assert.equal(submissionSchema.safeParse(ok).success, true)
+  assert.equal(submissionSchema.safeParse({ answers: [{ questionId: 'q'.repeat(101), chosen: 'c' }] }).success, false)
+  assert.equal(submissionSchema.safeParse({ answers: [{ questionId: 'q', chosen: 'c'.repeat(501) }] }).success, false)
 })
 
 function statusOf(fn: () => unknown): number | undefined {

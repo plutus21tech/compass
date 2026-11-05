@@ -21,7 +21,7 @@ export type AttemptAnswer = { questionId: string; chosen: string; correct: boole
 export type GradedAttempt = { score: number; total: number; passed: boolean; answersJson: AttemptAnswer[] }
 
 export const submissionSchema = z.object({
-  answers: z.array(z.object({ questionId: z.string().min(1), chosen: z.string() })).min(1).max(50),
+  answers: z.array(z.object({ questionId: z.string().min(1).max(100), chosen: z.string().max(500) })).min(1).max(50),
 })
 export type Submission = z.infer<typeof submissionSchema>
 
@@ -53,16 +53,16 @@ function assertSameQuestions(questions: StoredQuestion[], answers: Submission['a
   if (!exact) throw new AcademyError('The quiz has changed. Please reload and try again.', 409)
 }
 
-function gradeOne(question: StoredQuestion, chosen: string): AttemptAnswer {
-  const shownIndex = question.options.indexOf(chosen)
-  if (shownIndex < 0) throw new AcademyError('That answer is not one of the options.', 400)
+// shownIndex is the client's question order (position in the submitted answers): HR analysis only, never grading.
+function gradeOne(question: StoredQuestion, chosen: string, shownIndex: number): AttemptAnswer {
+  if (!question.options.includes(chosen)) throw new AcademyError('That answer is not one of the options.', 400)
   return { questionId: question.id, chosen, correct: chosen === question.correctAnswer, shownIndex }
 }
 
 export function gradeAttempt(questions: StoredQuestion[], answers: Submission['answers'], passPercent: number): GradedAttempt {
   assertSameQuestions(questions, answers)
   const byId = new Map(questions.map((q) => [q.id, q]))
-  const answersJson = answers.map((a) => gradeOne(byId.get(a.questionId) as StoredQuestion, a.chosen))
+  const answersJson = answers.map((a, i) => gradeOne(byId.get(a.questionId) as StoredQuestion, a.chosen, i))
   const score = answersJson.filter((a) => a.correct).length
   const total = questions.length
   return { score, total, passed: score * 100 >= passPercent * total, answersJson }
