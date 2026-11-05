@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { Block } from '../lib/academy/blocks'
+import { filterBlocks, type Block } from '../lib/academy/blocks'
 import { effectiveRule, evaluateCompletion, type CompletionInput } from '../lib/academy/completion'
 
 const checklist = (...keys: string[]): Block => ({ type: 'checklist', items: keys.map((key) => ({ key, label: key })) })
@@ -51,17 +51,26 @@ test('CHECKLIST_AND_ACK', () => {
   assert.deepEqual(run({ rule: 'CHECKLIST_AND_ACK', blocks, state: s, securityAckSigned: true }), { met: true })
 })
 
+const NO_ATTRS = { officeLocation: null, remoteCountry: null, workMode: null, contractType: null, employmentStatus: null }
+const withClient = (clientAccount: string | null) =>
+  filterBlocks(
+    [
+      checklist('a'),
+      { type: 'conditional', when: { clientAccountSet: true }, children: [{ type: 'conditional', when: { clientAccountSet: true }, children: [checklist('client-only')] }] },
+    ],
+    { attributes: NO_ATTRS, clientAccount, companyWing: null },
+  )
+
 test('a checklist item inside a hidden conditional is not required', () => {
-  const hidden: Block = { type: 'conditional', when: { clientAccountSet: true }, children: [checklist('client-only')] }
-  // filterBlocks has already removed the hidden conditional
-  const filtered = [hidden].filter((b) => b.type !== 'conditional')
-  const r = run({ rule: 'CHECKLIST_AND_ACK', blocks: [checklist('a'), ...filtered], state: { ...state, checks: { a: true } }, securityAckSigned: true })
+  const r = run({ rule: 'CHECKLIST_AND_ACK', blocks: withClient(null), state: { ...state, checks: { a: true } }, securityAckSigned: true })
   assert.deepEqual(r, { met: true })
 })
 
-test('a checklist nested in a conditional that survived filtering is flattened and required', () => {
-  const r = run({ rule: 'CHECKLIST_AND_ACK', blocks: [checklist('a', 'b')], state: { ...state, checks: { a: true } }, securityAckSigned: true })
-  assert.equal(reason(r), 'Tick every step and sign the acknowledgement.')
+test('a checklist nested in conditionals that pass filtering is required until ticked', () => {
+  const blocks = withClient('Noble')
+  const ack = { rule: 'CHECKLIST_AND_ACK' as const, blocks, securityAckSigned: true }
+  assert.equal(reason(run({ ...ack, state: { ...state, checks: { a: true } } })), 'Tick every step and sign the acknowledgement.')
+  assert.deepEqual(run({ ...ack, state: { ...state, checks: { a: true, 'client-only': true } } }), { met: true })
 })
 
 test('FIELD_SUBMITTED', () => {
