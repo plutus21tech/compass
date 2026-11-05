@@ -19,7 +19,8 @@ test('findUnknownPlaceholders lists only unknown names, once each', () => {
   assert.deepEqual(findUnknownPlaceholders('{title} {core hours}'), [])
 })
 
-test('PLACEHOLDER_KEYS has the 15 agreed keys', () => {
-  assert.equal(PLACEHOLDER_KEYS.length, 15)
+test('PLACEHOLDER_KEYS has the 14 agreed keys', () => {
+  assert.equal(PLACEHOLDER_KEYS.length, 14)
+  assert.ok(!(PLACEHOLDER_KEYS as readonly string[]).includes('bank name'))
   assert.ok(PLACEHOLDER_KEYS.includes('month 3 goal'))
 })

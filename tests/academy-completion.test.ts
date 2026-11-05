@@ -110,10 +110,55 @@ test('a checklist is not required by a non-checklist rule', () => {
 
 test('effectiveRule fallbacks', () => {
   const facts = { tutorialCount: 2, dashboardLinkSet: true }
-  assert.equal(effectiveRule('VIDEO_95', facts), 'SCROLL_END')
-  assert.equal(effectiveRule('ALL_LINKS_OPENED', { ...facts, tutorialCount: 0 }), 'SCROLL_END')
-  assert.equal(effectiveRule('ALL_LINKS_OPENED', facts), 'ALL_LINKS_OPENED')
-  assert.equal(effectiveRule('LINK_OPENED', { ...facts, dashboardLinkSet: false }), 'SCROLL_END')
-  assert.equal(effectiveRule('LINK_OPENED', facts), 'LINK_OPENED')
-  assert.equal(effectiveRule('BUDDY_HELLO', facts), 'BUDDY_HELLO')
+  const buddyBlocks = [checklist('buddy-hello')]
+  assert.equal(effectiveRule('VIDEO_95', [], facts), 'SCROLL_END')
+  assert.equal(effectiveRule('ALL_LINKS_OPENED', [], { ...facts, tutorialCount: 0 }), 'SCROLL_END')
+  assert.equal(effectiveRule('ALL_LINKS_OPENED', [], facts), 'ALL_LINKS_OPENED')
+  assert.equal(effectiveRule('LINK_OPENED', [], { ...facts, dashboardLinkSet: false }), 'SCROLL_END')
+  assert.equal(effectiveRule('LINK_OPENED', [], facts), 'LINK_OPENED')
+  assert.equal(effectiveRule('BUDDY_HELLO', buddyBlocks, facts), 'BUDDY_HELLO')
+})
+
+const FACTS = { tutorialCount: 1, dashboardLinkSet: true }
+const input = (target: 'discordUsername' | 'linkedinUrl' | 'bank' | 'payout'): Block => ({ type: 'inputField', target, label: 'x' })
+const ack: Block = { type: 'acknowledgement', kind: 'SECURITY_SOPS', statement: 'x' }
+const emptyChecklist: Block = { type: 'checklist', items: [] }
+
+test('BUDDY_HELLO falls back unless the buddy-hello item is there', () => {
+  assert.equal(effectiveRule('BUDDY_HELLO', [checklist('buddy-hello')], FACTS), 'BUDDY_HELLO')
+  assert.equal(effectiveRule('BUDDY_HELLO', [checklist('something-else')], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule('BUDDY_HELLO', [emptyChecklist], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule('BUDDY_HELLO', [], FACTS), 'SCROLL_END')
+})
+
+test('CHECKLIST_AND_FIELD falls back without a filled checklist or the Discord field', () => {
+  const rule = 'CHECKLIST_AND_FIELD'
+  assert.equal(effectiveRule(rule, [checklist('a'), input('discordUsername')], FACTS), rule)
+  assert.equal(effectiveRule(rule, [input('discordUsername')], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule(rule, [emptyChecklist, input('discordUsername')], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule(rule, [checklist('a')], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule(rule, [checklist('a'), input('linkedinUrl')], FACTS), 'SCROLL_END')
+})
+
+test('CHECKLIST_AND_ACK falls back without an acknowledgement block', () => {
+  assert.equal(effectiveRule('CHECKLIST_AND_ACK', [checklist('a'), ack], FACTS), 'CHECKLIST_AND_ACK')
+  assert.equal(effectiveRule('CHECKLIST_AND_ACK', [checklist('a')], FACTS), 'SCROLL_END')
+})
+
+test('FIELD_SUBMITTED falls back without the LinkedIn field', () => {
+  assert.equal(effectiveRule('FIELD_SUBMITTED', [input('linkedinUrl')], FACTS), 'FIELD_SUBMITTED')
+  assert.equal(effectiveRule('FIELD_SUBMITTED', [input('discordUsername')], FACTS), 'SCROLL_END')
+})
+
+test('PAYMENT_SETUP falls back without a bank or payout field', () => {
+  assert.equal(effectiveRule('PAYMENT_SETUP', [input('bank')], FACTS), 'PAYMENT_SETUP')
+  assert.equal(effectiveRule('PAYMENT_SETUP', [input('payout')], FACTS), 'PAYMENT_SETUP')
+  assert.equal(effectiveRule('PAYMENT_SETUP', [], FACTS), 'SCROLL_END')
+  assert.equal(effectiveRule('PAYMENT_SETUP', [input('linkedinUrl')], FACTS), 'SCROLL_END')
+})
+
+test('a contractor whose version has no invoice box needs only the payout row', () => {
+  const blocks = [input('payout')]
+  assert.deepEqual(run({ rule: 'PAYMENT_SETUP', blocks, payment: { kind: 'OTHER', payoutSaved: true } }), { met: true })
+  assert.equal(run({ rule: 'PAYMENT_SETUP', blocks, payment: { kind: 'OTHER', payoutSaved: false } }).met, false)
 })

@@ -24,13 +24,49 @@ export interface CompletionInput {
 export type CompletionResult = { met: true } | { met: false; reason: string }
 
 const COMPANY_DASHBOARD_KEY = 'COMPANY_DASHBOARD'
+const BUDDY_HELLO_KEY = 'buddy-hello'
+const INVOICE_TEMPLATE_KEY = 'invoice-template'
 
-/** Rules that need content the module may not have fall back to SCROLL_END. */
-export function effectiveRule(rule: OnboardingCompletionRule, facts: CompletionFacts): OnboardingCompletionRule {
-  if (rule === 'VIDEO_95') return 'SCROLL_END'
-  if (rule === 'ALL_LINKS_OPENED' && facts.tutorialCount === 0) return 'SCROLL_END'
-  if (rule === 'LINK_OPENED' && !facts.dashboardLinkSet) return 'SCROLL_END'
-  return rule
+const hasChecklistItem = (blocks: readonly Block[], key: string): boolean =>
+  blocks.some((b) => b.type === 'checklist' && b.items.some((item) => item.key === key))
+
+const hasFilledChecklist = (blocks: readonly Block[]): boolean =>
+  blocks.some((b) => b.type === 'checklist' && b.items.length > 0)
+
+const hasInputField = (blocks: readonly Block[], ...targets: string[]): boolean =>
+  blocks.some((b) => b.type === 'inputField' && targets.includes(b.target))
+
+/** Whether the hire can actually do what the rule asks, given the blocks they are shown. */
+function canMeetRule(rule: OnboardingCompletionRule, blocks: readonly Block[], facts: CompletionFacts): boolean {
+  switch (rule) {
+    case 'VIDEO_95':
+      return false
+    case 'SCROLL_END':
+      return true
+    case 'ALL_LINKS_OPENED':
+      return facts.tutorialCount > 0
+    case 'LINK_OPENED':
+      return facts.dashboardLinkSet
+    case 'BUDDY_HELLO':
+      return hasChecklistItem(blocks, BUDDY_HELLO_KEY)
+    case 'CHECKLIST_AND_FIELD':
+      return hasFilledChecklist(blocks) && hasInputField(blocks, 'discordUsername')
+    case 'CHECKLIST_AND_ACK':
+      return blocks.some((b) => b.type === 'acknowledgement')
+    case 'FIELD_SUBMITTED':
+      return hasInputField(blocks, 'linkedinUrl')
+    case 'PAYMENT_SETUP':
+      return hasInputField(blocks, 'bank', 'payout')
+  }
+}
+
+/** A hire is never stuck: a rule whose content is missing from the filtered blocks falls back to SCROLL_END. */
+export function effectiveRule(
+  rule: OnboardingCompletionRule,
+  blocks: readonly Block[],
+  facts: CompletionFacts,
+): OnboardingCompletionRule {
+  return canMeetRule(rule, blocks, facts) ? rule : 'SCROLL_END'
 }
 
 function requiredCheckKeys(blocks: readonly Block[]): string[] {
@@ -58,7 +94,7 @@ export function evaluateCompletion(input: CompletionInput): CompletionResult {
     case 'SCROLL_END':
       return result(state.scrolledToEnd, 'Read to the end of this page first.')
     case 'BUDDY_HELLO':
-      return result(state.checks['buddy-hello'] === true, "Tick the box once you've said hello to your buddy.")
+      return result(state.checks[BUDDY_HELLO_KEY] === true, "Tick the box once you've said hello to your buddy.")
     case 'ALL_LINKS_OPENED':
       return result(unopenedTutorials(input) === 0, `Open each tutorial first. ${unopenedTutorials(input)} to go.`)
     case 'CHECKLIST_AND_FIELD':
@@ -76,7 +112,8 @@ export function evaluateCompletion(input: CompletionInput): CompletionResult {
 
 function paymentResult(input: CompletionInput): CompletionResult {
   if (input.payment.kind === 'PK') return result(input.payment.bankSaved, 'Save your bank details first.')
-  const invoiceTicked = input.state.checks['invoice-template'] === true
+  // A version with no invoice box cannot ask for its tick.
+  const invoiceTicked = !hasChecklistItem(input.blocks, INVOICE_TEMPLATE_KEY) || input.state.checks[INVOICE_TEMPLATE_KEY] === true
   return result(
     paymentSaved(input.payment) && invoiceTicked,
     'Save your payout details and tick the invoice template box.',

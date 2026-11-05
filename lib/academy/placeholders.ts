@@ -11,7 +11,6 @@ export const PLACEHOLDER_KEYS = [
   'blockers local time',
   'security contacts',
   'accounts contacts',
-  'bank name',
   'day 1 goal',
   'week 1 goal',
   'month 1 goal',

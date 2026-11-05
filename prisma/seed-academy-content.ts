@@ -37,8 +37,8 @@ const TEAM_CONTACTS: Block[] = [
     type: 'dataTable',
     headers: ['Need', 'Contact'],
     rows: [
-      ['Lost or damaged equipment, security incidents, email groups and access', 'Security and IT, {security contacts}'],
-      ['Salary, reimbursements, invoices', 'Accounts, acct@plutus21.com, {accounts contacts}'],
+      ['Lost or damaged equipment, security incidents, email groups and access', '{security contacts}'],
+      ['Salary, reimbursements, invoices', '{accounts contacts}, acct@plutus21.com'],
     ],
   },
 ]
@@ -277,7 +277,7 @@ const GETTING_PAID: Block[] = [
       rich(
         [
           '1. **Your account opening letter.** HR will share your bank letter. It confirms your employment for the bank.',
-          '2. **Open your salary account** at {bank name} using the letter.',
+          '2. **Open your salary account** using the letter.',
           '3. **Enter your account details** below: account title, bank, branch and IBAN.',
         ].join('\n'),
       ),

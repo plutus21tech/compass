@@ -109,7 +109,7 @@ export async function evaluateModule(
   const tutorialKeys = blocks.some((b) => b.type === 'tutorialCards') ? facts.tutorials.map((t) => t.key) : []
   const dashboardLinkSet =
     blocks.some((b) => b.type === 'dashboardLink') && resolveAcademyLink(config.links.COMPANY_DASHBOARD) !== null
-  const rule = effectiveRule(module.completionRule, { tutorialCount: tutorialKeys.length, dashboardLinkSet })
+  const rule = effectiveRule(module.completionRule, blocks, { tutorialCount: tutorialKeys.length, dashboardLinkSet })
   const completion = evaluateCompletion({
     rule,
     blocks: [...blocks],
@@ -216,6 +216,12 @@ async function holidayKeys(db: Db, person: DuePerson, joiningDate: Date): Promis
     select: { holidayDate: true },
   })
   return new Set(holidays.map((h) => h.holidayDate.toISOString().slice(0, 10)))
+}
+
+/** For writers that know the hire, not the user. Safe to call after any save: it only moves rows that differ. */
+export async function recomputeDueDatesForHire(db: Db, newHireId: string): Promise<number> {
+  const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { userId: true } })
+  return hire?.userId ? recomputeDueDates(db, hire.userId) : 0
 }
 
 export type DuePerson = Pick<PersonAttributes, 'officeLocation' | 'remoteCountry'> & { teamTag: HireFacts['teamTag'] }

@@ -263,3 +263,27 @@ test('lockProgressRow is 404 when the row is missing', ACADEMY_DB_TEST, async ()
   const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'welcome' } })
   await assert.rejects(prisma.$transaction((tx) => lockProgressRow(tx, HIRE_ID, module.id)), fails(404))
 })
+
+test('a contract type blanked after release cannot strand a hire on module 11', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  await prisma.user.update({ where: { id: HIRE_ID }, data: { contractType: null } })
+  const view = await loadModule(prisma, HIRE_ID, 'getting-paid')
+  assert.equal(view.progress.effectiveRule, 'SCROLL_END')
+  await recordEvent(prisma, HIRE_ID, 'getting-paid', { type: 'SCROLLED_END' })
+  await completeModule(prisma, HIRE_ID, 'getting-paid')
+  assert.equal((await progressRow('getting-paid')).status, 'COMPLETED')
+})
+
+test('a later version dropping buddy-hello cannot strand a hire on module 3', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'team-contacts' } })
+  const v2 = await prisma.onboardingModuleVersion.create({
+    data: { moduleId: module.id, version: 2, blocks: [{ type: 'richText', markdown: 'Say hello.' }] },
+  })
+  await prisma.onboardingModule.update({ where: { id: module.id }, data: { currentVersionId: v2.id } })
+  await recordEvent(prisma, HIRE_ID, 'team-contacts', { type: 'SCROLLED_END' })
+  await completeModule(prisma, HIRE_ID, 'team-contacts')
+  assert.equal((await progressRow('team-contacts')).status, 'COMPLETED')
+})

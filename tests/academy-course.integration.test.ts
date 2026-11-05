@@ -4,8 +4,9 @@ import { prisma } from '../lib/db'
 import { AcademyError } from '../lib/academy/errors'
 import { buildAcademyContext } from '../lib/academy/service/context'
 import { loadHome, loadModule, recomputeDueDates, releaseCourse } from '../lib/academy/service/course'
-import { completeModule, recordEvent } from '../lib/academy/service/progress'
+import { completeModule, recomputeDueDatesForHire, recordEvent } from '../lib/academy/service/progress'
 import { loadSetup, saveSetup } from '../lib/academy/service/setup'
+import type { Block } from '../lib/academy/blocks'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import {
   CONTRACTOR_ATTRIBUTES, HIRE_ID, NEW_HIRE_ID, SLUGS, TUTORIALS, cleanCourse, createReadyHire, createReleasedHire,
@@ -30,6 +31,13 @@ const allStrings = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.flatMap(allStrings)
   if (value && typeof value === 'object') return Object.values(value).flatMap(allStrings)
   return []
+}
+
+/** The Need/Contact table on Module 3. */
+const contactCells = (blocks: Block[]) => {
+  const table = blocks.find((b) => b.type === 'dataTable')
+  assert.ok(table?.type === 'dataTable')
+  return table.rows.map((row) => row[1])
 }
 
 const openEverything = () =>
@@ -238,7 +246,7 @@ test('no tutorials and no key contacts: modules 3 and 4 load, module 4 completes
   const three = await loadModule(prisma, HIRE_ID, 'team-contacts')
   assert.deepEqual(three.keyContacts.HR, [])
   assert.ok(allStrings(three.blocks).every((text) => !text.includes('{')))
-  assert.ok(allStrings(three.blocks).some((text) => text.includes('Security and IT, Security and IT')))
+  assert.deepEqual(contactCells(three.blocks), ['Security and IT', 'Accounts, acct@plutus21.com'])
   await recordEvent(prisma, HIRE_ID, 'team-contacts', { type: 'CHECK', key: 'buddy-hello', checked: true })
   await completeModule(prisma, HIRE_ID, 'team-contacts')
 
@@ -281,7 +289,7 @@ test('the module view carries everything rendered and resolved', ACADEMY_DB_TEST
   assert.equal(three.buddy?.name, P.buddy.name)
   assert.equal(three.keyContacts.ACCOUNTS[0].name, 'Accounts desk')
   assert.equal(three.keyContacts.ACCOUNTS[0].email, 'desk@example.test')
-  assert.ok(allStrings(three.blocks).some((t) => t.includes(`Security and IT, ${P.staff.name}`)))
+  assert.deepEqual(contactCells(three.blocks), [`${P.staff.name} (${P.staff.email})`, 'Accounts desk (desk@example.test), acct@plutus21.com'])
   assert.equal(three.invoiceTemplateHref, 'https://example.test/invoice')
 
   const four = await loadModule(prisma, HIRE_ID, 'role-90-days')
@@ -419,4 +427,32 @@ test('loadSetup reports when the course was released', ACADEMY_DB_TEST, async ()
   assert.equal((await loadSetup(prisma, NEW_HIRE_ID)).releasedAt, null)
   const { releasedAt } = await releaseCourse(prisma, NEW_HIRE_ID, P.hr.id)
   assert.equal((await loadSetup(prisma, NEW_HIRE_ID)).releasedAt?.getTime(), releasedAt.getTime())
+})
+
+test('module 11 tells a PK hire where to go with the letter, with no blank where a bank name was', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  const view = await loadModule(prisma, HIRE_ID, 'getting-paid')
+  const steps = allStrings(view.blocks).find((text) => text.includes('Open your salary account'))
+  assert.ok(steps?.includes('2. **Open your salary account** using the letter.'), steps)
+  assert.ok(allStrings(view.blocks).every((text) => !text.includes('{') && !/\S  \S/.test(text)))
+})
+
+test('a joining date written by the older new-hire route reaches a released hire, and only incomplete rows', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await scrollAndComplete('welcome')
+  const completedDue = (await progressRow('welcome')).dueAt
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { onboardingDate: new Date('2026-12-08T00:00:00.000Z') } })
+  assert.equal(await recomputeDueDatesForHire(prisma, NEW_HIRE_ID), 13)
+  assert.equal((await progressRow('welcome')).dueAt?.getTime(), completedDue?.getTime())
+  assert.equal((await progressRow('culture-values')).dueAt?.toISOString(), '2026-12-08T18:59:59.999Z')
+  assert.equal(await recomputeDueDatesForHire(prisma, NEW_HIRE_ID), 0)
+})
+
+test('recomputeDueDatesForHire does nothing for an unknown, unlinked or unreleased hire', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  assert.equal(await recomputeDueDatesForHire(prisma, 'act-nobody'), 0)
+  assert.equal(await recomputeDueDatesForHire(prisma, NEW_HIRE_ID), 0)
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { userId: null, academyReleasedAt: new Date() } })
+  assert.equal(await recomputeDueDatesForHire(prisma, NEW_HIRE_ID), 0)
 })

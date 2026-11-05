@@ -67,7 +67,6 @@ test('buildPlaceholderValues falls back for contacts and leaves unknown values e
   assert.equal(values.department, '')
   assert.equal(values['lead first name'], '')
   assert.equal(values['core hours'], '')
-  assert.equal(values['bank name'], '')
   assert.equal(values.location, 'Indonesia')
   assert.equal(values['blockers local time'], '8:00 PM')
 })

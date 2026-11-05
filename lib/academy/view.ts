@@ -187,8 +187,6 @@ export function buildPlaceholderValues(input: PlaceholderInput, now: Date): Reco
     'blockers local time': blockersCallLocal(input.blockersCallCt, timeZone, now),
     'security contacts': contactList(input.keyContacts.SECURITY_IT, SECURITY_FALLBACK),
     'accounts contacts': contactList(input.keyContacts.ACCOUNTS, ACCOUNTS_FALLBACK),
-    // Not the hire's own bank: that value stays out of every view, and no company bank is configured yet.
-    'bank name': '',
     'day 1 goal': input.goals.day1Goal ?? '',
     'week 1 goal': input.goals.week1Goal ?? '',
     'month 1 goal': input.goals.month1Goal ?? '',
