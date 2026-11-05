@@ -57,7 +57,7 @@ function LibraryCard({ card, commute }: { card: LibraryCardView; commute: Commut
 
 export function LibraryCardsBlock({ block, view }: LibraryCardsBlockProps) {
   const cards = view.library[block.kind]
-  if (cards.length === 0) return <p className="leading-7">Nothing to show here yet. Ask HR if you expected something.</p>
+  if (cards.length === 0) return <p className="leading-7">Nothing to show here yet.</p>
   return (
     <ul className="space-y-3">
       {cards.map((card) => (

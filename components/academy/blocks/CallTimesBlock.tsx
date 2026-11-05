@@ -2,7 +2,7 @@ import type { ModuleView } from '@/lib/academy/view'
 import { formatAcademyDateTime } from '@/lib/academy/view-labels'
 import { BlockHeading } from './BlockHeading'
 
-const TO_BE_CONFIRMED = 'HR will confirm the time'
+const TO_BE_CONFIRMED = 'Time to be confirmed'
 
 interface CallTimesBlockProps {
   view: ModuleView

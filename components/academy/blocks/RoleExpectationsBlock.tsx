@@ -1,7 +1,7 @@
 import type { ModuleView } from '@/lib/academy/view'
 import { Markdown } from './Markdown'
 
-const NOT_WRITTEN_YET = 'Your team lead will go through this with you on your first call.'
+const NOT_WRITTEN_YET = 'Your role expectations will appear here once your team lead has added them.'
 
 interface RoleExpectationsBlockProps {
   view: ModuleView
