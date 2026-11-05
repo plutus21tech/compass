@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Replaced in part:** `2026-11-05-onboarding-academy-payroll-separation.md` replaces this plan's bank, payout and payroll text. Onboarding never writes to payroll and never creates a `PayrollEmployeeProfile`. Users behaves as on main.
+
 **Goal:** Lay the data and admin foundation for the Onboarding Academy:
 - the full schema
 - the person attributes that adapt content
@@ -29,8 +31,8 @@ Everything new is gated by `ONBOARDING_ACADEMY_ENABLED`. With the flag off, Comp
 - **Additive migrations only.** No dropped or renamed columns. Every new column is nullable or has a default, so the migration is safe on prod. Vercel runs `prisma migrate deploy` on build.
 - **Never use the root `.env` for migrations, tests or scripts.** It points at the shared **production** database. Generate migrations and run integration tests against the local `compass_weekly_test` database only, using the URL `npm run test:weekly-db` uses.
 - **`BenefitCategory` / `Benefit` rows and code are untouched** (D3).
-- **Contractors never get a `PayrollEmployeeProfile`.** No code in this stage creates a payroll profile (D4a, §9).
-- **Bank and payout details:** only HR and OA can read them, masked by default. Every reveal is logged. The owner can read their own.
+- **Onboarding never creates a `PayrollEmployeeProfile`,** for anyone. The Users pages behave as on main, and that is HR and OA's own path to a profile.
+- **Bank and payout details:** only HR and OA can read them, masked by default. Every reveal is logged.
 - **Content-adapting attributes:** only HR edits them. Employees see them read-only.
 - **Feature flag:** `ONBOARDING_ACADEMY_ENABLED === 'true'` enables new routes and nav. With it off, new routes return 404 and the UI shows nothing new.
 - **Test data:** fictional people only; the repo is public.

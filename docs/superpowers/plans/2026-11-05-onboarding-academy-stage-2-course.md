@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Replaced in part:** `2026-11-05-onboarding-academy-payroll-separation.md` replaces this plan's bank, payout and payroll text. Onboarding never writes to payroll and never creates a `PayrollEmployeeProfile`. Users behaves as on main.
+
 **Goal:** Give a new hire the working course behind the flag: HR releases it, the hire sees Home and modules 1–14 with content that adapts to them, due dates and unlocking work, and a locked hire can't reach the rest of Compass. Modules 1–2 use the "video coming soon" fallback.
 
 **Architecture:** Same layout as stage 1:
@@ -23,7 +25,7 @@ Every constraint in the stage 1 plan still applies, especially:
 - additive migrations only
 - never use the root `.env`: it is production
 - `BenefitCategory` / `Benefit` untouched
-- contractors never get a `PayrollEmployeeProfile`
+- onboarding never creates a `PayrollEmployeeProfile`, and Users behaves as on main
 - fictional test data, because the repo is public
 
 New for this stage:
@@ -521,7 +523,6 @@ Carried forward. None of this is built in stage 2. `2026-11-05-onboarding-academ
 - Route-level tests.
 - **OA's read view of payment details.** The tracker shows `OnboardingPaymentDetails` through the existing masked API (`GET /api/admin/onboarding/payout/[userId]`) and its logged reveal, for PK and contractor rows alike. Until then OA can only reach them through that API. Show OA what is new, since they enter it into payroll by hand.
 - Checklist auto-ticks are derived from stored data at backfill, not recorded as events.
-- `savePayout` must notify OA when a contractor changes their payout details. It already returns `isUpdate` for this. Decide whether a PK hire changing bank details before finishing Module 11 notifies OA the same way: `saveBankDetails` sends nothing today.
 - Early-unlocked modules need `ModuleCardView` support, so Home can show them as such.
 - The bank letter download, once HR sends the text. Until then Module 11 says "HR will share your bank letter".
 

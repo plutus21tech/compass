@@ -263,16 +263,16 @@ Onboarding keeps these **out of payroll** (D4). Model **`OnboardingPaymentDetail
 - `currency` (every method except PK_BANK)
 - `submittedAt`, `updatedAt`
 
-Contract type chooses the form: PK employment gets the bank form (version A), everyone else the payout form (version B), which shows only the fields for the method the hire picks. A row saved through one form does not count for the other, and saving through the other replaces it. Bank details lock once Module 11 is complete.
+Contract type chooses the form: PK employment gets the bank form (version A), everyone else the payout form (version B), which shows only the fields for the method the hire picks. A row saved through one form does not count for the other, and saving through the other replaces it. Bank details lock once Module 11 is complete, and a PK row cannot be replaced through the payout form while the contract type is blank.
 
 **Security.** Names, account numbers, IBANs, branches, emails and instructions are encrypted at rest by `lib/academy/field-encryption.ts`, with its own key, `ONBOARDING_FIELD_ENCRYPTION_KEY`. Nothing here uses payroll's helper or key.
 
 **Access.**
-- The hire enters and can update their own details. A PK hire sees only a masked IBAN after saving, never the values.
+- The hire enters and can update their own details, and never reads the values back: they see that the details are saved, and a PK hire also sees a masked IBAN. A saved PK row is locked once Module 11 is complete.
 - **HR and OA can read them only**: read-only, masked by default, with a "Reveal" action that is logged in `OnboardingPaymentRevealLog`. This is an API until the stage 4 tracker shows them.
 - No other role can see them.
 
-Changing the details later notifies OA.
+Changing saved details, by either form, notifies OA by email. A failed email never fails the save.
 
 ## 6. The course
 
@@ -432,7 +432,7 @@ If the Vercel plan doesn't allow hourly crons, fall back to one run per time zon
   - the APIs those pages need
 - **Server-side enforcement:** add it to the existing client redirect, in `middleware.ts` or the API auth helpers, whichever the session model allows.
 - **Module 9's "Go to Leave in Compass" button** shows as "Available after onboarding" for locked hires. Leave isn't needed in week one. *(Builder's call.)*
-- **Payment details**, bank or payout, follow §5.9: kept in onboarding's own table, separate from payroll, read-only for HR and OA. Only HR, OA and the hire can read them; a PK hire sees them masked after submission. Module 11 never creates or changes a payroll profile, so nobody is pulled into payroll runs by accident.
+- **Payment details**, bank or payout, follow §5.9: kept in onboarding's own table, separate from payroll, read-only for HR and OA. Only HR and OA can read them. Module 11 never creates or changes a payroll profile, so nobody is pulled into payroll runs by accident.
 - **Permissions:**
   - **Onboarding settings and the tracker:** HR only.
   - **Tracker read access:** OA can read the payment-related columns.

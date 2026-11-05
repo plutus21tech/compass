@@ -36,7 +36,7 @@ This replaces D4 and D4a in the design.
 7. Replace `ContractorPayoutDetails`, `ContractorPayoutRevealLog` and `OnboardingPendingBankDetails` with `OnboardingPaymentDetails` and `OnboardingPaymentRevealLog`. One row per user. `method` gains `PK_BANK`, with `accountTitle`, `bankName`, `branch`, `iban`.
 8. Rewrite the two migrations to match. There is no held state any more: a saved row is simply saved.
 9. Module 11 version A saves through this store. `paymentFacts` reads only this table. The rule is the same as before, contract type chooses the form, and the bank module lock stays. Copy: "Accounts will take it from here." replaces "HR will add them to your payroll profile."
-10. Access stays as stage 1 built it: owner reads own, HR and OA read masked, every reveal logged.
+10. Access: HR and OA read masked, and every reveal is logged. The hire sees that details are saved, plus a masked IBAN on a PK row, and never reads values back. Changing saved details notifies OA.
 
 **Own encryption**
 11. New `lib/academy/field-encryption.ts`, using `ONBOARDING_FIELD_ENCRYPTION_KEY`, with the same AES-GCM label-based format. Nothing in `lib/academy` imports `lib/payroll`. Document the new variable in `.env.example` if the repo has one.
