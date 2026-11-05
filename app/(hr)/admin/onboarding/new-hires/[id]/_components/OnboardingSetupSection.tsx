@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertTriangle, CheckCircle2, Save } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Rocket, Save } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,7 @@ interface SetupResponse {
     coreHoursEnd: string | null
   }
   readiness: { ready: boolean; missing: MissingItem[] }
+  releasedAt: string | null
 }
 
 interface FormState {
@@ -69,6 +70,10 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 const toIso = (local: string) => (local ? new Date(local).toISOString() : '')
+
+function formatReleasedDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
 
 function toForm(data: SetupResponse['setup']): FormState {
   return {
@@ -117,10 +122,13 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
   const [form, setForm] = useState<FormState | null>(null)
   const [missing, setMissing] = useState<MissingItem[]>([])
   const [saving, setSaving] = useState(false)
+  const [releasedAt, setReleasedAt] = useState<string | null>(null)
+  const [releasing, setReleasing] = useState(false)
 
   const apply = useCallback((data: SetupResponse) => {
     setForm(toForm(data.setup))
     setMissing(data.readiness.missing)
+    setReleasedAt(data.releasedAt)
   }, [])
 
   useEffect(() => {
@@ -157,6 +165,22 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
       toast.error(e instanceof Error ? e.message : 'Failed to save setup')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const release = async () => {
+    setReleasing(true)
+    try {
+      const res = await fetch(`/api/admin/onboarding/new-hires/${newHireId}/release`, { method: 'POST' })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error || 'Failed to release the course')
+      setReleasedAt(body.data.releasedAt)
+      toast.success('Course released')
+      onSaved?.()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to release the course')
+    } finally {
+      setReleasing(false)
     }
   }
 
@@ -220,9 +244,15 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
         <AttributeFields value={form.attributes} onChange={(attributes) => set({ attributes })} />
 
         <div className="flex items-center justify-between gap-3">
-          <span title="Available in a later release">
-            <Button variant="outline" disabled aria-disabled>Release course</Button>
-          </span>
+          {releasedAt ? (
+            <p className="flex items-center gap-2 text-sm text-emerald-600">
+              <CheckCircle2 className="h-4 w-4" /> Released {formatReleasedDate(releasedAt)}
+            </p>
+          ) : (
+            <Button variant="outline" onClick={release} disabled={releasing || missing.length > 0}>
+              <Rocket className="w-4 h-4" /> {releasing ? 'Releasing...' : 'Release course'}
+            </Button>
+          )}
           <Button onClick={save} disabled={saving}>
             <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save setup'}
           </Button>

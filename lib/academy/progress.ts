@@ -29,6 +29,15 @@ export type ProgressEvent =
   | { type: 'LINK_OPENED'; key: string }
   | { type: 'SCROLLED_END' }
 
+const eventKey = z.string().min(1).max(200)
+
+/** What a client may report. Whether a key belongs to the module is checked by the service. */
+export const progressEventSchema: z.ZodType<ProgressEvent> = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('CHECK'), key: eventKey, checked: z.boolean() }).strict(),
+  z.object({ type: z.literal('LINK_OPENED'), key: eventKey }).strict(),
+  z.object({ type: z.literal('SCROLLED_END') }).strict(),
+])
+
 export function applyEvent(state: ProgressState, event: ProgressEvent, now: Date): ProgressState {
   switch (event.type) {
     case 'CHECK':

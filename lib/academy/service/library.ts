@@ -12,11 +12,13 @@ import {
   type AcademyConfigView,
 } from '../links'
 
+type Db = PrismaClient | Prisma.TransactionClient
+
 const CONFIG_ID = 'singleton'
 const DEFAULTS = { blockersCallCt: 'WED 07:00', retakeCooldownMinutes: 15, failAlertThreshold: 3 } as const
 
 export async function listLibraryCards(
-  db: PrismaClient,
+  db: Db,
   kind: LibraryCardKind,
   opts: { includeInactive?: boolean } = {},
 ): Promise<OnboardingLibraryCard[]> {
@@ -27,7 +29,7 @@ export async function listLibraryCards(
 }
 
 export async function eligibleCards(
-  db: PrismaClient,
+  db: Db,
   kind: LibraryCardKind,
   person: PersonAttributes,
 ): Promise<OnboardingLibraryCard[]> {
@@ -98,10 +100,10 @@ export async function saveKeyContacts(db: PrismaClient, contacts: unknown): Prom
   })
 }
 
-export async function listKeyContacts(db: PrismaClient) {
+export async function listKeyContacts(db: Db) {
   return db.onboardingKeyContact.findMany({
     orderBy: { orderIndex: 'asc' },
-    include: { user: { select: { id: true, name: true, email: true } } },
+    include: { user: { select: { id: true, name: true, email: true, position: true, discordUsername: true } } },
   })
 }
 
@@ -121,7 +123,7 @@ function validCount(value: unknown, min: number, fallback: number): number {
 }
 
 /** Tolerates a missing row and malformed stored JSON; never returns a link that fails validation. */
-export async function getAcademyConfig(db: PrismaClient): Promise<AcademyConfigView> {
+export async function getAcademyConfig(db: Db): Promise<AcademyConfigView> {
   const row = await db.onboardingConfig.findUnique({ where: { id: CONFIG_ID } })
   const blockers = row?.blockersCallCt
   return {

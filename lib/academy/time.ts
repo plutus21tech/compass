@@ -54,7 +54,7 @@ export function endOfDayInZone(dateKey: string, timeZone: string | null): Date {
   return timeZone ? wallClockToInstant(wall, timeZone) : new Date(wall)
 }
 
-function formatClock(hour: number, minute: number): string {
+export function formatClock(hour: number, minute: number): string {
   const suffix = hour >= 12 ? 'PM' : 'AM'
   const hour12 = hour % 12 === 0 ? 12 : hour % 12
   return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`
@@ -73,6 +73,16 @@ export function blockersCallLocal(stored: string, timeZone: string | null, now: 
   const [hour, minute] = clock.split(':').map(Number)
   if (!timeZone) return `${formatClock(hour, minute)} CT`
   return convertClock(hour, minute, SOURCE_ZONE, timeZone, now)
+}
+
+/** The Blockers Call for this person, with the zone it was worked out in. */
+export function blockersCallLocalFor(
+  stored: string,
+  attrs: Pick<PersonAttributes, 'officeLocation' | 'remoteCountry'>,
+  now: Date,
+): { blockersCall: string; timeZone: string | null } {
+  const timeZone = timeZoneFor(attrs)
+  return { blockersCall: blockersCallLocal(stored, timeZone, now), timeZone }
 }
 
 /** The 5 PM to 8 PM PKT overlap with the leadership team, in the hire's own time. */

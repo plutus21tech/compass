@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client'
 import { AcademyError } from '../errors'
 import { ATTRIBUTE_SELECT, setPersonAttributes } from './attributes'
 import { describeSetupIssues } from '../labels'
+import { recomputeDueDates } from './progress'
 import {
   getSetupReadiness,
   isLeadInputSubmitted,
@@ -45,7 +46,8 @@ async function requireEligible(db: Db, userId: string, role: string): Promise<vo
  * Reads, validates and writes in one transaction, so nothing is half-written and the lead-change check
  * cannot race. Attributes go to User once the hire is linked, to NewHire before. Fields may be blank:
  * readiness reports them. Returns whether the team lead should be sent a request for their input:
- * a lead is set, and either no request has gone out yet or the lead changed.
+ * a lead is set, and either no request has gone out yet or the lead changed. The NewHire row lock
+ * pairs with releaseCourse, so a moved joining date can never miss a release happening at the same time.
  */
 export async function saveSetup(
   db: PrismaClient,
@@ -54,9 +56,17 @@ export async function saveSetup(
   _actorId: string,
 ): Promise<{ leadRequestNeeded: boolean }> {
   return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "NewHire" WHERE id = ${newHireId} FOR UPDATE`
     const hire = await tx.newHire.findUnique({
       where: { id: newHireId },
-      select: { userId: true, teamLeadId: true, buddyId: true, teamLeadForm: { select: { leadInputDueAt: true } } },
+      select: {
+        userId: true,
+        teamLeadId: true,
+        buddyId: true,
+        onboardingDate: true,
+        academyReleasedAt: true,
+        teamLeadForm: { select: { leadInputDueAt: true } },
+      },
     })
     if (!hire) throw new AcademyError('New hire not found', 404)
     const data = parseSetup(input, hire.userId)
@@ -83,12 +93,14 @@ export async function saveSetup(
       create: { newHireId, leadInputDueAt: dueAt },
       update: { leadInputDueAt: dueAt },
     })
+    const dateMoved = data.onboardingDate.getTime() !== hire.onboardingDate.getTime()
+    if (hire.userId && hire.academyReleasedAt && dateMoved) await recomputeDueDates(tx, hire.userId)
     const noRequestYet = !hire.teamLeadForm?.leadInputDueAt
     return { leadRequestNeeded: data.teamLeadId !== null && (noRequestYet || leadChanged) }
   })
 }
 
-export async function loadSetup(db: PrismaClient, newHireId: string) {
+export async function loadSetup(db: Db, newHireId: string) {
   const hire = await db.newHire.findUnique({
     where: { id: newHireId },
     include: {
@@ -135,5 +147,10 @@ export async function loadSetup(db: PrismaClient, newHireId: string) {
     userLinked: hire.userId !== null,
     leadInputSubmitted: isLeadInputSubmitted(hire.teamLeadForm),
   }
-  return { setup, readiness: getSetupReadiness(setup), leadInputDueAt: hire.teamLeadForm?.leadInputDueAt ?? null }
+  return {
+    setup,
+    readiness: getSetupReadiness(setup),
+    leadInputDueAt: hire.teamLeadForm?.leadInputDueAt ?? null,
+    releasedAt: hire.academyReleasedAt,
+  }
 }

@@ -22,6 +22,9 @@ export const P: Record<'hr' | 'oa' | 'lead' | 'buddy' | 'staff' | 'hire', Academ
 export async function resetAcademyFixtures(db: PrismaClient): Promise<void> {
   if (!isWeeklyTestDatabase(process.env.DATABASE_URL)) throw new Error('Refusing to reset a database that is not compass_weekly_test')
   await db.newHire.deleteMany({ where: { id: { startsWith: 'act-' } } })
+  await db.onboardingKeyContact.deleteMany({ where: { id: { startsWith: 'act-' } } })
+  await db.payrollPublicHoliday.deleteMany({ where: { id: { startsWith: 'act-' } } })
+  await db.payrollTravelAllowanceTier.deleteMany({ where: { id: { startsWith: 'act-' } } })
   await db.position.deleteMany({ where: { id: { startsWith: 'act-' } } })
   await db.payrollEmployeeProfile.deleteMany({ where: { userId: { startsWith: 'act-' } } })
   await db.contractorPayoutRevealLog.deleteMany({ where: { payoutUserId: { startsWith: 'act-' } } })
