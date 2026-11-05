@@ -358,6 +358,22 @@ When all 14 modules are done, the quiz is passed and both acknowledgements are s
 
 The completion screen shows "WELCOME TO THE Journey", plays a light confetti once, and offers a downloadable certificate (PDF with the logo, name and date). The builder should reuse whichever PDF approach Compass already uses for payslips.
 
+### 6.7 Stage 3 decisions
+
+Decided while building the quiz and completion. Where they differ from §6.5 and §6.6, these are what the code does.
+
+- **Two emails ship in stage 3, not stage 4,** because they follow directly from quiz events and need no cron: HR on each failure threshold crossing, and the completion notice. A failed email never fails the action.
+- **"Once per threshold crossing"** means every multiple of `failAlertThreshold` (3, 6, 9 failed attempts).
+- **A passed hire can't resubmit.** The quiz is done once passed.
+- **Chapter links wait for stage 5.** `videoChapterKey` is stored, but "Watch this part" shows only when the video exists, so stage 3 shows no link.
+- **The certificate date** is the values acknowledgement's `signedAt`, the moment the course completed.
+- **Quiz reset with the flag on** clears attempts, which lifts the cooldown, and changes nothing else. It is refused for a user who has finished onboarding.
+- **HR downloads of acknowledgements** stay in stage 4 with the tracker.
+- **The quiz needs at least 10 usable questions and uses all of them.** A usable question is active, not retired, and has an explanation. Below 10 the quiz is unavailable and submissions are refused.
+- **Legacy attempts never count.** The legacy quiz stored a different shape in the same table. Only Academy attempts decide the status, the cooldown, the failure count and a pass.
+- **Course modules can't be switched off,** and an inactive one can't be switched back on.
+- **Certificate names fold accents** to the base letter, because the PDF fonts draw Latin-1 only. If any letter would be lost, the certificate says "Plutus21 team member" rather than a partial name.
+
 ## 7. Screens and UX
 
 The layout follows spec section 6 (screens 1–8, brand tokens, card states). The friendly layer borrows from compliance-training portals:

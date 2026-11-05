@@ -6,6 +6,10 @@ import { completeModule, recordEvent } from '../lib/academy/service/progress'
 import { saveBankDetails, saveDiscordUsername, saveLinkedinUrl, signAcknowledgement } from '../lib/academy/service/fields'
 import { savePayout } from '../lib/academy/service/payout'
 import { setPersonAttributes } from '../lib/academy/service/attributes'
+import { signValuesAcknowledgement } from '../lib/academy/service/completion'
+import { submitQuiz } from '../lib/academy/service/quiz'
+import { shouldBlockSession } from '../lib/academy/lockout'
+import type { Submission } from '../lib/academy/quiz'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import { CONTRACTOR_ATTRIBUTES, HIRE_ID, SLUGS, cleanCourse, createReleasedHire } from './helpers/academy-course-fixtures'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
@@ -87,9 +91,53 @@ async function runWholeCourse(payee: Payee): Promise<void> {
   assert.equal(home.nextModule, null)
   assert.ok(home.phases.flatMap((p) => p.modules).every((m) => m.status === 'COMPLETED'))
   assert.equal(await prisma.onboardingProgress.count({ where: { userId: HIRE_ID, status: 'COMPLETED' } }), 14)
-  // Finishing the course is not finishing onboarding: that waits for the quiz, in a later stage.
+  // Finishing the modules is not finishing onboarding: that waits for the quiz and the signature.
   const user = await prisma.user.findUniqueOrThrow({ where: { id: HIRE_ID }, select: { onboardingCompleted: true } })
   assert.equal(user.onboardingCompleted, false)
+  await runQuizAndSign()
+}
+
+/** Answers `wrong` of the usable questions wrongly. */
+async function submission(wrong: number): Promise<Submission> {
+  const questions = await prisma.onboardingQuizQuestion.findMany({
+    where: { isActive: true, retiredAt: null, explanation: { not: null } },
+    orderBy: { orderIndex: 'asc' },
+  })
+  return {
+    answers: questions.map((q, i) => {
+      const options = q.optionsJson as string[]
+      return { questionId: q.id, chosen: i < wrong ? (options.find((o) => o !== q.correctAnswer) as string) : q.correctAnswer }
+    }),
+  }
+}
+
+/** Moves every attempt back to the end of the 15-minute wait. */
+const endCooldown = () =>
+  prisma.quizAttempt.updateMany({ where: { userId: HIRE_ID }, data: { createdAt: new Date(Date.now() - 15 * 60_000) } })
+
+async function runQuizAndSign(): Promise<void> {
+  const profilesBefore = await profiles()
+  for (let i = 0; i < 2; i++) {
+    const { result } = await submitQuiz(prisma, HIRE_ID, await submission(3))
+    assert.equal(result.passed, false)
+    await assert.rejects(submitQuiz(prisma, HIRE_ID, await submission(0)), (e: unknown) => (e as { status?: number }).status === 409)
+    await endCooldown()
+  }
+  const { result } = await submitQuiz(prisma, HIRE_ID, await submission(0))
+  assert.equal(result.passed, true)
+  assert.equal(await prisma.quizAttempt.count({ where: { userId: HIRE_ID } }), 3)
+
+  const passedOnly = await prisma.user.findUniqueOrThrow({ where: { id: HIRE_ID }, select: { onboardingCompleted: true } })
+  assert.equal(passedOnly.onboardingCompleted, false)
+  const { completed } = await signValuesAcknowledgement(prisma, HIRE_ID, P.hire.name)
+  assert.equal(completed, true)
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: HIRE_ID }, select: { onboardingCompleted: true } })
+  assert.equal(user.onboardingCompleted, true)
+  const hire = await prisma.newHire.findFirstOrThrow({ where: { userId: HIRE_ID }, select: { status: true } })
+  assert.equal(hire.status, 'COMPLETED')
+  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: user.onboardingCompleted, pathname: '/dashboard' }), false)
+  assert.equal(await profiles(), profilesBefore)
 }
 
 const profiles = () => prisma.payrollEmployeeProfile.count({ where: { userId: HIRE_ID } })

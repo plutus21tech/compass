@@ -84,15 +84,23 @@ function NextUp({ card }: { card: ModuleCardView }) {
 
 const OPEN_QUIZ_STATES: readonly QuizStatus[] = ['READY', 'COOLDOWN', 'PASSED_UNSIGNED']
 
+/** What comes after the modules, by quiz state. DONE (and anything else) adds nothing. */
+function allDoneTail(status: QuizStatus): string | null {
+  if (status === 'READY' || status === 'COOLDOWN') return 'Your culture quiz is next.'
+  if (status === 'PASSED_UNSIGNED') return 'Sign your acknowledgement to finish.'
+  return null
+}
+
 function AllDone({ total, quiz, timeZone }: { total: number; quiz: HomeQuizView; timeZone: string | null }) {
   const { label, href } = quizCardCopy(quiz, timeZone)
+  const tail = allDoneTail(quiz.status)
   return (
     <section aria-labelledby="home-done" className="flex flex-col justify-center rounded-2xl border border-academy-blue bg-academy-blue-tint p-6 sm:p-8">
       <span aria-hidden className="flex size-12 items-center justify-center rounded-full bg-white text-academy-blue">
         <PartyPopper className="size-6" />
       </span>
       <h2 id="home-done" className="mt-4 text-balance text-2xl font-extrabold leading-tight tracking-tight">
-        All {total} modules done. Your culture quiz is next.
+        All {total} modules done.{tail ? ` ${tail}` : ''}
       </h2>
       {href && OPEN_QUIZ_STATES.includes(quiz.status) ? (
         <Link

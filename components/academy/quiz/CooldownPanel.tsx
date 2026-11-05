@@ -16,9 +16,14 @@ function useRemainingMs(at: string | null): number | null {
   useEffect(() => {
     if (!at) return
     const end = new Date(at).getTime()
-    const tick = () => setRemaining(end - Date.now())
+    let timer: ReturnType<typeof setInterval> | undefined
+    const tick = () => {
+      const left = end - Date.now()
+      setRemaining(left)
+      if (left <= 0 && timer !== undefined) clearInterval(timer)
+    }
     tick()
-    const timer = setInterval(tick, TICK_MS)
+    timer = setInterval(tick, TICK_MS)
     return () => clearInterval(timer)
   }, [at])
   return at ? remaining : null

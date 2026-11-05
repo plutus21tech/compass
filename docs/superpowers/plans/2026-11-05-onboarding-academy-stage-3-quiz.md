@@ -264,3 +264,27 @@ Rules, per spec section 5 and section 6 screens 5 and 6:
 - [ ] **Step 3: Update the docs.** Move finished items out of "After stage 2", and add "After stage 3" with what remains: HR acknowledgement downloads, the quiz editor keeping `explanation` (the legacy HR quiz page can blank it, and a blank explanation lets a re-seed retire the question), most-missed report, chapter links in stage 5, and `maxQuizAttempts` for the cleanup push. Record the plan decisions above in the design.
 - [ ] **Step 4: Run everything.** `npx tsc --noEmit`, `npm test` with no DB env, `npm run test:academy-db`, `npm run test:e2e:academy`, `npx next build`, and `prisma migrate diff`. Expected: tsc clean, academy tests pass, the same 19 baseline failures, E2E passes, build passes, empty diff.
 - [ ] **Step 5: Commit.** `test(academy): cover the quiz and completion end to end`
+
+---
+
+## After stage 3
+
+Carried forward. None of this is built in stage 3.
+
+**Stage 4 (HR operations)**
+- HR downloads of acknowledgements, with the tracker.
+- **Stalled-email timeouts.** The quiz fail alert, the completion notice and the OA notice are awaited inside the request, so an email that stalls holds the response. Give each a timeout.
+- **The HR module page's switch stays flipped until reload after a 409.** Course modules can't be switched off, the server refuses, and the page doesn't put the switch back.
+- **The quiz editor must keep `explanation`.** The legacy HR quiz page can blank it, and a blank explanation makes a question unusable and lets a re-seed retire it.
+
+**Stage 5 (video and polish)**
+- Chapter links ("Watch this part") once the video exists.
+- The most-missed report.
+- **Quiz polish deferred from stage 3:**
+  - the client clock can show Retake early (the server still refuses until the wait is over)
+  - the submit button has no ref guard against a double click (the server serialises submissions)
+  - confetti spans are left in the DOM after the animation ends
+- **A Unicode font for the certificate,** if non-Latin names matter. Until then accents fold and other scripts fall back to "Plutus21 team member".
+
+**Stage 6 (cleanup push)**
+- `maxQuizAttempts` is unused: retakes are never capped. Remove the column or give it a meaning.

@@ -505,7 +505,7 @@ Carried forward. None of this is built in stage 2. `2026-11-05-onboarding-academ
 - **Header forwarding on a preview build.** The lockout reads the path the middleware forwards in `x-compass-pathname`. It was proven on `next dev`. Verify it on a Vercel preview build before main. `tests/academy-lockout-wiring.test.ts` fails if the `isLockedOut` check leaves `getSession` or the middleware stops setting the header, but only a deployed build proves the header arrives.
 
 **Stage 3 first**
-- Quiz reset still sets the linked `NewHire` to ONBOARDING, and the HR quiz page still says "reset locked users".
+- Done in stage 3: with the flag on, the quiz reset clears attempts and changes nothing else; the HR quiz page wording and toast follow the flag too.
 
 **Must close before main**
 - **`ONBOARDING_FIELD_ENCRYPTION_KEY`** must be set on every environment. There is no root `.env.example` to document it in.
@@ -513,8 +513,7 @@ Carried forward. None of this is built in stage 2. `2026-11-05-onboarding-academ
 - Saves of payment details are only a log line, so they need an audit row.
 
 **Stage 3 (quiz)**
-- Stage 3's test pass: route-level tests for the new routes.
-- The quiz reset keeps `NewHire.status` set to ONBOARDING, so a completed hire can show as ONBOARDING while `onboardingCompleted` stays true. With the flag on the reset no longer relocks anyone, yet the HR quiz page still says "reset locked users" and toasts "Quiz attempts reset". Revisit both when the quiz is rebuilt.
+- Done in stage 3: route-level coverage in `e2e/academy.spec.ts`, and the reset no longer touches `NewHire.status`.
 
 **Stage 4 (HR operations)**
 - Store who released a course (`_actorId` is unused).
