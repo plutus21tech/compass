@@ -53,7 +53,7 @@ export function ModulePage({ view }: ModulePageProps) {
       router.refresh()
       return false
     }
-    toast.success(completionToast(view.number, nextTitle))
+    if (!result.alreadyCompleted) toast.success(completionToast(view.number, nextTitle))
     setTimeout(() => router.push(moduleHref(result.nextSlug)), CHECK_MOMENT_MS)
     return true
   }, [complete, nextTitle, router, view.number])

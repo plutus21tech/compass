@@ -6,6 +6,7 @@ import {
 } from '@/lib/payroll/sensitive-fields'
 import { bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema, maskIban } from '../bank'
 import { AcademyError } from '../errors'
+import { isAcademyEnabled } from '../flag'
 import { parseProgressState } from '../progress'
 import { renderBlocks } from '../view'
 import { buildAcademyContext } from './context'
@@ -88,10 +89,10 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
 
 const BANK_MODULE_SLUG = 'getting-paid'
 const BANK_LOCKED_MESSAGE = 'Your bank details are saved. To change them, ask HR.'
+const BANK_UNAVAILABLE_MESSAGE = "This isn't available yet."
 
 /** Bank details change only while Module 11 is open and not completed. Locks that row for the transaction. */
 async function assertBankEditable(tx: Prisma.TransactionClient, userId: string): Promise<void> {
-  const refusal = new AcademyError(BANK_LOCKED_MESSAGE, 409)
   let row: OnboardingProgress
   let index: number
   try {
@@ -99,11 +100,12 @@ async function assertBankEditable(tx: Prisma.TransactionClient, userId: string):
     index = found.index
     row = await lockProgressRow(tx, userId, found.module.id)
   } catch (error) {
-    if (error instanceof AcademyError && error.status === 404) throw refusal
+    // No Module 11 row means this hire's course was never released: nothing is locked, it just isn't there.
+    if (error instanceof AcademyError && error.status === 404) throw new AcademyError(BANK_UNAVAILABLE_MESSAGE, 404)
     throw error
   }
   assertModuleOpen(row, index)
-  if (row.status === 'COMPLETED') throw refusal
+  if (row.status === 'COMPLETED') throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
 }
 
 /** Apply and save take locks in the same order (held row, then profile), so neither can overwrite a newer write. */
@@ -147,6 +149,7 @@ export async function applyPendingBankDetails(db: PrismaClient, userId: string):
  * because an error from the database layer may quote values.
  */
 export async function applyPendingBankDetailsSafely(db: PrismaClient, userId: string): Promise<void> {
+  if (!isAcademyEnabled()) return
   try {
     await applyPendingBankDetails(db, userId)
   } catch (error) {

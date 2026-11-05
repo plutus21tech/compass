@@ -219,11 +219,11 @@ test('bank details are refused while Module 11 is locked, and after it is comple
   assert.equal(decryptSensitiveValue('pendingBank.bankName', held.bankName), 'Example Bank')
 })
 
-test('a missing Module 11 row is a 409, not a write', ACADEMY_DB_TEST, async () => {
+test('a missing Module 11 row is a 404, not a write', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openEverything()
   await prisma.onboardingProgress.deleteMany({ where: { userId: HIRE_ID, module: { slug: 'getting-paid' } } })
-  await assert.rejects(saveBankDetails(prisma, HIRE_ID, BANK), fails(409))
+  await assert.rejects(saveBankDetails(prisma, HIRE_ID, BANK), fails(404, /This isn't available yet\./))
   assert.equal(await prisma.onboardingPendingBankDetails.count(), 0)
 })
 

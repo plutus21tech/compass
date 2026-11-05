@@ -503,10 +503,23 @@ Carried forward. None of this is built in stage 2.
 - **Contractor profile creation (R11).** Whether the admin and payroll routes may create a payroll profile for a contractor is still open. Stage 2 never creates one: contractors save a payout and no profile appears at any point (pinned in `tests/academy-course-flow.integration.test.ts`).
 - **Header forwarding on a preview build.** The lockout reads the path the middleware forwards in `x-compass-pathname`. It was proven on `next dev`. Verify it on a Vercel preview build before main. `tests/academy-lockout-wiring.test.ts` fails if the `isLockedOut` check leaves `getSession` or the middleware stops setting the header, but only a deployed build proves the header arrives.
 
+**Stage 3 first**
+- Quiz reset still sets the linked `NewHire` to ONBOARDING, and the HR quiz page still says "reset locked users".
+
+**Must close before main**
+- The IBAN and branch a hire saves are readable by nobody, and no payroll path uses them yet. Stage 4 must add the logged reveal view (D4), and payroll must consume the field.
+- `applyPendingBankDetails` silently replaces what HR typed. Stage 4 must show held details and make the apply visible, or ask HR to confirm.
+- Modules 1 and 2 complete on open until the real video player (VIDEO_95) ships. Bank changes are only a log line, so they need an audit row.
+
 **Stage 3 (quiz)**
+- Stage 3's test pass: route-level tests for the new routes.
 - The quiz reset keeps `NewHire.status` set to ONBOARDING, so a completed hire can show as ONBOARDING while `onboardingCompleted` stays true. With the flag on the reset no longer relocks anyone, yet the HR quiz page still says "reset locked users" and toasts "Quiz attempts reset". Revisit both when the quiz is rebuilt.
 
 **Stage 4 (HR operations)**
+- Store who released a course (`_actorId` is unused).
+- Module management must create progress rows for hires whose course is already released.
+- Reuse `linkedinUrlSchema` for Verify.
+- Route-level tests.
 - **HR and OA cannot read IBAN, branch or held (pending) bank details** until the tracker exists.
 - Checklist auto-ticks are derived from stored data at backfill, not recorded as events.
 - `savePayout` must notify OA when a contractor changes their payout details. It already returns `isUpdate` for this.

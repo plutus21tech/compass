@@ -283,7 +283,7 @@ export async function GET(_request: NextRequest) {
       academyEnabled,
       users: users.map((entry) => ({
         ...entry,
-        payrollProfile: decryptSensitivePayrollProfileFields(omitBankIdentifiers(entry.payrollProfile)),
+        payrollProfile: decryptSensitivePayrollProfileFields(academyEnabled ? omitBankIdentifiers(entry.payrollProfile) : entry.payrollProfile),
         ...(academyEnabled ? academyFields(entry) : {}),
       })),
       payrollMeta: {
