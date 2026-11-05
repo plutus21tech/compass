@@ -2,21 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   decryptPayrollField,
-  decryptSensitiveValue,
   decryptSensitivePayrollProfileFields,
   encryptPayrollField,
-  encryptSensitiveValue,
   encryptSensitivePayrollProfileFields,
   isEncryptedPayrollField,
 } from '../lib/payroll/sensitive-fields'
 import { canDeletePayrollPeriodStatus } from '../lib/payroll/period-status'
 
 const TEST_KEY = '0123456789abcdef0123456789abcdef'
-const HEX_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
-// Produced by the pre-refactor encryptPayrollField('accountNumber', 'legacy-001122') under TEST_KEY.
-const LEGACY_ACCOUNT_NUMBER_CIPHERTEXT =
-  'p21enc:v1:jYHJk3l0YTJsd_PU:UcZ7q8S9BKvrNAfwAddQ-Q:Zo1KrJxeA3rOluBsGw'
-const PAYOUT_LABEL = 'contractorPayout.accountNumberOrIban'
 
 function withEncryptionKey<T>(key: string | undefined, fn: () => T): T {
   const previous = process.env.PAYROLL_FIELD_ENCRYPTION_KEY
@@ -79,54 +72,6 @@ test('payroll sensitive field save fails closed without encryption key', () => {
       () => encryptPayrollField('accountNumber', '001122'),
       /PAYROLL_FIELD_ENCRYPTION_KEY is required/
     )
-  })
-})
-
-test('label-based encryption round trips', () => {
-  withEncryptionKey(HEX_KEY, () => {
-    const encrypted = encryptSensitiveValue(PAYOUT_LABEL, 'GB33BUKB20201555555555')
-    assert.equal(isEncryptedPayrollField(encrypted), true)
-    assert.equal(decryptSensitiveValue(PAYOUT_LABEL, encrypted), 'GB33BUKB20201555555555')
-  })
-})
-
-test('label-based decryption is bound to the label', () => {
-  withEncryptionKey(HEX_KEY, () => {
-    const encrypted = encryptSensitiveValue(PAYOUT_LABEL, 'GB33BUKB20201555555555')
-    assert.throws(() => decryptSensitiveValue('contractorPayout.other', encrypted))
-  })
-})
-
-test('label-based functions stay compatible with payroll ciphertext', () => {
-  withEncryptionKey(TEST_KEY, () => {
-    const fresh = encryptPayrollField('accountNumber', 'x')
-    assert.equal(decryptSensitiveValue('accountNumber', fresh), 'x')
-    // Pinned ciphertext from the old code path: format and AAD must not drift.
-    assert.equal(decryptSensitiveValue('accountNumber', LEGACY_ACCOUNT_NUMBER_CIPHERTEXT), 'legacy-001122')
-    assert.equal(decryptPayrollField('accountNumber', LEGACY_ACCOUNT_NUMBER_CIPHERTEXT), 'legacy-001122')
-    assert.throws(() => decryptPayrollField('bankName', LEGACY_ACCOUNT_NUMBER_CIPHERTEXT))
-  })
-})
-
-test('iban and branch are encrypted as sensitive payroll fields', () => {
-  withEncryptionKey(HEX_KEY, () => {
-    const encrypted = encryptSensitivePayrollProfileFields({
-      iban: 'PK36SCBL0000001123456702',
-      branch: 'Main Branch',
-    })
-    assert.ok(encrypted.iban?.startsWith('p21enc:v1:'))
-    assert.ok(encrypted.branch?.startsWith('p21enc:v1:'))
-    const decrypted = decryptSensitivePayrollProfileFields(encrypted)
-    assert.equal(decrypted.iban, 'PK36SCBL0000001123456702')
-    assert.equal(decrypted.branch, 'Main Branch')
-  })
-})
-
-test('omitted iban and branch are not written as null', () => {
-  withEncryptionKey(HEX_KEY, () => {
-    const encrypted = encryptSensitivePayrollProfileFields({ bankName: 'Bank' })
-    assert.equal('iban' in encrypted, false)
-    assert.equal('branch' in encrypted, false)
   })
 })
 

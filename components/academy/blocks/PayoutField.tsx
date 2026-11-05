@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
-import type { PayoutMethod } from '@prisma/client'
-import { PAYOUT_METHODS, payoutBody, payoutFieldsFor, type PayoutField as PayoutFieldSpec } from '@/lib/academy/view-labels'
+import { PAYOUT_METHODS, payoutBody, payoutFieldsFor, type PayoutField as PayoutFieldSpec, type PayoutMethod } from '@/lib/academy/view-labels'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'

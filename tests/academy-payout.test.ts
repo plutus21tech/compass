@@ -45,6 +45,19 @@ test('maskPayout masks sensitive fields and keeps identifying ones', () => {
   assert.equal(view.fields.accountNumberOrIban, 'GB33BUKB20201555555555', 'input is not mutated')
 })
 
+test('maskPayout hides a PK IBAN and branch, keeps the title and bank readable', () => {
+  const masked = maskPayout({
+    method: 'PK_BANK', accountHolderName: null, currency: null, submittedAt: '2026-11-05T00:00:00.000Z',
+    fields: { accountTitle: 'Sam Rivers', bankName: 'Example Bank', branch: 'Main Branch', iban: 'PK36SCBL0000001123456702' },
+  })
+  assert.deepEqual(masked.fields, { accountTitle: 'Sam Rivers', bankName: 'Example Bank', branch: '••••', iban: '••••6702' })
+})
+
+test('PK_BANK cannot be sent through the payout form', () => {
+  const body = { method: 'PK_BANK', accountHolderName: 'Sam Rivers', currency: 'PKR' }
+  assert.equal(payoutSchema.safeParse(body).success, false)
+})
+
 test('maskPayout leaves null fields null', () => {
   const masked = maskPayout({
     method: 'WISE', accountHolderName: 'A', currency: 'USD', submittedAt: 'x',

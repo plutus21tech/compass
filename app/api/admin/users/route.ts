@@ -11,14 +11,11 @@ import {
 } from '@/lib/payroll/sensitive-fields'
 import { isPlutusEmail } from '@/lib/onboarding'
 import { isAcademyEnabled } from '@/lib/academy/flag'
-import { omitBankIdentifiers, withoutBlankBankLabels } from '@/lib/academy/bank'
-import { applyPendingBankDetailsSafely } from '@/lib/academy/service/fields'
 import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
 import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNewHireSetup } from '@/lib/academy/profile-input'
 import {
   ATTRIBUTE_SELECT,
   copySetupToUser,
-  finishNewHireLink,
   getPersonAttributes,
   setPersonAttributes,
 } from '@/lib/academy/service/attributes'
@@ -95,7 +92,7 @@ async function upsertPayrollProfileAndRevision(args: {
   const { userId, actorId, payload } = args
   if (!payload) return
 
-  const encryptedProfileData = encryptSensitivePayrollProfileFields({
+  const profileData = encryptSensitivePayrollProfileFields({
     departmentId: payload.payrollDepartmentId || null,
     designation: payload.designation || null,
     officialEmail: payload.officialEmail || null,
@@ -111,9 +108,6 @@ async function upsertPayrollProfileAndRevision(args: {
     ...(typeof payload.isPayrollActive === 'boolean' ? { isPayrollActive: payload.isPayrollActive } : {}),
   })
 
-  // With the Academy on, a blank bank name or account title means no change (the form can be stale).
-  const profileData = withoutBlankBankLabels(encryptedProfileData, payload, isAcademyEnabled())
-
   const profile = await prisma.payrollEmployeeProfile.upsert({
     where: { userId },
     update: profileData,
@@ -123,8 +117,6 @@ async function upsertPayrollProfileAndRevision(args: {
       isPayrollActive: payload.isPayrollActive ?? true,
     },
   })
-  // A hire who saved bank details before this profile existed has them waiting.
-  await applyPendingBankDetailsSafely(prisma, userId)
 
   const revision = payload.salaryRevision
   const lines = revision?.lines || []
@@ -283,7 +275,7 @@ export async function GET(_request: NextRequest) {
       academyEnabled,
       users: users.map((entry) => ({
         ...entry,
-        payrollProfile: decryptSensitivePayrollProfileFields(academyEnabled ? omitBankIdentifiers(entry.payrollProfile) : entry.payrollProfile),
+        payrollProfile: decryptSensitivePayrollProfileFields(entry.payrollProfile),
         ...(academyEnabled ? academyFields(entry) : {}),
       })),
       payrollMeta: {
@@ -459,13 +451,12 @@ export async function POST(request: NextRequest) {
       return createdUser
     })
 
-    const writePayrollProfile = payrollProfile
-      ? () => upsertPayrollProfileAndRevision({ userId: newUser.id, actorId: user.id, payload: payrollProfile })
-      : null
-    if (shouldCreateAsNewHire && linkedNewHire && shouldCopyNewHireSetup(isAcademyEnabled())) {
-      await finishNewHireLink(prisma, { newHireId: linkedNewHire.id, userId: newUser.id, writePayrollProfile })
-    } else if (writePayrollProfile) {
-      await writePayrollProfile()
+    if (payrollProfile) {
+      await upsertPayrollProfileAndRevision({
+        userId: newUser.id,
+        actorId: user.id,
+        payload: payrollProfile,
+      })
     }
 
     return NextResponse.json({ success: true, user: newUser })

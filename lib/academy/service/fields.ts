@@ -1,15 +1,10 @@
 import type { OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
-import {
-  decryptSensitiveValue,
-  encryptPayrollField,
-  encryptSensitiveValue,
-} from '@/lib/payroll/sensitive-fields'
 import { bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema, maskIban } from '../bank'
 import { AcademyError } from '../errors'
-import { isAcademyEnabled } from '../flag'
 import { parseProgressState } from '../progress'
 import { renderBlocks } from '../view'
 import { buildAcademyContext } from './context'
+import { decryptPaymentField, paymentColumns } from './payout'
 import {
   COURSE_TX_OPTIONS,
   assertModuleOpen,
@@ -22,17 +17,6 @@ import {
 
 const LINKEDIN_MODULE_SLUG = 'linkedin'
 const NAME_MESSAGE = 'Type your full name as it appears at the top of this page.'
-const BANK_FIELDS = ['accountTitle', 'bankName', 'branch', 'iban'] as const
-type BankField = (typeof BANK_FIELDS)[number]
-
-const pendingLabel = (field: BankField) => `pendingBank.${field}`
-
-/** Stored values are never empty (the schema requires them), so a null here is a bug, not input. */
-function sealed(encrypted: string | null): string {
-  if (encrypted === null) throw new Error('Bank detail could not be encrypted')
-  return encrypted
-}
-
 export async function saveDiscordUsername(db: PrismaClient, userId: string, value: unknown): Promise<void> {
   const discordUsername = discordUsernameSchema.parse(value)
   await db.user.update({ where: { id: userId }, data: { discordUsername } })
@@ -54,11 +38,8 @@ export async function saveLinkedinUrl(db: PrismaClient, userId: string, value: u
   }, COURSE_TX_OPTIONS)
 }
 
-/**
- * PK hires only. With a payroll profile the four fields go straight onto it (and nothing else on it
- * changes); without one they are held, encrypted, until HR creates the profile. Never creates a profile.
- */
-export async function saveBankDetails(db: PrismaClient, userId: string, input: unknown): Promise<{ held: boolean }> {
+/** PK hires only. Saved to the onboarding store, where HR and OA read them; OA enters them into payroll by hand. */
+export async function saveBankDetails(db: PrismaClient, userId: string, input: unknown): Promise<void> {
   const details = bankDetailsSchema.parse(input)
   const user = await db.user.findUnique({ where: { id: userId }, select: { contractType: true } })
   if (!user) throw new AcademyError('User not found', 404)
@@ -66,25 +47,12 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
     throw new AcademyError('Bank details are for Pakistan-based employees. Contractors add payout details instead.', 400)
   }
 
-  const onProfile = Object.fromEntries(BANK_FIELDS.map((f) => [f, sealed(encryptPayrollField(f, details[f]))]))
-  const held = Object.fromEntries(BANK_FIELDS.map((f) => [f, sealed(encryptSensitiveValue(pendingLabel(f), details[f]))])) as Record<BankField, string>
-
-  const onProfileNow = await db.$transaction(async (tx) => {
+  const data = paymentColumns('PK_BANK', details)
+  await db.$transaction(async (tx) => {
     await assertBankEditable(tx, userId)
-    await lockPendingRow(tx, userId)
-    const { count } = await tx.payrollEmployeeProfile.updateMany({ where: { userId }, data: onProfile })
-    if (count > 0) {
-      // A held copy is older than what was just written and must never overwrite it later.
-      await tx.onboardingPendingBankDetails.deleteMany({ where: { userId } })
-      return true
-    }
-    await tx.onboardingPendingBankDetails.upsert({ where: { userId }, create: { userId, ...held }, update: held })
-    return false
+    await tx.onboardingPaymentDetails.upsert({ where: { userId }, create: { userId, ...data }, update: data })
   }, COURSE_TX_OPTIONS)
   console.info('[academy] bank details saved', { userId })
-  if (onProfileNow) return { held: false }
-  // HR may have created the profile while this ran; if so the held row moves straight across.
-  return { held: !(await applyPendingBankDetails(db, userId)) }
 }
 
 const BANK_MODULE_SLUG = 'getting-paid'
@@ -108,73 +76,18 @@ async function assertBankEditable(tx: Prisma.TransactionClient, userId: string):
   if (row.status === 'COMPLETED') throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
 }
 
-/** Apply and save take locks in the same order (held row, then profile), so neither can overwrite a newer write. */
-async function lockPendingRow(tx: Prisma.TransactionClient, userId: string): Promise<void> {
-  await tx.$queryRaw`SELECT id FROM "OnboardingPendingBankDetails" WHERE "userId" = ${userId} FOR UPDATE`
-}
-
-/**
- * Copies held details onto the payroll profile and deletes the row, in one transaction. False when
- * there is nothing to move or no profile yet (the row stays).
- */
-export async function applyPendingBankDetails(db: PrismaClient, userId: string): Promise<boolean> {
-  return db.$transaction(async (tx) => {
-    await lockPendingRow(tx, userId)
-    const pending = await tx.onboardingPendingBankDetails.findUnique({ where: { userId } })
-    if (!pending) return false
-    const user = await tx.user.findUnique({ where: { id: userId }, select: { contractType: true } })
-    if (user?.contractType !== 'PK_EMPLOYMENT') {
-      // Held details are for Pakistan employees only; someone moved off that contract keeps none.
-      await tx.onboardingPendingBankDetails.deleteMany({ where: { id: pending.id } })
-      return false
-    }
-    const profile = await tx.payrollEmployeeProfile.findUnique({ where: { userId }, select: { id: true } })
-    if (!profile) return false
-    const data = Object.fromEntries(
-      BANK_FIELDS.map((f) => {
-        const plain = decryptSensitiveValue(pendingLabel(f), pending[f])
-        return [f, sealed(encryptPayrollField(f, plain))]
-      }),
-    )
-    // Only one caller wins the delete, so only one writes.
-    const { count } = await tx.onboardingPendingBankDetails.deleteMany({ where: { id: pending.id } })
-    if (count === 0) return false
-    await tx.payrollEmployeeProfile.update({ where: { id: profile.id }, data })
-    return true
-  }, COURSE_TX_OPTIONS)
-}
-
-/**
- * For HR's save paths: a failure is logged and never fails the save. The log carries the user id only,
- * because an error from the database layer may quote values.
- */
-export async function applyPendingBankDetailsSafely(db: PrismaClient, userId: string): Promise<void> {
-  if (!isAcademyEnabled()) return
-  try {
-    await applyPendingBankDetails(db, userId)
-  } catch (error) {
-    console.error('[academy] held bank details could not be applied', { userId, error: error instanceof Error ? error.name : 'unknown' })
-  }
-}
-
-export interface BankStatus { saved: boolean; held: boolean; ibanMasked: string | null }
+export interface BankStatus { saved: boolean; ibanMasked: string | null }
 
 /** What the hire may see of their own bank details: whether they are saved, and the IBAN's last 4. */
 export async function readOwnBankStatus(db: PrismaClient, userId: string): Promise<BankStatus> {
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { payrollProfile: { select: { iban: true } }, onboardingPendingBank: { select: { iban: true } } },
-  })
-  const held = user?.onboardingPendingBank != null
-  const onProfile = user?.payrollProfile?.iban ?? null
-  const stored = onProfile ?? user?.onboardingPendingBank?.iban ?? null
-  if (!stored) return { saved: false, held, ibanMasked: null }
+  const row = await db.onboardingPaymentDetails.findUnique({ where: { userId }, select: { method: true, iban: true } })
+  if (row?.method !== 'PK_BANK') return { saved: false, ibanMasked: null }
   try {
-    const plain = decryptSensitiveValue(onProfile ? 'iban' : pendingLabel('iban'), stored)
-    return { saved: true, held, ibanMasked: plain ? maskIban(plain) : null }
+    const plain = decryptPaymentField('iban', row.iban)
+    return { saved: true, ibanMasked: plain ? maskIban(plain) : null }
   } catch {
     console.error('[academy] stored IBAN could not be read', { userId })
-    return { saved: true, held, ibanMasked: null }
+    return { saved: true, ibanMasked: null }
   }
 }
 

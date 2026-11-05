@@ -36,6 +36,6 @@ export function canManageSubscriptions(role: string | null | undefined): boolean
 }
 
 export function canReadPayoutDetails(role: string | null | undefined): boolean {
-  // Contractor payout details: HR and O&A only, masked by default, reveals are logged.
+  // Onboarding payment details: HR and O&A only, masked by default, reveals are logged.
   return role === 'HR' || role === 'OA'
 }

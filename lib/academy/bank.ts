@@ -7,7 +7,7 @@ const IBAN_MESSAGE = "That IBAN doesn't look right. It should start with PK and 
 const MASK = '••••'
 const MASK_VISIBLE = 4
 
-// encryptSensitiveValue passes through any value carrying its prefix, so a stored value could later
+// encryptField passes through any value carrying its prefix, so a stored value could later
 // fail to decrypt. Reject the prefix on every encrypted free-text field.
 const plain = (max: number) =>
   z
@@ -62,35 +62,3 @@ export const linkedinUrlSchema = z
   .max(LINKEDIN_MAX, 'LinkedIn link is too long.')
   .refine(isLinkedinUrl, LINKEDIN_MESSAGE)
   .transform((v) => stripHtml(v).trim())
-
-/**
- * The admin users listing sends a profile to the browser. iban and branch are not needed there,
- * so they never leave the server. Returns a new object.
- */
-export function omitBankIdentifiers<T extends { iban?: unknown; branch?: unknown } | null | undefined>(
-  profile: T,
-): T extends null | undefined ? T : Omit<NonNullable<T>, 'iban' | 'branch'> {
-  if (!profile) return profile as never
-  const { iban: _iban, branch: _branch, ...rest } = profile
-  return rest as never
-}
-
-const isBlank = (value: unknown): boolean =>
-  value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
-
-/**
- * The HR profile form is loaded once and can be stale. With the Academy on, a blank or missing
- * bankName or accountTitle means "no change", so it cannot wipe what a hire saved meanwhile. With it
- * off the data is returned as it is. Returns a new object.
- */
-export function withoutBlankBankLabels<T extends { bankName?: unknown; accountTitle?: unknown }>(
-  data: T,
-  payload: { bankName?: unknown; accountTitle?: unknown },
-  academyEnabled: boolean,
-): T {
-  if (!academyEnabled) return data
-  const next = { ...data }
-  if (isBlank(payload.bankName)) delete next.bankName
-  if (isBlank(payload.accountTitle)) delete next.accountTitle
-  return next
-}

@@ -8,7 +8,7 @@ import { FieldError, FieldPanel, SaveButton, SavedNote, TextField, useFieldSave 
 
 const BANK_URL = '/api/onboarding/academy/bank'
 
-interface BankStatus { saved: boolean; held: boolean; ibanMasked: string | null }
+interface BankStatus { saved: boolean; ibanMasked: string | null }
 
 interface BankFieldProps {
   label: string
@@ -17,8 +17,7 @@ interface BankFieldProps {
 
 function savedLine(status: BankStatus | null): string {
   const masked = status?.ibanMasked ? ` IBAN ending ${status.ibanMasked}.` : ''
-  const held = status?.held ? ' HR will add them to your payroll profile.' : ''
-  return `Your bank details are saved.${masked}${held}`
+  return `Your bank details are saved.${masked} Accounts will take it from here.`
 }
 
 /** The form is uncontrolled, so bank values never reach React state, and it resets after a save. */

@@ -35,7 +35,16 @@ CREATE TYPE "KeyContactGroup" AS ENUM ('HR', 'SECURITY_IT', 'ACCOUNTS', 'EXECUTI
 CREATE TYPE "ChecklistOwnerRole" AS ENUM ('HR', 'SECURITY', 'OA', 'TEAM_LEAD');
 
 -- CreateEnum
-CREATE TYPE "PayoutMethod" AS ENUM ('WISE', 'BANK_TRANSFER', 'PAYONEER', 'OTHER');
+CREATE TYPE "OnboardingPaymentMethod" AS ENUM ('PK_BANK', 'WISE', 'BANK_TRANSFER', 'PAYONEER', 'OTHER');
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "contractType" "ContractType",
+ADD COLUMN     "discordUsername" TEXT,
+ADD COLUMN     "employmentStatus" "EmploymentStatus",
+ADD COLUMN     "linkedinUrl" TEXT,
+ADD COLUMN     "officeLocation" "OfficeLocation",
+ADD COLUMN     "remoteCountry" CHAR(2),
+ADD COLUMN     "workMode" "WorkMode";
 
 -- AlterTable
 ALTER TABLE "NewHire" ADD COLUMN     "academyReleasedAt" TIMESTAMP(3),
@@ -53,13 +62,14 @@ ADD COLUMN     "teamCallAt" TIMESTAMP(3),
 ADD COLUMN     "workMode" "WorkMode";
 
 -- AlterTable
-ALTER TABLE "OnboardingConfig" ADD COLUMN     "bankLetterTemplate" TEXT,
-ADD COLUMN     "blockersCallCt" TEXT NOT NULL DEFAULT 'WED 07:00',
-ADD COLUMN     "failAlertThreshold" INTEGER NOT NULL DEFAULT 3,
-ADD COLUMN     "invoiceTemplates" JSONB NOT NULL DEFAULT '{}',
-ADD COLUMN     "links" JSONB NOT NULL DEFAULT '{}',
-ADD COLUMN     "retakeCooldownMinutes" INTEGER NOT NULL DEFAULT 15,
-ADD COLUMN     "videos" JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE "TeamLeadForm" ADD COLUMN     "day1Goal" TEXT,
+ADD COLUMN     "leadInputDueAt" TIMESTAMP(3),
+ADD COLUMN     "month1Goal" TEXT,
+ADD COLUMN     "month3Goal" TEXT,
+ADD COLUMN     "roleExpectations" TEXT,
+ADD COLUMN     "teamTools" JSONB,
+ADD COLUMN     "tutorials" JSONB,
+ADD COLUMN     "week1Goal" TEXT;
 
 -- AlterTable
 ALTER TABLE "OnboardingModule" ADD COLUMN     "completionRule" "OnboardingCompletionRule",
@@ -86,27 +96,13 @@ ADD COLUMN     "valueKey" TEXT,
 ADD COLUMN     "videoChapterKey" TEXT;
 
 -- AlterTable
-ALTER TABLE "PayrollEmployeeProfile" ADD COLUMN     "branch" TEXT,
-ADD COLUMN     "iban" TEXT;
-
--- AlterTable
-ALTER TABLE "TeamLeadForm" ADD COLUMN     "day1Goal" TEXT,
-ADD COLUMN     "leadInputDueAt" TIMESTAMP(3),
-ADD COLUMN     "month1Goal" TEXT,
-ADD COLUMN     "month3Goal" TEXT,
-ADD COLUMN     "roleExpectations" TEXT,
-ADD COLUMN     "teamTools" JSONB,
-ADD COLUMN     "tutorials" JSONB,
-ADD COLUMN     "week1Goal" TEXT;
-
--- AlterTable
-ALTER TABLE "User" ADD COLUMN     "contractType" "ContractType",
-ADD COLUMN     "discordUsername" TEXT,
-ADD COLUMN     "employmentStatus" "EmploymentStatus",
-ADD COLUMN     "linkedinUrl" TEXT,
-ADD COLUMN     "officeLocation" "OfficeLocation",
-ADD COLUMN     "remoteCountry" CHAR(2),
-ADD COLUMN     "workMode" "WorkMode";
+ALTER TABLE "OnboardingConfig" ADD COLUMN     "bankLetterTemplate" TEXT,
+ADD COLUMN     "blockersCallCt" TEXT NOT NULL DEFAULT 'WED 07:00',
+ADD COLUMN     "failAlertThreshold" INTEGER NOT NULL DEFAULT 3,
+ADD COLUMN     "invoiceTemplates" JSONB NOT NULL DEFAULT '{}',
+ADD COLUMN     "links" JSONB NOT NULL DEFAULT '{}',
+ADD COLUMN     "retakeCooldownMinutes" INTEGER NOT NULL DEFAULT 15,
+ADD COLUMN     "videos" JSONB NOT NULL DEFAULT '{}';
 
 -- CreateTable
 CREATE TABLE "NewHireTeamMember" (
@@ -223,33 +219,36 @@ CREATE TABLE "OnboardingChecklistItem" (
 );
 
 -- CreateTable
-CREATE TABLE "ContractorPayoutDetails" (
+CREATE TABLE "OnboardingPaymentDetails" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "method" "PayoutMethod" NOT NULL,
-    "accountHolderName" TEXT NOT NULL,
+    "method" "OnboardingPaymentMethod" NOT NULL,
+    "accountHolderName" TEXT,
+    "accountTitle" TEXT,
     "payoutEmail" TEXT,
     "bankName" TEXT,
+    "branch" TEXT,
+    "iban" TEXT,
     "accountNumberOrIban" TEXT,
     "swiftBic" TEXT,
     "bankCountry" TEXT,
     "bankAddress" TEXT,
     "instructions" TEXT,
-    "currency" TEXT NOT NULL,
+    "currency" TEXT,
     "submittedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "ContractorPayoutDetails_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "OnboardingPaymentDetails_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
-CREATE TABLE "ContractorPayoutRevealLog" (
+CREATE TABLE "OnboardingPaymentRevealLog" (
     "id" TEXT NOT NULL,
-    "payoutUserId" TEXT NOT NULL,
+    "paymentUserId" TEXT NOT NULL,
     "viewerId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "ContractorPayoutRevealLog_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "OnboardingPaymentRevealLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -283,10 +282,10 @@ CREATE INDEX "OnboardingChecklistItem_dueAt_idx" ON "OnboardingChecklistItem"("d
 CREATE UNIQUE INDEX "OnboardingChecklistItem_newHireId_templateItemId_key" ON "OnboardingChecklistItem"("newHireId", "templateItemId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ContractorPayoutDetails_userId_key" ON "ContractorPayoutDetails"("userId");
+CREATE UNIQUE INDEX "OnboardingPaymentDetails_userId_key" ON "OnboardingPaymentDetails"("userId");
 
 -- CreateIndex
-CREATE INDEX "ContractorPayoutRevealLog_payoutUserId_createdAt_idx" ON "ContractorPayoutRevealLog"("payoutUserId", "createdAt");
+CREATE INDEX "OnboardingPaymentRevealLog_paymentUserId_createdAt_idx" ON "OnboardingPaymentRevealLog"("paymentUserId", "createdAt");
 
 -- AddForeignKey
 ALTER TABLE "OnboardingProgress" ADD CONSTRAINT "OnboardingProgress_assignedById_fkey" FOREIGN KEY ("assignedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -325,5 +324,5 @@ ALTER TABLE "OnboardingChecklistItem" ADD CONSTRAINT "OnboardingChecklistItem_te
 ALTER TABLE "OnboardingChecklistItem" ADD CONSTRAINT "OnboardingChecklistItem_doneById_fkey" FOREIGN KEY ("doneById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ContractorPayoutDetails" ADD CONSTRAINT "ContractorPayoutDetails_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OnboardingPaymentDetails" ADD CONSTRAINT "OnboardingPaymentDetails_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

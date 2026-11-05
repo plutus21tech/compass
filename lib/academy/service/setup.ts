@@ -3,6 +3,7 @@ import { AcademyError } from '../errors'
 import { ATTRIBUTE_SELECT, setPersonAttributes } from './attributes'
 import { describeSetupIssues } from '../labels'
 import { recomputeDueDates } from './progress'
+import { isAccountInactive } from './shared-reads'
 import {
   getSetupReadiness,
   isLeadInputSubmitted,
@@ -31,13 +32,13 @@ function parseSetup(input: unknown, hireUserId: string | null): SetupInput {
 async function requireEligible(db: Db, userId: string, role: string): Promise<void> {
   const candidate = await db.user.findUnique({
     where: { id: userId },
-    select: { onboardingCompleted: true, payrollProfile: { select: { isPayrollActive: true } } },
+    select: { onboardingCompleted: true },
   })
   if (!candidate) throw new AcademyError(`Invalid ${role}`, 400)
   if (candidate.onboardingCompleted === false) {
     throw new AcademyError(`Selected ${role} must complete onboarding first`, 400)
   }
-  if (candidate.payrollProfile?.isPayrollActive === false) {
+  if (await isAccountInactive(db, userId)) {
     throw new AcademyError(`Selected ${role} is inactive`, 400)
   }
 }

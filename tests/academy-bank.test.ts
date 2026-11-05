@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema, maskIban, omitBankIdentifiers, withoutBlankBankLabels,
+  bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema, maskIban,
 } from '../lib/academy/bank'
 
 // Fictional IBAN, shaped like a Pakistani one.
@@ -54,25 +54,3 @@ test('linkedinUrlSchema needs https and a linkedin.com host, including www and c
   }
 })
 
-test('omitBankIdentifiers removes iban and branch and keeps the rest, without mutating', () => {
-  const profile = { id: 'p1', bankName: 'Example Bank', accountTitle: 'Cara', accountNumber: '123', iban: IBAN, branch: 'Main' }
-  const result = omitBankIdentifiers(profile)
-  assert.deepEqual(result, { id: 'p1', bankName: 'Example Bank', accountTitle: 'Cara', accountNumber: '123' })
-  assert.equal(profile.iban, IBAN)
-  assert.equal(omitBankIdentifiers(null), null)
-})
-
-test('withoutBlankBankLabels: with the Academy on, blank or missing labels mean no change', () => {
-  const data = { bankName: null, accountTitle: null, accountNumber: 'x' }
-  assert.deepEqual(withoutBlankBankLabels(data, { bankName: '', accountTitle: undefined }, true), { accountNumber: 'x' })
-  assert.deepEqual(withoutBlankBankLabels(data, { bankName: '  ', accountTitle: null }, true), { accountNumber: 'x' })
-  const filled = { bankName: 'enc1', accountTitle: 'enc2', accountNumber: 'x' }
-  assert.deepEqual(withoutBlankBankLabels(filled, { bankName: 'A', accountTitle: 'B' }, true), filled)
-  assert.deepEqual(withoutBlankBankLabels(filled, { bankName: 'A', accountTitle: '' }, true), { bankName: 'enc1', accountNumber: 'x' })
-  assert.deepEqual(Object.keys(data), ['bankName', 'accountTitle', 'accountNumber'])
-})
-
-test('withoutBlankBankLabels: with the Academy off, data is returned exactly as today', () => {
-  const data = { bankName: null, accountTitle: null, accountNumber: 'x' }
-  assert.deepEqual(withoutBlankBankLabels(data, { bankName: '', accountTitle: undefined }, false), data)
-})

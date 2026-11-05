@@ -1,5 +1,5 @@
 // Pure wording and mapping for the module page. No server-only imports: safe for client components.
-import type { KeyContactGroup, PayoutMethod, TransportMode } from '@prisma/client'
+import type { KeyContactGroup, OnboardingPaymentMethod, TransportMode } from '@prisma/client'
 import { applyEvent, type ProgressEvent, type ProgressState } from './progress'
 import type { CommuteRow, HomeView, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView, ReleasedHomeView } from './view'
 
@@ -158,6 +158,9 @@ export function peopleForBlock(
         : []
   }
 }
+
+/** The methods the payout form offers. PK_BANK has its own form. */
+export type PayoutMethod = Exclude<OnboardingPaymentMethod, 'PK_BANK'>
 
 export interface PayoutField {
   name: string

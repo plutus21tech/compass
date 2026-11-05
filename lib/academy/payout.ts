@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import type { PayoutMethod } from '@prisma/client'
+import type { OnboardingPaymentMethod } from '@prisma/client'
 import { canReadPayoutDetails } from '@/lib/permissions'
 
 export { canReadPayoutDetails }
 
-// encryptSensitiveValue passes through any value carrying its prefix, so a user could store a value
+// encryptField passes through any value carrying its prefix, so a user could store a value
 // that later fails to decrypt. Reject the prefix on every encrypted free-text field.
 const text = (schema: z.ZodString) => schema.refine((v) => !v.toLowerCase().includes('p21enc:'), 'This value is not allowed')
 
@@ -35,7 +35,7 @@ export const payoutSchema = z.discriminatedUnion('method', [
   }),
 ])
 
-/** Pakistan-based employees are paid through payroll; a null contractType may save. */
+/** Pakistan-based employees use the bank form instead; a null contractType may save. */
 export function canSavePayout(contractType: string | null | undefined): boolean {
   return contractType !== 'PK_EMPLOYMENT'
 }
@@ -43,9 +43,9 @@ export function canSavePayout(contractType: string | null | undefined): boolean 
 export type PayoutInput = z.infer<typeof payoutSchema>
 
 export type PayoutView = {
-  method: PayoutMethod
-  accountHolderName: string
-  currency: string
+  method: OnboardingPaymentMethod
+  accountHolderName: string | null
+  currency: string | null
   fields: Record<string, string | null>
   submittedAt: string
 }
@@ -64,13 +64,15 @@ function maskEmail(value: string): string {
 
 const MASKERS: Record<string, (value: string) => string> = {
   accountNumberOrIban: maskAccount,
+  iban: maskAccount,
+  branch: () => MASK,
   payoutEmail: maskEmail,
   instructions: () => MASK,
   swiftBic: () => MASK,
   bankAddress: () => MASK,
 }
 
-/** Returns a new view; accountHolderName, bankName, bankCountry, currency and method stay readable. */
+/** Returns a new view; accountHolderName, accountTitle, bankName, bankCountry, currency and method stay readable. */
 export function maskPayout(view: PayoutView): PayoutView {
   const fields: Record<string, string | null> = {}
   for (const [key, value] of Object.entries(view.fields)) {

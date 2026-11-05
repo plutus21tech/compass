@@ -95,13 +95,6 @@ const TAG_PREFILL: Partial<Record<TeamTag, Partial<PersonAttributes>>> = {
 }
 
 /** A suggestion only; HR confirms. */
-export function prefillFromTeamTag(
-  teamTag: TeamTag | null,
-  payrollEmploymentTypeName: string | null,
-): Partial<PersonAttributes> {
-  const base: Partial<PersonAttributes> = teamTag ? { ...(TAG_PREFILL[teamTag] ?? {}) } : {}
-  const name = payrollEmploymentTypeName ?? ''
-  if (/contract/i.test(name)) return { ...base, contractType: 'INDEPENDENT_CONTRACTOR' }
-  if (teamTag === 'PAKISTAN' && /permanent|employ/i.test(name)) return { ...base, contractType: 'PK_EMPLOYMENT' }
-  return base
+export function prefillFromTeamTag(teamTag: TeamTag | null): Partial<PersonAttributes> {
+  return teamTag ? { ...(TAG_PREFILL[teamTag] ?? {}) } : {}
 }

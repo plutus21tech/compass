@@ -416,13 +416,12 @@ model User {
   newHireTeamMemberships        NewHireTeamMember[]            @relation("NewHireTeamMemberUser")
   onboardingProgressHistory     OnboardingProgressHistory[]    @relation("OnboardingProgressHistoryUser")
   onboardingAcknowledgements    OnboardingAcknowledgement[]    @relation("OnboardingAcknowledgementUser")
-  onboardingPendingBank         OnboardingPendingBankDetails?  @relation("OnboardingPendingBankUser")
   onboardingKeyContacts         OnboardingKeyContact[]         @relation("OnboardingKeyContactUser")
   onboardingProgressAssigned    OnboardingProgress[]           @relation("OnboardingProgressAssignedBy")
   onboardingProgressUnlocked    OnboardingProgress[]           @relation("OnboardingProgressUnlockedEarlyBy")
   onboardingVersionsPublished   OnboardingModuleVersion[]      @relation("OnboardingModuleVersionPublisher")
   onboardingChecklistItemsDone  OnboardingChecklistItem[]      @relation("OnboardingChecklistItemDoneBy")
-  contractorPayoutDetails       ContractorPayoutDetails?       @relation("ContractorPayoutOwner")
+  onboardingPaymentDetails      OnboardingPaymentDetails?      @relation("OnboardingPaymentDetailsUser")
 }
 
 model OfficeUserPreference {
@@ -1142,8 +1141,6 @@ model PayrollEmployeeProfile {
   @@index([isPayrollActive])
   @@index([departmentId])
   @@index([employmentTypeId])
-  branch           String?
-  iban             String?
 }
 
 model PayrollSalaryHead {
@@ -3226,7 +3223,8 @@ enum ChecklistOwnerRole {
   TEAM_LEAD
 }
 
-enum PayoutMethod {
+enum OnboardingPaymentMethod {
+  PK_BANK
   WISE
   BANK_TRANSFER
   PAYONEER
@@ -3286,20 +3284,6 @@ model OnboardingAcknowledgement {
   user            User                @relation("OnboardingAcknowledgementUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, kind])
-}
-
-/// Bank details a PK hire saved before HR created their payroll profile. Every value is encrypted.
-model OnboardingPendingBankDetails {
-  id           String   @id @default(cuid())
-  userId       String   @unique
-  accountTitle String
-  bankName     String
-  branch       String
-  iban         String
-  submittedAt  DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  user         User     @relation("OnboardingPendingBankUser", fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model OnboardingLibraryCard {
@@ -3371,30 +3355,35 @@ model OnboardingChecklistItem {
   @@index([dueAt])
 }
 
-model ContractorPayoutDetails {
-  id                  String       @id @default(cuid())
-  userId              String       @unique
-  method              PayoutMethod
-  accountHolderName   String
+/// A hire's bank details or preferred way of being paid, kept apart from payroll: OA enters them there by hand.
+/// PK_BANK uses accountTitle, bankName, branch, iban. Every sensitive value is encrypted.
+model OnboardingPaymentDetails {
+  id                  String                  @id @default(cuid())
+  userId              String                  @unique
+  method              OnboardingPaymentMethod
+  accountHolderName   String?
+  accountTitle        String?
   payoutEmail         String?
   bankName            String?
+  branch              String?
+  iban                String?
   accountNumberOrIban String?
   swiftBic            String?
   bankCountry         String?
   bankAddress         String?
   instructions        String?
-  currency            String
-  submittedAt         DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  currency            String?
+  submittedAt         DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
-  user                User         @relation("ContractorPayoutOwner", fields: [userId], references: [id], onDelete: Cascade)
+  user                User                    @relation("OnboardingPaymentDetailsUser", fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model ContractorPayoutRevealLog {
-  id           String   @id @default(cuid())
-  payoutUserId String // plain id, no relation: the audit trail must survive user deletion
-  viewerId     String // plain id, for the same reason
-  createdAt    DateTime @default(now())
+model OnboardingPaymentRevealLog {
+  id            String   @id @default(cuid())
+  paymentUserId String // plain id, no relation: the audit trail must survive user deletion
+  viewerId      String // plain id, for the same reason
+  createdAt     DateTime @default(now())
 
-  @@index([payoutUserId, createdAt])
+  @@index([paymentUserId, createdAt])
 }

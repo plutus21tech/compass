@@ -27,6 +27,6 @@ export async function resetAcademyFixtures(db: PrismaClient): Promise<void> {
   await db.payrollTravelAllowanceTier.deleteMany({ where: { id: { startsWith: 'act-' } } })
   await db.position.deleteMany({ where: { id: { startsWith: 'act-' } } })
   await db.payrollEmployeeProfile.deleteMany({ where: { userId: { startsWith: 'act-' } } })
-  await db.contractorPayoutRevealLog.deleteMany({ where: { payoutUserId: { startsWith: 'act-' } } })
+  await db.onboardingPaymentRevealLog.deleteMany({ where: { paymentUserId: { startsWith: 'act-' } } })
   await db.user.deleteMany({ where: { id: { startsWith: 'act-' } } })
 }

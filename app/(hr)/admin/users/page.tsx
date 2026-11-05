@@ -94,7 +94,6 @@ interface User {
   missingAttributes?: Array<keyof PersonAttributes>
   payrollProfile?: {
     id: string
-    employmentType?: { name: string } | null
     officialEmail: string | null
     cnicNumber: string | null
     designation: string | null
@@ -261,10 +260,7 @@ export default function UsersPage() {
     // Suggestions fill empty fields only; nothing is saved until HR saves the dialog.
     setAttributeForm(
       user
-        ? applyPrefill(
-            user.attributes ?? EMPTY_ATTRIBUTES,
-            prefillFromTeamTag(user.teamTag, user.payrollProfile?.employmentType?.name ?? null),
-          )
+        ? applyPrefill(user.attributes ?? EMPTY_ATTRIBUTES, prefillFromTeamTag(user.teamTag))
         : EMPTY_ATTRIBUTES,
     )
     if (user) {

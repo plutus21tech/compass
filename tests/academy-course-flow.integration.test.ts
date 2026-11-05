@@ -11,7 +11,7 @@ import { CONTRACTOR_ATTRIBUTES, HIRE_ID, SLUGS, cleanCourse, createReleasedHire 
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 // Fictional test key, not a real secret.
-process.env.PAYROLL_FIELD_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+process.env.ONBOARDING_FIELD_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
 
 // Fictional bank and payout details.
 const BANK = { accountTitle: 'Cara Lindqvist', bankName: 'Example Bank', branch: 'Main Branch', iban: 'PK36SCBL0000001123456702' }
@@ -93,15 +93,15 @@ async function runWholeCourse(payee: Payee): Promise<void> {
 }
 
 const profiles = () => prisma.payrollEmployeeProfile.count({ where: { userId: HIRE_ID } })
+const storedPayment = () => prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: HIRE_ID } })
 
-test('a PK hire with no payroll profile finishes all 14 modules; bank details are held and no profile appears', ACADEMY_DB_TEST, async () => {
+test('a PK hire finishes all 14 modules; bank details go to the onboarding store and no payroll profile appears', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   const before = await benefitCounts()
   assert.equal(await profiles(), 0)
   await runWholeCourse('PK')
   assert.equal(await profiles(), 0)
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 1)
-  assert.equal(await prisma.contractorPayoutDetails.count({ where: { userId: HIRE_ID } }), 0)
+  assert.equal((await storedPayment()).method, 'PK_BANK')
   assert.deepEqual(await benefitCounts(), before)
 })
 
@@ -112,7 +112,6 @@ test('a contractor finishes all 14 modules; the payout is saved and no payroll p
   assert.equal(await profiles(), 0)
   await runWholeCourse('CONTRACTOR')
   assert.equal(await profiles(), 0)
-  assert.equal(await prisma.contractorPayoutDetails.count({ where: { userId: HIRE_ID } }), 1)
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
+  assert.equal((await storedPayment()).method, 'WISE')
   assert.deepEqual(await benefitCounts(), before)
 })

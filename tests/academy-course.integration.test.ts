@@ -363,8 +363,8 @@ test('library cards resolve config links and hide ones with no target', ACADEMY_
 test('no view holds bank or payout values, only whether they are saved', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openEverything()
-  await prisma.payrollEmployeeProfile.create({
-    data: { userId: HIRE_ID, iban: 'ACT-SECRET-IBAN', bankName: 'ACT-SECRET-BANK', accountNumber: 'ACT-SECRET-ACCOUNT', accountTitle: 'ACT-SECRET-TITLE' },
+  await prisma.onboardingPaymentDetails.create({
+    data: { userId: HIRE_ID, method: 'PK_BANK', iban: 'ACT-SECRET-IBAN', bankName: 'ACT-SECRET-BANK', branch: 'ACT-SECRET-BRANCH', accountTitle: 'ACT-SECRET-TITLE' },
   })
   const view = await loadModule(prisma, HIRE_ID, 'getting-paid')
   assert.equal(view.bankSaved, true)

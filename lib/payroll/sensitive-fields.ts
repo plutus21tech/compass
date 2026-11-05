@@ -6,20 +6,10 @@ const SENSITIVE_PAYROLL_PROFILE_FIELDS = [
   'bankName',
   'accountTitle',
   'accountNumber',
-  'iban',
-  'branch',
 ] as const
-
-// Added after the original four. Only processed when present in the payload, so
-// existing callers that omit them never overwrite stored values with null.
-const OPTIONAL_SENSITIVE_PAYROLL_PROFILE_FIELDS: readonly SensitivePayrollProfileField[] = ['iban', 'branch']
 
 type SensitivePayrollProfileField = (typeof SENSITIVE_PAYROLL_PROFILE_FIELDS)[number]
 type SensitivePayrollProfilePayload = Partial<Record<SensitivePayrollProfileField, string | null>>
-
-function isOmittedOptionalField(field: SensitivePayrollProfileField, payload: object) {
-  return OPTIONAL_SENSITIVE_PAYROLL_PROFILE_FIELDS.includes(field) && !(field in payload)
-}
 
 function getEncryptionKey() {
   const raw = process.env.PAYROLL_FIELD_ENCRYPTION_KEY?.trim()
@@ -42,11 +32,7 @@ export function isEncryptedPayrollField(value: string | null | undefined) {
   return typeof value === 'string' && value.startsWith(`${ENCRYPTION_PREFIX}:`)
 }
 
-/**
- * Encrypts a value with AES-256-GCM, binding the ciphertext to `label` via AAD.
- * Payroll fields use their field name as the label, so existing ciphertext stays valid.
- */
-export function encryptSensitiveValue(label: string, value: string | null | undefined): string | null {
+export function encryptPayrollField(field: SensitivePayrollProfileField, value: string | null | undefined) {
   const trimmed = typeof value === 'string' ? value.trim() : ''
   if (!trimmed) return null
   if (isEncryptedPayrollField(trimmed)) return trimmed
@@ -58,7 +44,7 @@ export function encryptSensitiveValue(label: string, value: string | null | unde
 
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
-  cipher.setAAD(Buffer.from(label, 'utf8'))
+  cipher.setAAD(Buffer.from(field, 'utf8'))
 
   const ciphertext = Buffer.concat([
     cipher.update(trimmed, 'utf8'),
@@ -74,7 +60,7 @@ export function encryptSensitiveValue(label: string, value: string | null | unde
   ].join(':')
 }
 
-export function decryptSensitiveValue(label: string, value: string | null | undefined): string | null {
+export function decryptPayrollField(field: SensitivePayrollProfileField, value: string | null | undefined) {
   if (!value) return null
   if (!isEncryptedPayrollField(value)) return value
 
@@ -90,7 +76,7 @@ export function decryptSensitiveValue(label: string, value: string | null | unde
 
   const [, , ivRaw, tagRaw, ciphertextRaw] = parts
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivRaw, 'base64url'))
-  decipher.setAAD(Buffer.from(label, 'utf8'))
+  decipher.setAAD(Buffer.from(field, 'utf8'))
   decipher.setAuthTag(Buffer.from(tagRaw, 'base64url'))
 
   return Buffer.concat([
@@ -99,18 +85,9 @@ export function decryptSensitiveValue(label: string, value: string | null | unde
   ]).toString('utf8')
 }
 
-export function encryptPayrollField(field: SensitivePayrollProfileField, value: string | null | undefined) {
-  return encryptSensitiveValue(field, value)
-}
-
-export function decryptPayrollField(field: SensitivePayrollProfileField, value: string | null | undefined) {
-  return decryptSensitiveValue(field, value)
-}
-
 export function encryptSensitivePayrollProfileFields<T extends SensitivePayrollProfilePayload>(payload: T): T {
   const next = { ...payload }
   for (const field of SENSITIVE_PAYROLL_PROFILE_FIELDS) {
-    if (isOmittedOptionalField(field, payload)) continue
     next[field] = encryptPayrollField(field, payload[field]) as T[typeof field]
   }
   return next
@@ -123,7 +100,6 @@ export function decryptSensitivePayrollProfileFields<T extends SensitivePayrollP
 
   const next = { ...profile }
   for (const field of SENSITIVE_PAYROLL_PROFILE_FIELDS) {
-    if (isOmittedOptionalField(field, profile)) continue
     next[field] = decryptPayrollField(field, profile[field]) as typeof next[typeof field]
   }
   return next as T

@@ -11,6 +11,7 @@ import { eventKeysFor, type ModuleProgressView } from '../view'
 import { ATTRIBUTE_SELECT } from './attributes'
 import { loadHireFacts, type HireFacts } from './context'
 import { getAcademyConfig } from './library'
+import { companyHolidayDates } from './shared-reads'
 
 type Db = PrismaClient | Prisma.TransactionClient
 type Tx = Prisma.TransactionClient
@@ -63,18 +64,12 @@ export async function lockProgressRow(tx: Tx, userId: string, moduleId: string):
 export async function paymentFacts(db: Db, userId: string): Promise<PaymentFacts> {
   const user = await db.user.findUniqueOrThrow({
     where: { id: userId },
-    select: {
-      contractType: true,
-      payrollProfile: { select: { iban: true } },
-      contractorPayoutDetails: { select: { id: true } },
-      onboardingPendingBank: { select: { id: true } },
-    },
+    select: { contractType: true, onboardingPaymentDetails: { select: { method: true } } },
   })
-  // Details held until HR creates the payroll profile count as saved.
-  if (user.contractType === 'PK_EMPLOYMENT') {
-    return { kind: 'PK', bankSaved: Boolean(user.payrollProfile?.iban) || user.onboardingPendingBank !== null }
-  }
-  return { kind: 'OTHER', payoutSaved: user.contractorPayoutDetails !== null }
+  // Contract type chooses the form; a row saved through the other form doesn't answer this one.
+  const method = user.onboardingPaymentDetails?.method
+  if (user.contractType === 'PK_EMPLOYMENT') return { kind: 'PK', bankSaved: method === 'PK_BANK' }
+  return { kind: 'OTHER', payoutSaved: method !== undefined && method !== 'PK_BANK' }
 }
 
 /** The first signature, which is the one that stands. */
@@ -215,11 +210,8 @@ export async function completeModule(
 async function holidayKeys(db: Db, person: DuePerson, joiningDate: Date): Promise<Set<string>> {
   const team = holidayTeamFor(person.teamTag, person.officeLocation)
   if (!team) return new Set()
-  const holidays = await db.payrollPublicHoliday.findMany({
-    where: { holidayDate: { gte: joiningDate }, OR: [{ teamTags: { isEmpty: true } }, { teamTags: { has: team } }] },
-    select: { holidayDate: true },
-  })
-  return new Set(holidays.map((h) => h.holidayDate.toISOString().slice(0, 10)))
+  const holidays = await companyHolidayDates(db, team, joiningDate)
+  return new Set(holidays.map((date) => date.toISOString().slice(0, 10)))
 }
 
 /** For writers that know the hire, not the user. Safe to call after any save: it only moves rows that differ. */

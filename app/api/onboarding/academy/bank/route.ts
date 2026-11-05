@@ -11,7 +11,7 @@ function failure(error: unknown): NextResponse {
   return response
 }
 
-/** Only { saved, held, ibanMasked }: the hire never reads their bank values back. */
+/** Only { saved, ibanMasked }: the hire never reads their bank values back. */
 export async function GET() {
   try {
     const user = await requireAcademySession()
@@ -25,9 +25,9 @@ export async function PUT(request: NextRequest) {
   try {
     const user = await requireAcademySession()
     await guardAcademyMutation(request, user.id)
-    const { held } = await saveBankDetails(prisma, user.id, await request.json())
+    await saveBankDetails(prisma, user.id, await request.json())
     // Writes never echo details back.
-    return NextResponse.json({ success: true, data: { held } }, { headers: NO_STORE })
+    return NextResponse.json({ success: true }, { headers: NO_STORE })
   } catch (error) {
     return failure(error)
   }

@@ -28,8 +28,8 @@ export default defineConfig({
         env: {
           ...(process.env as Record<string, string>),
           SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-throwaway-session-secret-at-least-32-chars',
-          PAYROLL_FIELD_ENCRYPTION_KEY:
-            process.env.PAYROLL_FIELD_ENCRYPTION_KEY ?? '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff',
+          ONBOARDING_FIELD_ENCRYPTION_KEY:
+            process.env.ONBOARDING_FIELD_ENCRYPTION_KEY ?? '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff',
         },
       },
 })

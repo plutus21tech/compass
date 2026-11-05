@@ -184,19 +184,19 @@ test('a contractor needs the payout row and the invoice tick for module 11', ACA
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'OTHER', payoutSaved: false })
   await recordEvent(prisma, HIRE_ID, 'getting-paid', { type: 'CHECK', key: 'invoice-template', checked: true })
   await assert.rejects(completeModule(prisma, HIRE_ID, 'getting-paid'), fails(409, /payout details/))
-  await prisma.contractorPayoutDetails.create({
+  await prisma.onboardingPaymentDetails.create({
     data: { userId: HIRE_ID, method: 'WISE', accountHolderName: 'enc', currency: 'USD' },
   })
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'OTHER', payoutSaved: true })
   await completeModule(prisma, HIRE_ID, 'getting-paid')
 })
 
-test('paymentFacts for a PK hire reads the profile iban', ACADEMY_DB_TEST, async () => {
+test('paymentFacts for a PK hire reads only the onboarding store', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: false })
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID } })
+  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID, bankName: 'cipher', accountTitle: 'cipher' } })
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: false })
-  await prisma.payrollEmployeeProfile.update({ where: { userId: HIRE_ID }, data: { iban: 'cipher' } })
+  await prisma.onboardingPaymentDetails.create({ data: { userId: HIRE_ID, method: 'PK_BANK', iban: 'cipher' } })
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: true })
 })
 

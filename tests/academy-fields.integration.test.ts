@@ -2,12 +2,12 @@ import test, { after } from 'node:test'
 import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { AcademyError } from '../lib/academy/errors'
-import { decryptSensitiveValue } from '../lib/payroll/sensitive-fields'
+import { decryptField } from '../lib/academy/field-encryption'
 import { loadModule } from '../lib/academy/service/course'
 import { completeModule, paymentFacts, recordEvent } from '../lib/academy/service/progress'
-import { savePayout } from '../lib/academy/service/payout'
+import { readOwnPayout, readPayout, savePayout } from '../lib/academy/service/payout'
 import {
-  applyPendingBankDetails, readOwnBankStatus, saveBankDetails, saveDiscordUsername, saveLinkedinUrl, signAcknowledgement,
+  readOwnBankStatus, saveBankDetails, saveDiscordUsername, saveLinkedinUrl, signAcknowledgement,
 } from '../lib/academy/service/fields'
 import { setPersonAttributes } from '../lib/academy/service/attributes'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
@@ -15,7 +15,7 @@ import { CONTRACTOR_ATTRIBUTES, HIRE_ID, cleanCourse, createReleasedHire, progre
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 // Fictional test key, not a real secret.
-process.env.PAYROLL_FIELD_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+process.env.ONBOARDING_FIELD_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
 
 // Fictional IBAN.
 const IBAN = 'PK36SCBL0000001123456702'
@@ -37,42 +37,119 @@ after(async () => {
 const openEverything = () =>
   prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, status: 'LOCKED' }, data: { status: 'IN_PROGRESS' } })
 
-test('a PK hire with a profile: fields encrypted at rest, accountNumber untouched, no pending row', ACADEMY_DB_TEST, async () => {
+/** The whole stored row, updatedAt included, so any write at all shows up. */
+const profileBytes = async (): Promise<string> =>
+  JSON.stringify(await prisma.$queryRaw`SELECT row_to_json(p) AS row FROM "PayrollEmployeeProfile" p WHERE "userId" = ${HIRE_ID}`)
+
+const storedRow = () => prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: HIRE_ID } })
+
+test('a PK hire with a payroll profile: Module 11 leaves that profile byte-identical', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openEverything()
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID, accountNumber: 'keep-me', designation: 'Analyst' } })
-  assert.deepEqual(await saveBankDetails(prisma, HIRE_ID, BANK), { held: false })
-  const row = await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: HIRE_ID } })
-  for (const f of ['accountTitle', 'bankName', 'branch', 'iban'] as const) assert.ok(row[f]?.startsWith('p21enc:v1:'), f)
-  assert.equal(decryptSensitiveValue('iban', row.iban), IBAN)
-  assert.equal(decryptSensitiveValue('branch', row.branch), 'Main Branch')
-  assert.equal(row.accountNumber, 'keep-me')
-  assert.equal(row.designation, 'Analyst')
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
-  assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: true })
+  await prisma.payrollEmployeeProfile.create({
+    data: { userId: HIRE_ID, accountNumber: 'keep-me', bankName: 'Payroll Bank', accountTitle: 'Payroll Title', designation: 'Analyst' },
+  })
+  const before = await profileBytes()
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  await saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Other Bank' })
+  await completeModule(prisma, HIRE_ID, 'getting-paid')
+  assert.equal(await profileBytes(), before)
+  assert.equal((await progressRow('getting-paid')).status, 'COMPLETED')
 })
 
-test('a PK hire without a profile: encrypted pending row, no profile, bankSaved true', ACADEMY_DB_TEST, async () => {
+test('a PK hire: details are encrypted in the onboarding store and no payroll profile appears', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openEverything()
-  assert.deepEqual(await saveBankDetails(prisma, HIRE_ID, BANK), { held: true })
+  await saveBankDetails(prisma, HIRE_ID, BANK)
   assert.equal(await prisma.payrollEmployeeProfile.count({ where: { userId: HIRE_ID } }), 0)
-  const row = await prisma.onboardingPendingBankDetails.findUniqueOrThrow({ where: { userId: HIRE_ID } })
+  const row = await storedRow()
+  assert.equal(row.method, 'PK_BANK')
   for (const f of ['accountTitle', 'bankName', 'branch', 'iban'] as const) {
-    assert.ok(row[f].startsWith('p21enc:v1:'), f)
-    assert.ok(!row[f].includes('Example'), f)
+    assert.ok(row[f]?.startsWith('p21enc:v1:'), f)
+    assert.ok(!row[f]?.includes('Example'), f)
   }
-  assert.equal(decryptSensitiveValue('pendingBank.iban', row.iban), IBAN)
+  assert.equal(decryptField('onboardingPayment.iban', row.iban), IBAN)
+  assert.equal(decryptField('onboardingPayment.branch', row.branch), 'Main Branch')
   assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: true })
-  // Saving again replaces the held row.
+  // Saving again replaces the row.
   await saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Other Bank' })
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 1)
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: HIRE_ID } }), 1)
+  assert.equal(decryptField('onboardingPayment.bankName', (await storedRow()).bankName), 'Other Bank')
+})
+
+test('bank status exposes only whether details are saved and a masked IBAN', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: false, ibanMasked: null })
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: true, ibanMasked: '••••6702' })
+})
+
+test('a PK hire never reads bank values back through the payout route', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  assert.equal(await readOwnPayout(prisma, HIRE_ID), null)
+})
+
+test('HR and OA read PK_BANK masked; a reveal is unmasked and logged', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  await prisma.onboardingPaymentRevealLog.deleteMany({ where: { paymentUserId: HIRE_ID } })
+
+  const masked = await readPayout(prisma, HIRE_ID, { reveal: false, viewerId: P.hr.id })
+  assert.equal(masked?.method, 'PK_BANK')
+  assert.equal(masked?.fields.iban, '••••6702')
+  assert.equal(masked?.fields.branch, '••••')
+  assert.equal(masked?.fields.accountTitle, 'Cara Lindqvist')
+  assert.equal(masked?.fields.bankName, 'Example Bank')
+  assert.equal(await prisma.onboardingPaymentRevealLog.count({ where: { paymentUserId: HIRE_ID } }), 0)
+
+  const revealed = await readPayout(prisma, HIRE_ID, { reveal: true, viewerId: P.oa.id })
+  assert.equal(revealed?.fields.iban, IBAN)
+  assert.equal(revealed?.fields.branch, 'Main Branch')
+  const logs = await prisma.onboardingPaymentRevealLog.findMany({ where: { paymentUserId: HIRE_ID } })
+  assert.deepEqual(logs.map((log) => log.viewerId), [P.oa.id])
+  await prisma.onboardingPaymentRevealLog.deleteMany({ where: { paymentUserId: HIRE_ID } })
+})
+
+test('a saved row only counts for the form the contract type chooses; the other form replaces it', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: HIRE_ID } })
+  const attrs = {
+    officeLocation: user.officeLocation, remoteCountry: user.remoteCountry, workMode: user.workMode,
+    contractType: user.contractType, employmentStatus: user.employmentStatus,
+  }
+  await setPersonAttributes(prisma, HIRE_ID, { ...attrs, ...CONTRACTOR_ATTRIBUTES })
+  // A saved row is simply saved: moving contract keeps it, and it does not answer the contractor form.
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: HIRE_ID } }), 1)
+  assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'OTHER', payoutSaved: false })
+
+  await savePayout(prisma, HIRE_ID, WISE)
+  const row = await storedRow()
+  assert.equal(row.method, 'WISE')
+  for (const f of ['accountTitle', 'bankName', 'branch', 'iban'] as const) assert.equal(row[f], null, f)
+  assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'OTHER', payoutSaved: true })
+
+  await setPersonAttributes(prisma, HIRE_ID, attrs)
+  assert.deepEqual(await paymentFacts(prisma, HIRE_ID), { kind: 'PK', bankSaved: false })
+  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: false, ibanMasked: null })
+})
+
+test('two saves at once leave one row', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await openEverything()
+  await Promise.all([saveBankDetails(prisma, HIRE_ID, BANK), saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Other Bank' })])
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: HIRE_ID } }), 1)
 })
 
 test('a contractor cannot save bank details and nothing is written; a PK hire cannot save a payout', ACADEMY_DB_TEST, async () => {
   await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
   await assert.rejects(saveBankDetails(prisma, HIRE_ID, BANK), fails(400))
-  assert.equal(await prisma.onboardingPendingBankDetails.count(), 0)
+  assert.equal(await prisma.onboardingPaymentDetails.count(), 0)
   assert.equal(await prisma.payrollEmployeeProfile.count({ where: { userId: HIRE_ID } }), 0)
 
   await createReleasedHire()
@@ -82,40 +159,10 @@ test('a contractor cannot save bank details and nothing is written; a PK hire ca
 test('an invalid IBAN is refused by the service and writes nothing', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await assert.rejects(saveBankDetails(prisma, HIRE_ID, { ...BANK, iban: 'GB33BUKB20201555555555' }))
-  assert.equal(await prisma.onboardingPendingBankDetails.count(), 0)
+  assert.equal(await prisma.onboardingPaymentDetails.count(), 0)
 })
 
-test('applyPendingBankDetails moves the data under payroll labels and deletes the row; no profile keeps it', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  assert.equal(await applyPendingBankDetails(prisma, HIRE_ID), false)
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 1)
-
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID, accountNumber: 'keep-me' } })
-  assert.equal(await applyPendingBankDetails(prisma, HIRE_ID), true)
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
-  const row = await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: HIRE_ID } })
-  assert.equal(decryptSensitiveValue('iban', row.iban), IBAN)
-  assert.equal(decryptSensitiveValue('bankName', row.bankName), 'Example Bank')
-  assert.equal(decryptSensitiveValue('accountTitle', row.accountTitle), 'Cara Lindqvist')
-  assert.equal(decryptSensitiveValue('branch', row.branch), 'Main Branch')
-  assert.equal(row.accountNumber, 'keep-me')
-  assert.equal(await applyPendingBankDetails(prisma, HIRE_ID), false)
-})
-
-test('bank status exposes only saved, held and a masked IBAN', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: false, held: false, ibanMasked: null })
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: true, held: true, ibanMasked: '••••6702' })
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID } })
-  await applyPendingBankDetails(prisma, HIRE_ID)
-  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: true, held: false, ibanMasked: '••••6702' })
-})
-
-test('module 11 for a PK hire with held details completes; a contractor needs payout plus the tick', ACADEMY_DB_TEST, async () => {
+test('module 11 for a PK hire with saved details completes; a contractor needs payout plus the tick', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openEverything()
   await assert.rejects(completeModule(prisma, HIRE_ID, 'getting-paid'), fails(409))
@@ -207,7 +254,7 @@ test('concurrent signatures produce one row', ACADEMY_DB_TEST, async () => {
 test('bank details are refused while Module 11 is locked, and after it is completed', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await assert.rejects(saveBankDetails(prisma, HIRE_ID, BANK), fails(403))
-  assert.equal(await prisma.onboardingPendingBankDetails.count(), 0)
+  assert.equal(await prisma.onboardingPaymentDetails.count(), 0)
   await openEverything()
   await saveBankDetails(prisma, HIRE_ID, BANK)
   await completeModule(prisma, HIRE_ID, 'getting-paid')
@@ -215,8 +262,8 @@ test('bank details are refused while Module 11 is locked, and after it is comple
     saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Changed Bank' }),
     fails(409, /Your bank details are saved\. To change them, ask HR\./),
   )
-  const held = await prisma.onboardingPendingBankDetails.findUniqueOrThrow({ where: { userId: HIRE_ID } })
-  assert.equal(decryptSensitiveValue('pendingBank.bankName', held.bankName), 'Example Bank')
+  const row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: HIRE_ID } })
+  assert.equal(decryptField('onboardingPayment.bankName', row.bankName), 'Example Bank')
 })
 
 test('a missing Module 11 row is a 404, not a write', ACADEMY_DB_TEST, async () => {
@@ -224,58 +271,6 @@ test('a missing Module 11 row is a 404, not a write', ACADEMY_DB_TEST, async () 
   await openEverything()
   await prisma.onboardingProgress.deleteMany({ where: { userId: HIRE_ID, module: { slug: 'getting-paid' } } })
   await assert.rejects(saveBankDetails(prisma, HIRE_ID, BANK), fails(404, /This isn't available yet\./))
-  assert.equal(await prisma.onboardingPendingBankDetails.count(), 0)
+  assert.equal(await prisma.onboardingPaymentDetails.count(), 0)
 })
 
-test('held details are dropped, not copied, when the hire is no longer a PK employee', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID } })
-  await prisma.user.update({ where: { id: HIRE_ID }, data: { contractType: 'INDEPENDENT_CONTRACTOR' } })
-  assert.equal(await applyPendingBankDetails(prisma, HIRE_ID), false)
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
-  assert.equal((await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: HIRE_ID } })).iban, null)
-})
-
-test('changing contract type away from PK deletes held details; staying PK keeps them', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: HIRE_ID } })
-  const attrs = {
-    officeLocation: user.officeLocation, remoteCountry: user.remoteCountry, workMode: user.workMode,
-    contractType: user.contractType, employmentStatus: user.employmentStatus,
-  }
-  await setPersonAttributes(prisma, HIRE_ID, attrs)
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 1)
-  await setPersonAttributes(prisma, HIRE_ID, { ...attrs, ...CONTRACTOR_ATTRIBUTES })
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
-})
-
-test('details saved after a profile appears are not overwritten by an older held copy', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID } })
-  assert.deepEqual(await saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Newer Bank' }), { held: false })
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
-  assert.deepEqual(await readOwnBankStatus(prisma, HIRE_ID), { saved: true, held: false, ibanMasked: '••••6702' })
-  assert.equal(await applyPendingBankDetails(prisma, HIRE_ID), false)
-  const row = await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: HIRE_ID } })
-  assert.equal(decryptSensitiveValue('bankName', row.bankName), 'Newer Bank')
-})
-
-test('apply racing a newer save never leaves the older values on the profile', ACADEMY_DB_TEST, async () => {
-  await createReleasedHire()
-  await openEverything()
-  await saveBankDetails(prisma, HIRE_ID, BANK)
-  await prisma.payrollEmployeeProfile.create({ data: { userId: HIRE_ID } })
-  await Promise.all([
-    applyPendingBankDetails(prisma, HIRE_ID),
-    saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Newer Bank' }),
-  ])
-  const row = await prisma.payrollEmployeeProfile.findUniqueOrThrow({ where: { userId: HIRE_ID } })
-  assert.equal(decryptSensitiveValue('bankName', row.bankName), 'Newer Bank')
-  assert.equal(await prisma.onboardingPendingBankDetails.count({ where: { userId: HIRE_ID } }), 0)
-})

@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManagePayroll } from '@/lib/permissions'
-import { applyPendingBankDetailsSafely } from '@/lib/academy/service/fields'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -136,8 +135,6 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         isPayrollActive: data.isPayrollActive ?? true,
       },
     })
-    // The upsert above may have just created the profile that held bank details were waiting for.
-    await applyPendingBankDetailsSafely(prisma, userId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

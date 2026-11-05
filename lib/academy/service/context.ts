@@ -21,6 +21,7 @@ import {
 } from '../view'
 import { ATTRIBUTE_SELECT } from './attributes'
 import { eligibleCards, getAcademyConfig, listKeyContacts } from './library'
+import { commuteRatesInForce } from './shared-reads'
 
 type Db = PrismaClient | Prisma.TransactionClient
 
@@ -179,16 +180,6 @@ function groupContacts(contacts: readonly ContactRow[]): KeyContactsView {
   return Object.fromEntries(KEY_CONTACT_GROUPS.map((group) => [group, inGroup(group)])) as KeyContactsView
 }
 
-/** Tiers in force today. A tier stays in force through the whole of its last day. */
-async function commuteRows(db: Db, now: Date): Promise<CommuteView['rows']> {
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-  return db.payrollTravelAllowanceTier.findMany({
-    where: { isActive: true, effectiveFrom: { lte: now }, OR: [{ effectiveTo: null }, { effectiveTo: { gte: today } }] },
-    orderBy: [{ transportMode: 'asc' }, { minKm: 'asc' }],
-    select: { transportMode: true, minKm: true, maxKm: true, monthlyRate: true },
-  })
-}
-
 /** Everything a page needs for one hire, or null when no released NewHire links to the user. */
 export async function buildAcademyContext(db: Db, userId: string): Promise<AcademyContext | null> {
   const facts = await loadHireFacts(db, userId)
@@ -205,7 +196,7 @@ export async function buildAcademyContext(db: Db, userId: string): Promise<Acade
     keyContacts,
     placeholders,
     library: { BENEFIT: await cardViews('BENEFIT'), REIMBURSEMENT: await cardViews('REIMBURSEMENT') },
-    commute: toCommuteView(await commuteRows(db, now)),
+    commute: toCommuteView(await commuteRatesInForce(db, now)),
     callTimes: {
       hrCallAt: facts.hrCallAt?.toISOString() ?? null,
       teamCallAt: facts.teamCallAt?.toISOString() ?? null,
