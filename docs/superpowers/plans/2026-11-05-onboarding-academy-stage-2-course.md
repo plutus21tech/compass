@@ -36,7 +36,7 @@ New for this stage:
 - **Icons are Lucide at 24px; no emoji.** Warm, short, second-person copy. WCAG AA, keyboard reachable, and every module can be finished on a phone.
 
 **Plan decisions (not in the design; correct them here if wrong):**
-- **No switch-on (user, 2026-11-05).** Nothing reaches main until the whole Academy is 100% ready; then it is pushed to main and becomes the default. The flag stays in the code only as a guard while the stages are built. The last stage removes it. The quiz is stage 3, so until then the Final Step card says "Your culture quiz will appear here."
+- **No switch-on (user, 2026-11-05).** Nothing reaches main until the whole Academy is 100% ready; then it is pushed to main and becomes the default. The flag stays in the code only as a build-time guard while the stages are built. The last stage removes it. The seed and the test-account cutover script still have to be run once, around that push (design §10). The quiz is stage 3, so until then the Final Step card says "Your culture quiz will appear here."
 - **The Security acknowledgement ships here**, not in stage 3, because Module 7 can't complete without it. Stage 3 adds the values acknowledgement on the same code.
 - **Release lives on the setup section** of the new-hire page, because the tracker is stage 4.
 - **Lockout is enforced in `getSession()`**, the one point nearly every API route passes through. See Task 6.
@@ -124,7 +124,7 @@ Block `type`s and their fields (keep `type` names exactly, stage 4's editor reus
 
 Spec §6.1's `valueCards` isn't built in stage 2 (see Global Constraints). `tutorialCards`, `roleExpectations` and `dashboardLink` are additions that give per-hire data and open tracking a block of their own.
 
-`PLACEHOLDER_KEYS`: `preferred name`, `title`, `department`, `location`, `lead first name`, `core hours`, `overlap local time`, `blockers local time`, `security contacts`, `accounts contacts`, `bank name`, `day 1 goal`, `week 1 goal`, `month 1 goal`, `month 3 goal`.
+`PLACEHOLDER_KEYS`: `preferred name`, `title`, `department`, `location`, `lead first name`, `core hours`, `overlap local time`, `blockers local time`, `security contacts`, `accounts contacts`, `day 1 goal`, `week 1 goal`, `month 1 goal`, `month 3 goal`. That is 14 keys. `bank name` is not a placeholder (a test pins that); the hire types the bank name into the bank form.
 
 Time zones:
 
@@ -177,15 +177,16 @@ Any other country gives `null`. With `null`, show the source time ("7:00 AM CT")
   - `applyEvent(state, event, now): ProgressState`, which returns a new object; the first open time is kept
   - `moduleCardState(row, now): { status: 'LOCKED' | 'AVAILABLE' | 'IN_PROGRESS' | 'COMPLETED'; overdue: boolean }`. AVAILABLE means DB status `IN_PROGRESS` with `startedAt` null.
   - `nextToUnlock(modules, completedModuleId): string | null`, using `orderIndex` among active modules
-  - `effectiveRule(rule, facts: { tutorialCount: number; dashboardLinkSet: boolean }): OnboardingCompletionRule`
+  - `effectiveRule(rule, blocks, facts: { tutorialCount: number; dashboardLinkSet: boolean }): OnboardingCompletionRule`. `blocks` are the filtered blocks the hire sees.
   - `evaluateCompletion(input: CompletionInput): { met: true } | { met: false; reason: string }`
 
 `CompletionInput`: `{ rule, blocks (already filtered), state, tutorialKeys: string[], discordUsername: string | null, securityAckSigned: boolean, payment: { kind: 'PK'; bankSaved: boolean } | { kind: 'OTHER'; payoutSaved: boolean } }`.
 
-Fallbacks in `effectiveRule`:
+Fallbacks in `effectiveRule`: a rule the hire cannot meet from the filtered blocks falls back to `SCROLL_END`, so nobody is stuck.
 - `VIDEO_95` → `SCROLL_END` (always, until stage 5)
 - `ALL_LINKS_OPENED` with no tutorials → `SCROLL_END`
-- `LINK_OPENED` with no dashboard link → `SCROLL_END`
+- `LINK_OPENED` with no dashboard link set → `SCROLL_END`
+- `BUDDY_HELLO` without the `buddy-hello` item, `CHECKLIST_AND_FIELD` without a filled checklist and a `discordUsername` field, `CHECKLIST_AND_ACK` without an acknowledgement block, `FIELD_SUBMITTED` without a `linkedinUrl` field, and `PAYMENT_SETUP` without a `bank` or `payout` field → `SCROLL_END`
 
 Reason copy (shown beside the disabled button):
 
@@ -213,7 +214,7 @@ Required checks come from the checklist blocks that survived `filterBlocks`, so 
   - `applyEvent` does not mutate its input; a second `LINK_OPENED` keeps the first timestamp.
   - `moduleCardState`: not completed and `now > dueAt` is overdue; completed is never overdue; a locked overdue row is overdue.
   - `evaluateCompletion` for all nine rules, met and not met, including: a checklist item inside a hidden `conditional` isn't required; `PAYMENT_SETUP` OTHER with payout saved but no `invoice-template` tick isn't met.
-  - `effectiveRule` covers the three fallbacks.
+  - `effectiveRule` covers the fallbacks, including a rule whose content is missing from the filtered blocks.
 - [ ] **Step 2: Run them to confirm they fail.** Expected: FAIL, modules not found.
 - [ ] **Step 3: Implement the three files.**
 - [ ] **Step 4: Run the tests.** Expected: PASS.
@@ -481,7 +482,7 @@ Rules, per spec section 6 screens 1 and 2 and design §7:
 - [ ] **Step 1: Start the local test database** from the project memory's binaries, on port 5433, and push the schema. Every test command sets `DATABASE_URL` to `compass_weekly_test` and `WEEKLY_DB_TEST=true`. Confirm the URL before each run.
 - [ ] **Step 2: Write the flow test.** Seed, set up a fictional PK hire, release, complete modules 1–14 in order through the services with the real rules, and assert that `done = 14`, the quiz card state is reached, `onboardingCompleted` stays `false`, and `Benefit` counts are unchanged. Repeat for a fictional contractor with no payroll profile created at any point.
 - [ ] **Step 3: Write the E2E spec.** A hire finishes a Day 1 module (Module 5) on desktop and on a mobile viewport, and HR releases a course from the setup section.
-- [ ] **Step 4: Update the docs.** Seed warnings and design §10 say "stage 3 or later". Add an "After stage 2" section to this plan with:
+- [ ] **Step 4: Update the docs.** Seed warnings and design §10 no longer say "stage 2 or later"; they say the seed and cutover run once, around the push that makes the Academy the default. Design §12 gains the flag-removal step and the cleanup push. Add an "After stage 2" section to this plan with:
   - the "Lost or stolen" box pinned to everyone's home screen (spec, Module 7), not in any stage
   - Security call time missing from the setup fields
   - `accountNumber` still returned by `GET /api/admin/users`
@@ -490,3 +491,29 @@ Rules, per spec section 6 screens 1 and 2 and design §7:
   - bank letter download, once HR sends the text
 - [ ] **Step 5: Run everything.** `npx tsc --noEmit`, `npm test`, `npm run test:academy-db`, `npx next build`, and `prisma migrate diff` from migrations to the schema. Expected: tsc clean, academy tests all pass, the same 18 server-only failures as the baseline, build passes, empty diff.
 - [ ] **Step 6: Commit.** `test(academy): cover the course flow end to end`
+
+
+---
+
+## After stage 2
+
+Carried forward. None of this is built in stage 2.
+
+**Needs a user decision before main**
+- **Contractor profile creation (R11).** Whether the admin and payroll routes may create a payroll profile for a contractor is still open. Stage 2 never creates one: contractors save a payout and no profile appears at any point (pinned in `tests/academy-course-flow.integration.test.ts`).
+- **Header forwarding on a preview build.** The lockout reads the path the middleware forwards in `x-compass-pathname`. It was proven on `next dev`. Verify it on a Vercel preview build before main. `tests/academy-lockout-wiring.test.ts` fails if the `isLockedOut` check leaves `getSession` or the middleware stops setting the header, but only a deployed build proves the header arrives.
+
+**Stage 3 (quiz)**
+- The quiz reset keeps `NewHire.status` set to ONBOARDING, so a completed hire can show as ONBOARDING while `onboardingCompleted` stays true. With the flag on the reset no longer relocks anyone, yet the HR quiz page still says "reset locked users" and toasts "Quiz attempts reset". Revisit both when the quiz is rebuilt.
+
+**Stage 4 (HR operations)**
+- **HR and OA cannot read IBAN, branch or held (pending) bank details** until the tracker exists.
+- Checklist auto-ticks are derived from stored data at backfill, not recorded as events.
+- `savePayout` must notify OA when a contractor changes their payout details. It already returns `isUpdate` for this.
+- Early-unlocked modules need `ModuleCardView` support, so Home can show them as such.
+- The bank letter download, once HR sends the text. Until then Module 11 says "HR will share your bank letter".
+
+**Not in any stage yet**
+- The "Lost or stolen" box pinned to everyone's home screen (spec, Module 7).
+- Security call time is missing from the setup fields, so the Home side card shows HR and team calls only.
+- `accountNumber` is still returned by `GET /api/admin/users`.

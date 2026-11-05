@@ -1,7 +1,8 @@
 // Re-runnable seed for the Onboarding Academy. Never runs on deploy.
-// RUN ONLY AT FLAG-ON: this retires the legacy onboarding modules and quiz questions, so with
-// ONBOARDING_ACADEMY_ENABLED off the old flow would break. Run it at switch-on, after the
-// hire-facing course exists (stage 2 or later), and not before.
+// RUN ONCE, AROUND THE PUSH THAT MAKES THE ACADEMY THE DEFAULT: this retires the legacy onboarding
+// modules and quiz questions, so with ONBOARDING_ACADEMY_ENABLED off the old flow would break.
+// Nothing reaches main until the whole Academy is ready (there is no separate switch-on step), so
+// run this, and the test-account cutover script, once as part of that release and not before.
 // CLI: ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
 import { Prisma, PrismaClient } from '@prisma/client'
 import { parseBlocks } from '../lib/academy/blocks'
@@ -22,7 +23,7 @@ type Tx = Prisma.TransactionClient
 const RETIRED_OFFSET = 1000
 const REORDER_TIMEOUT_MS = 120_000
 const FLAG_ON_WARNING =
-  'WARNING: this retires the legacy onboarding modules and quiz questions. Run it only at flag-on (ONBOARDING_ACADEMY_ENABLED), after the hire-facing course exists (stage 2 or later), not before.'
+  'WARNING: this retires the legacy onboarding modules and quiz questions. Run it once, around the push that makes the Academy the default (ONBOARDING_ACADEMY_ENABLED), not before.'
 
 /** Highest first, so a bumped row can never land on one still waiting to move. */
 async function retireOldModules(db: Tx): Promise<number> {

@@ -75,7 +75,7 @@ The user wants it to feel **friendly**. The reference point is compliance-traini
 | D5 | Drop KPIs from Module 4. |
 | D6 | Time zone comes from office location (Karachi, Casablanca, Bogotá, Dallas, or the remote country). Working days use the **existing holiday calendar**. No per-person time-zone field. |
 | D7 | Videos are hosted on **YouTube** (unlisted). They haven't been filmed yet. |
-| D8 | Ship in stages, each behind a feature flag (as Security Checks did). See §12. |
+| D8 | Build in stages, with a feature flag as a build-time guard while stages are unfinished. Nothing reaches main until the whole Academy is ready; it then becomes the default and the last stage removes the flag (user decision, 2026-11-05). See §10 and §12. |
 | D9 | The UI must be friendly, drawing on similar module-based training platforms (Delve was named). |
 
 ## 4. What happens to the existing foundation
@@ -443,15 +443,17 @@ If the Vercel plan doesn't allow hourly crons, fall back to one run per time zon
 
 ## 10. Feature flag and cutover
 
-`ONBOARDING_ACADEMY_ENABLED` (env).
+`ONBOARDING_ACADEMY_ENABLED` (env) is a build-time guard, not a launch switch. It keeps unfinished stages out of use while they are built.
 - **Off:** today's onboarding behaves exactly as it does now.
 - **On:** the new course, tracker and settings replace it.
+
+There is no switch-on step (user decision, 2026-11-05). Nothing reaches main until the whole Academy is ready; it then becomes the default, and the last stage removes the flag and the branches it guards.
 
 The flag is server-read and exposed to the layout the same way `SECURITY_CHECKS_ENABLED` is.
 
 **Cutover (D11).** Before the server-side lockout goes live, a script marks every user with `onboardingCompleted = false` as complete. These are test accounts from March–April 2026. The script prints the names it changes, and it is run once, deliberately, not on every build.
 
-**Seeding.** The seed retires the legacy modules and quiz questions, so it runs at flag-on, after the hire-facing course exists (stage 2 or later), and not before. A seed script, safe to re-run and checked into `prisma/`, does the following:
+**Seeding.** The seed retires the legacy modules and quiz questions, so it must not run until the whole Academy is ready. Nothing reaches main before then, so the seed and the test-account cutover above each still have to be run once, deliberately, around the push that makes the Academy the default. Seed behaviour is unchanged: it refuses to run unless `ONBOARDING_ACADEMY_ENABLED=true` and `ONBOARDING_ACADEMY_SEED_CONFIRM=yes` are set. A seed script, safe to re-run and checked into `prisma/`, does the following:
 - retires the old 11 modules and the old quiz questions
 - creates the 14 modules with version 1 content taken from the spec copy
 - creates the 12 quiz questions with explanations
@@ -475,7 +477,7 @@ The test-first workflow follows the repo rules.
 
 ## 12. Stages
 
-Each stage is a PR behind the flag.
+The stages are built in order on the Academy branch, behind the flag. Nothing reaches main until the whole Academy is ready (§10).
 
 1. **Foundation:**
    - schema migrations
@@ -502,6 +504,8 @@ Each stage is a PR behind the flag.
    - settings preview-as
    - most-missed report
    - the design polish pass
+   - remove the feature flag, so the Academy is the only onboarding
+6. **Cleanup, after the Academy is live:** a follow-up push removes the legacy onboarding code and the dead columns it left behind. Any row deletion is confirmed with the user first.
 
 ## 13. Open items
 
