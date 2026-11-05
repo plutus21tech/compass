@@ -7,6 +7,7 @@ import type { NavItem, SidebarConfig } from '../components/layout/AppSidebar'
 import { withLockedHandbookNav } from '../components/layout/sidebar-nav'
 import {
   ACADEMY_PATH_HEADER,
+  blocksActionOnAnotherUser,
   isPathAllowedWhileLocked,
   readLockoutPath,
   shouldBlockSession,
@@ -151,6 +152,27 @@ test('shouldBlockSession: a locked user', () => {
   assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '' }), true)
   assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '/onboarding' }), false)
   assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '/api/auth/logout' }), false)
+})
+
+test('blocksActionOnAnotherUser: a locked user can act only on their own account', () => {
+  const locked = { enabled: true, onboardingCompleted: false, actorId: 'hire' }
+  assert.equal(blocksActionOnAnotherUser({ ...locked, targetUserId: 'someone-else' }), true)
+  assert.equal(blocksActionOnAnotherUser({ ...locked, targetUserId: 'hire' }), false)
+})
+
+test('blocksActionOnAnotherUser: a missing or malformed target is not treated as the user themselves', () => {
+  const locked = { enabled: true, onboardingCompleted: false, actorId: 'hire' }
+  for (const targetUserId of [undefined, null, '', ['hire'], { id: 'hire' }]) {
+    assert.equal(blocksActionOnAnotherUser({ ...locked, targetUserId }), true)
+  }
+})
+
+test('blocksActionOnAnotherUser: a completed user is unaffected', () => {
+  assert.equal(blocksActionOnAnotherUser({ enabled: true, onboardingCompleted: true, actorId: 'hr', targetUserId: 'someone-else' }), false)
+})
+
+test('blocksActionOnAnotherUser: flag off changes nothing', () => {
+  assert.equal(blocksActionOnAnotherUser({ enabled: false, onboardingCompleted: false, actorId: 'hr', targetUserId: 'someone-else' }), false)
 })
 
 test('readLockoutPath returns the header, and null when it is absent or unreadable', async () => {

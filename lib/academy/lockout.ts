@@ -45,6 +45,20 @@ export function shouldBlockSession({ enabled, onboardingCompleted, pathname }: S
   return pathname === null || !isPathAllowedWhileLocked(pathname)
 }
 
+export interface AnotherUserActionInput {
+  enabled: boolean
+  onboardingCompleted: boolean
+  actorId: string
+  /** Unvalidated: it comes straight from the request. */
+  targetUserId: unknown
+}
+
+/** For allowlisted routes that can also touch other accounts: a hire still in onboarding keeps to their own. */
+export function blocksActionOnAnotherUser({ enabled, onboardingCompleted, actorId, targetUserId }: AnotherUserActionInput): boolean {
+  if (!enabled || onboardingCompleted) return false
+  return targetUserId !== actorId
+}
+
 /** Takes next/headers' `headers` as an argument so this file stays free of server imports. */
 export async function readLockoutPath(readHeaders: () => Promise<Pick<Headers, 'get'>>): Promise<string | null> {
   try {
