@@ -44,6 +44,26 @@ test('a value sealed with another key does not open', () => {
   withKey(OTHER_KEY, () => assert.throws(() => decryptField('payment.iban', sealed)))
 })
 
+test('a value without the prefix is refused, and the error does not quote it', () => {
+  withKey(KEY, () => {
+    assert.throws(() => decryptField('payment.iban', 'PK36SCBL0000001123456702'), (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.equal(error.message.includes('PK36'), false)
+      return true
+    })
+    assert.throws(() => decryptField('payment.iban', ''))
+  })
+})
+
+test('a value that already looks encrypted is sealed like any other, not passed through', () => {
+  withKey(KEY, () => {
+    const lookalike = 'p21enc:v1:aaaa:bbbb:cccc'
+    const sealed = encryptField('payment.iban', lookalike)
+    assert.notEqual(sealed, lookalike)
+    assert.equal(decryptField('payment.iban', sealed), lookalike)
+  })
+})
+
 test('blank values stay empty and need no key', () => {
   withKey(undefined, () => {
     assert.equal(encryptField('payment.iban', '   '), null)

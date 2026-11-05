@@ -27,11 +27,10 @@ function isEncrypted(value: string): boolean {
   return value.startsWith(`${ENCRYPTION_PREFIX}:`)
 }
 
-/** Blank input stays null. A value already carrying the prefix is returned as it is. */
+/** Blank input stays null. */
 export function encryptField(label: string, value: string | null | undefined): string | null {
   const trimmed = typeof value === 'string' ? value.trim() : ''
   if (!trimmed) return null
-  if (isEncrypted(trimmed)) return trimmed
 
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-256-gcm', requireKey(), iv)
@@ -46,9 +45,10 @@ export function encryptField(label: string, value: string | null | undefined): s
   ].join(':')
 }
 
+/** Every stored value was sealed by encryptField, so anything else is refused. The error never quotes the value. */
 export function decryptField(label: string, value: string | null | undefined): string | null {
-  if (!value) return null
-  if (!isEncrypted(value)) return value
+  if (value === null || value === undefined) return null
+  if (!isEncrypted(value)) throw new Error('Onboarding field is not encrypted')
 
   const parts = value.split(':')
   if (parts.length !== 5) throw new Error('Invalid encrypted onboarding field format')
