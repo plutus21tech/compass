@@ -19,7 +19,7 @@ const COMMUTE_TOKEN = '{commute rate table}'
 const COMMUTE_EMPTY_MESSAGE = 'Ask HR for the current rates.'
 const SECURITY_FALLBACK = 'Security and IT'
 const ACCOUNTS_FALLBACK = 'Accounts'
-const DASHBOARD_EVENT_KEY = 'COMPANY_DASHBOARD'
+export const DASHBOARD_EVENT_KEY = 'COMPANY_DASHBOARD'
 
 export interface PersonView {
   id: string
@@ -115,6 +115,8 @@ export interface ModuleView {
   bankSaved: boolean
   payoutSaved: boolean
   securityAcknowledgement: SecurityAcknowledgementView | null
+  /** The hire's own saved username, shown on Module 6 and when it is read-only. */
+  discordUsername: string | null
   progress: ModuleProgressView
   nextSlug: string | null
 }

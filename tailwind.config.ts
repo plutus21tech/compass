@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import { ACADEMY_COLOURS } from "./components/academy/brand";
 
 const config: Config = {
   content: [
@@ -10,6 +11,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        academy: ACADEMY_COLOURS,
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

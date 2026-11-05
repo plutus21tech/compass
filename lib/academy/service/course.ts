@@ -153,6 +153,7 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
     bankSaved: payment.kind === 'PK' && payment.bankSaved,
     payoutSaved: payment.kind === 'OTHER' && payment.payoutSaved,
     securityAcknowledgement: acknowledgement && { ...acknowledgement, signedAt: acknowledgement.signedAt.toISOString() },
+    discordUsername: context.discordUsername,
     progress: toProgressView(row, state, evaluated, now),
     nextSlug: modules[index + 1]?.slug ?? null,
   }
