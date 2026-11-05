@@ -7,11 +7,13 @@ interface CallTimesBlockProps {
 }
 
 export function CallTimesBlock({ view }: CallTimesBlockProps) {
-  const { hrCallAt, teamCallAt, blockersCall, timeZone } = view.callTimes
+  const { hrCallAt, teamCallAt, securityCallAt, blockersCall, timeZone } = view.callTimes
   const when = (iso: string | null) => callTimeLabel(iso, timeZone)
   const rows = [
     { label: 'Your HR call', value: when(hrCallAt) },
     { label: 'Your team call', value: when(teamCallAt) },
+    // Optional: HR may not book one, so an empty one isn't "to be confirmed".
+    ...(securityCallAt ? [{ label: 'Your security call', value: when(securityCallAt) }] : []),
     { label: 'Weekly Blockers Call', value: blockersCall },
   ]
   return (

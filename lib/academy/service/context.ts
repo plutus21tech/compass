@@ -41,6 +41,7 @@ const HIRE_SELECT = {
   coreHoursEnd: true,
   hrCallAt: true,
   teamCallAt: true,
+  securityCallAt: true,
   onboardingDate: true,
   academyReleasedAt: true,
   user: { select: { name: true, discordUsername: true, teamTag: true, ...ATTRIBUTE_SELECT } },
@@ -70,6 +71,7 @@ export interface HireFacts {
   coreHoursEnd: string | null
   hrCallAt: Date | null
   teamCallAt: Date | null
+  securityCallAt: Date | null
   onboardingDate: Date
   lead: PersonView | null
   buddy: PersonView | null
@@ -150,6 +152,7 @@ export async function loadHireFacts(db: Db, userId: string): Promise<HireFacts |
     coreHoursEnd: hire.coreHoursEnd,
     hrCallAt: hire.hrCallAt,
     teamCallAt: hire.teamCallAt,
+    securityCallAt: hire.securityCallAt,
     onboardingDate: hire.onboardingDate,
     lead: hire.teamLead ? toPerson(hire.teamLead) : null,
     buddy: hire.buddy ? toPerson(hire.buddy) : null,
@@ -200,6 +203,7 @@ export async function buildAcademyContext(db: Db, userId: string): Promise<Acade
     callTimes: {
       hrCallAt: facts.hrCallAt?.toISOString() ?? null,
       teamCallAt: facts.teamCallAt?.toISOString() ?? null,
+      securityCallAt: facts.securityCallAt?.toISOString() ?? null,
       ...blockersCallLocalFor(config.blockersCallCt, facts.attributes, now),
     },
   }

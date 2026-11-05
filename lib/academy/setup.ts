@@ -32,6 +32,7 @@ export const setupSchema = z
     onboardingDate: requiredDate,
     hrCallAt: optionalDate,
     teamCallAt: optionalDate,
+    securityCallAt: optionalDate,
     teamLeadId: blankable(text(100)),
     teamMemberIds: z.array(text(100)).max(100).nullish(),
     buddyId: blankable(text(100)),
@@ -166,6 +167,7 @@ export interface SetupSnapshot {
   onboardingDate: Date | null
   hrCallAt: Date | null
   teamCallAt: Date | null
+  securityCallAt: Date | null
   teamLeadId: string | null
   teamMemberIds: string[]
   buddyId: string | null

@@ -1,5 +1,5 @@
 // Pure wording and mapping for the module page. No server-only imports: safe for client components.
-import type { KeyContactGroup, OnboardingPaymentMethod, TransportMode } from '@prisma/client'
+import type { AcknowledgementKind, KeyContactGroup, OnboardingPaymentMethod, TransportMode } from '@prisma/client'
 import type { QuizStatus } from './quiz'
 import { applyEvent, type ProgressEvent, type ProgressState } from './progress'
 import type { CommuteRow, HomeQuizView, HomeView, KeyContactsView, ModuleCardView, ModuleProgressView, PersonView, ReleasedHomeView } from './view'
@@ -281,6 +281,15 @@ export function payoutBody(method: PayoutMethod, values: Record<string, string>)
     return [[field.name, field.upperCase ? trimmed.toUpperCase() : trimmed]]
   })
   return { method, ...Object.fromEntries(entries) }
+}
+
+const ACKNOWLEDGEMENT_KIND_LABELS: Record<AcknowledgementKind, string> = {
+  SECURITY_SOPS: 'Security SOPs',
+  VALUES_CODE_OF_CONDUCT: 'Values and code of conduct',
+}
+
+export function acknowledgementKindLabel(kind: AcknowledgementKind): string {
+  return ACKNOWLEDGEMENT_KIND_LABELS[kind]
 }
 
 const TRANSPORT_LABELS: Record<TransportMode, string> = { CAR: 'Car', BIKE: 'Bike', PUBLIC_TRANSPORT: 'Public transport' }

@@ -1,18 +1,12 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { AcademyError } from '../errors'
-import { ATTRIBUTE_SELECT, setPersonAttributes } from './attributes'
+import { setPersonAttributes } from './attributes'
 import { describeSetupIssues } from '../labels'
 import { recomputeDueDates } from './progress'
 import { createChecklist } from './checklist'
 import { isAccountInactive } from './shared-reads'
-import {
-  getSetupReadiness,
-  isLeadInputSubmitted,
-  leadInputDueAt,
-  setupSchema,
-  type SetupInput,
-  type SetupSnapshot,
-} from '../setup'
+import { SETUP_INCLUDE, toSetupSnapshot } from './setup-read'
+import { getSetupReadiness, leadInputDueAt, setupSchema, type SetupInput } from '../setup'
 
 type Db = PrismaClient | Prisma.TransactionClient
 
@@ -104,52 +98,9 @@ export async function saveSetup(
 }
 
 export async function loadSetup(db: Db, newHireId: string) {
-  const hire = await db.newHire.findUnique({
-    where: { id: newHireId },
-    include: {
-      teamMembers: { select: { userId: true } },
-      teamLeadForm: {
-        select: {
-          submittedAt: true,
-          leadInputDueAt: true,
-          roleExpectations: true,
-          day1Goal: true,
-          week1Goal: true,
-          month1Goal: true,
-          month3Goal: true,
-          tutorials: true,
-          teamTools: true,
-        },
-      },
-      user: { select: ATTRIBUTE_SELECT },
-    },
-  })
+  const hire = await db.newHire.findUnique({ where: { id: newHireId }, include: SETUP_INCLUDE })
   if (!hire) throw new AcademyError('New hire not found', 404)
-  const source = hire.user ?? hire
-  const setup: SetupSnapshot = {
-    preferredName: hire.preferredName,
-    title: hire.title,
-    department: hire.department,
-    companyWing: hire.companyWing,
-    clientAccount: hire.clientAccount,
-    attributes: {
-      officeLocation: source.officeLocation,
-      remoteCountry: source.remoteCountry,
-      workMode: source.workMode,
-      contractType: source.contractType,
-      employmentStatus: source.employmentStatus,
-    },
-    onboardingDate: hire.onboardingDate,
-    hrCallAt: hire.hrCallAt,
-    teamCallAt: hire.teamCallAt,
-    teamLeadId: hire.teamLeadId,
-    teamMemberIds: hire.teamMembers.map((m) => m.userId),
-    buddyId: hire.buddyId,
-    coreHoursStart: hire.coreHoursStart,
-    coreHoursEnd: hire.coreHoursEnd,
-    userLinked: hire.userId !== null,
-    leadInputSubmitted: isLeadInputSubmitted(hire.teamLeadForm),
-  }
+  const setup = toSetupSnapshot(hire)
   return {
     setup,
     readiness: getSetupReadiness(setup),

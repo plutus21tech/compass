@@ -9,6 +9,8 @@ export function CallsCard({ calls }: { calls: CallTimesView }) {
   const rows = [
     { label: 'Your HR call', value: callTimeLabel(calls.hrCallAt, calls.timeZone) },
     { label: 'Your team call', value: callTimeLabel(calls.teamCallAt, calls.timeZone) },
+    // Optional: HR may not book one, so an empty one isn't "to be confirmed".
+    ...(calls.securityCallAt ? [{ label: 'Your security call', value: callTimeLabel(calls.securityCallAt, calls.timeZone) }] : []),
   ]
   return (
     <section aria-labelledby="home-calls" className={CARD}>

@@ -25,6 +25,7 @@ interface SetupResponse {
     onboardingDate: string | null
     hrCallAt: string | null
     teamCallAt: string | null
+    securityCallAt: string | null
     teamLeadId: string | null
     teamMemberIds: string[]
     buddyId: string | null
@@ -45,6 +46,7 @@ interface FormState {
   onboardingDate: string
   hrCallAt: string
   teamCallAt: string
+  securityCallAt: string
   teamLeadId: string
   teamMemberIds: string[]
   buddyId: string
@@ -86,6 +88,7 @@ function toForm(data: SetupResponse['setup']): FormState {
     onboardingDate: data.onboardingDate ? data.onboardingDate.slice(0, 10) : '',
     hrCallAt: toLocalInput(data.hrCallAt),
     teamCallAt: toLocalInput(data.teamCallAt),
+    securityCallAt: toLocalInput(data.securityCallAt),
     teamLeadId: data.teamLeadId ?? '',
     teamMemberIds: data.teamMemberIds,
     buddyId: data.buddyId ?? '',
@@ -154,7 +157,12 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
       const res = await fetch(`/api/admin/onboarding/new-hires/${newHireId}/setup`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, hrCallAt: toIso(form.hrCallAt), teamCallAt: toIso(form.teamCallAt) }),
+        body: JSON.stringify({
+          ...form,
+          hrCallAt: toIso(form.hrCallAt),
+          teamCallAt: toIso(form.teamCallAt),
+          securityCallAt: toIso(form.securityCallAt),
+        }),
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to save setup')
@@ -223,6 +231,7 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
           <TextField id="su-join" label="Joining date" type="date" value={form.onboardingDate} onChange={(v) => set({ onboardingDate: v })} />
           <TextField id="su-hr" label="HR call" type="datetime-local" value={form.hrCallAt} onChange={(v) => set({ hrCallAt: v })} />
           <TextField id="su-team" label="Team call" type="datetime-local" value={form.teamCallAt} onChange={(v) => set({ teamCallAt: v })} />
+          <TextField id="su-security" label="Security call (optional)" type="datetime-local" value={form.securityCallAt} onChange={(v) => set({ securityCallAt: v })} />
           <TextField id="su-cs" label="Core hours start" type="time" value={form.coreHoursStart} onChange={(v) => set({ coreHoursStart: v })} />
           <TextField id="su-ce" label="Core hours end" type="time" value={form.coreHoursEnd} onChange={(v) => set({ coreHoursEnd: v })} />
           <UserSelect id="su-lead" label="Team lead" value={form.teamLeadId} users={users} onChange={(id) => set({ teamLeadId: id })} />

@@ -77,7 +77,15 @@ export type AcademyAttempt = Omit<QuizAttempt, 'answersJson'> & { answers: Store
  * same table; those attempts are a different quiz, so nothing here or after it may count them.
  */
 export async function readAcademyAttempts(db: Db, userId: string): Promise<AcademyAttempt[]> {
-  const rows = await db.quizAttempt.findMany({ where: { userId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] })
+  return readAcademyAttemptsFor(db, [userId])
+}
+
+/** The same, for a list of people: every attempt, newest first. */
+export async function readAcademyAttemptsFor(db: Db, userIds: readonly string[]): Promise<AcademyAttempt[]> {
+  const rows = await db.quizAttempt.findMany({
+    where: { userId: { in: [...userIds] } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+  })
   return rows.flatMap(({ answersJson, ...attempt }) => {
     const parsed = storedAnswers.safeParse(answersJson)
     return parsed.success ? [{ ...attempt, answers: parsed.data }] : []

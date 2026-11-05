@@ -47,6 +47,7 @@ export interface TeamToolView { name: string; purpose: string; url: string | nul
 export interface CallTimesView {
   hrCallAt: string | null
   teamCallAt: string | null
+  securityCallAt: string | null
   /** The weekly Blockers Call in the hire's own time. */
   blockersCall: string
   timeZone: string | null
@@ -204,7 +205,7 @@ function coreHoursLabel(start: string | null, end: string | null): string {
   return start && end ? `${clockLabel(start)} to ${clockLabel(end)}` : ''
 }
 
-function locationLabel({ officeLocation, remoteCountry }: PersonAttributes): string {
+export function locationLabel({ officeLocation, remoteCountry }: Pick<PersonAttributes, 'officeLocation' | 'remoteCountry'>): string {
   if (!officeLocation) return ''
   if (officeLocation !== 'REMOTE' || !remoteCountry) return attributeValueLabel(officeLocation)
   return new Intl.DisplayNames(['en'], { type: 'region' }).of(remoteCountry) ?? remoteCountry
@@ -352,6 +353,7 @@ export interface RowForCard {
   startedAt: Date | null
   dueAt: Date | null
   completedAt: Date | null
+  unlockedEarlyById?: string | null
 }
 
 const NO_ROW: RowForCard = { status: 'LOCKED', startedAt: null, dueAt: null, completedAt: null }

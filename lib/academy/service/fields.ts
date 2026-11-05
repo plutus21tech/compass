@@ -5,7 +5,7 @@ import { maskAccount } from '../payout'
 import { parseProgressState } from '../progress'
 import { renderBlocks } from '../view'
 import { buildAcademyContext } from './context'
-import { decryptPaymentField, paymentColumns } from './payout'
+import { decryptPaymentField, paymentColumns, writePaymentRow } from './payout'
 import {
   COURSE_TX_OPTIONS,
   assertModuleOpen,
@@ -16,7 +16,7 @@ import {
   versionIdFor,
 } from './progress'
 
-const LINKEDIN_MODULE_SLUG = 'linkedin'
+export const LINKEDIN_MODULE_SLUG = 'linkedin'
 export const NAME_MESSAGE = 'Type your full name as it appears at the top of this page.'
 
 export async function saveDiscordUsername(db: PrismaClient, userId: string, value: unknown): Promise<void> {
@@ -53,7 +53,7 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
   const isUpdate = await db.$transaction(async (tx) => {
     await assertBankEditable(tx, userId)
     const existing = await tx.onboardingPaymentDetails.findUnique({ where: { userId }, select: { id: true } })
-    await tx.onboardingPaymentDetails.upsert({ where: { userId }, create: { userId, ...data }, update: data })
+    await writePaymentRow(tx, userId, data, existing === null)
     return existing !== null
   }, COURSE_TX_OPTIONS)
   console.info('[academy] bank details saved', { userId })

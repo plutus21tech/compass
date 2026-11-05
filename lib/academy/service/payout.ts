@@ -1,8 +1,10 @@
-import type { OnboardingPaymentDetails, OnboardingPaymentMethod, PrismaClient } from '@prisma/client'
+import type { OnboardingPaymentDetails, OnboardingPaymentMethod, Prisma, PrismaClient } from '@prisma/client'
 import { AcademyError } from '../errors'
 import { decryptField, encryptField } from '../field-encryption'
 import { BANK_LOCKED_MESSAGE } from '../bank'
 import { canSavePayout, maskPayout, payoutSchema, type PayoutView } from '../payout'
+import { COURSE_TX_OPTIONS } from './progress'
+import { lockUserRow } from './quiz'
 
 const ENCRYPTED_FIELDS = [
   'accountHolderName', 'accountTitle', 'payoutEmail', 'bankName', 'branch', 'iban',
@@ -37,6 +39,17 @@ export function decryptPaymentField(field: EncryptedField, value: string | null)
   return decryptField(label(field), value)
 }
 
+/** Writes the row and its log line together: the log holds who, when and the method, never a value. */
+export async function writePaymentRow(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  data: ReturnType<typeof paymentColumns>,
+  isFirstSave: boolean,
+): Promise<void> {
+  await tx.onboardingPaymentDetails.upsert({ where: { userId }, create: { userId, ...data }, update: data })
+  await tx.onboardingPaymentChangeLog.create({ data: { userId, actorId: userId, method: data.method, isFirstSave } })
+}
+
 export async function savePayout(db: PrismaClient, userId: string, input: unknown): Promise<{ isUpdate: boolean }> {
   const parsed = payoutSchema.parse(input)
   const user = await db.user.findUnique({ where: { id: userId }, select: { contractType: true } })
@@ -45,15 +58,15 @@ export async function savePayout(db: PrismaClient, userId: string, input: unknow
     throw new AcademyError('Payout details are for contractors. Pakistan-based employees add bank details instead.', 400)
   }
   const data = paymentColumns(parsed.method, parsed)
-  const existing = await db.onboardingPaymentDetails.findUnique({ where: { userId }, select: { method: true } })
-  // A null contract type may save a payout, but HR blanking the type must not open a way round the bank lock.
-  if (existing?.method === 'PK_BANK' && user.contractType === null) throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
-  await db.onboardingPaymentDetails.upsert({
-    where: { userId },
-    create: { userId, ...data },
-    update: data,
-  })
-  return { isUpdate: existing !== null }
+  return db.$transaction(async (tx) => {
+    // Two saves at once must not both count as the first.
+    await lockUserRow(tx, userId)
+    const existing = await tx.onboardingPaymentDetails.findUnique({ where: { userId }, select: { method: true } })
+    // A null contract type may save a payout, but HR blanking the type must not open a way round the bank lock.
+    if (existing?.method === 'PK_BANK' && user.contractType === null) throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
+    await writePaymentRow(tx, userId, data, existing === null)
+    return { isUpdate: existing !== null }
+  }, COURSE_TX_OPTIONS)
 }
 
 function toView(row: OnboardingPaymentDetails): PayoutView {

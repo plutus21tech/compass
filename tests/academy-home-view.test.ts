@@ -65,7 +65,7 @@ const released = (over: Partial<ReleasedHomeView> = {}): ReleasedHomeView => ({
   courseDueAt: null,
   quiz: { status: 'LOCKED', dueAt: null, overdue: false, retakeAt: null, failedCount: 0 },
   nextModule: card({ status: 'AVAILABLE' }),
-  yourCalls: { hrCallAt: null, teamCallAt: null, blockersCall: 'WED 07:00', timeZone: null },
+  yourCalls: { hrCallAt: null, teamCallAt: null, securityCallAt: null, blockersCall: 'WED 07:00', timeZone: null },
   yourBuddy: null,
   phases: [],
   ...over,

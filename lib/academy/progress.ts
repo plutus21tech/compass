@@ -58,12 +58,17 @@ export interface ModuleCardRow {
   status: OnboardingModuleStatus
   startedAt: Date | null
   dueAt: Date | null
+  unlockedEarlyById?: string | null
 }
 
-/** AVAILABLE is the DB's IN_PROGRESS before the hire has opened it. */
+function cardStatus(row: ModuleCardRow): CardStatus {
+  if (row.status === 'LOCKED' && row.unlockedEarlyById) return 'AVAILABLE'
+  return row.status === 'IN_PROGRESS' && row.startedAt === null ? 'AVAILABLE' : row.status
+}
+
+/** AVAILABLE is the DB's IN_PROGRESS before the hire has opened it, or a row HR has unlocked early. */
 export function moduleCardState(row: ModuleCardRow, now: Date): { status: CardStatus; overdue: boolean } {
-  const status: CardStatus =
-    row.status === 'IN_PROGRESS' && row.startedAt === null ? 'AVAILABLE' : row.status
+  const status = cardStatus(row)
   const overdue = status !== 'COMPLETED' && row.dueAt !== null && now.getTime() > row.dueAt.getTime()
   return { status, overdue }
 }
