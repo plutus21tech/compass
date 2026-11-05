@@ -5,6 +5,9 @@ import { AcademyError } from './errors'
 export const VALUES_STATEMENT =
   'I have watched the culture video, passed the culture quiz, and I agree to follow the Plutus21 values and code of conduct.'
 
+/** Below this many usable questions the quiz is closed: a pass on a tiny paper would mean nothing. */
+export const MIN_QUIZ_QUESTIONS = 10
+
 export type StoredQuestion = {
   id: string
   questionText: string
@@ -17,7 +20,7 @@ export type StoredQuestion = {
 
 export type QuizPaper = { questions: Array<{ id: string; text: string; options: string[] }> }
 
-export type AttemptAnswer = { questionId: string; chosen: string; correct: boolean; shownIndex: number }
+export type AttemptAnswer = { questionId: string; chosen: string; correct: boolean; correctAnswer: string; shownIndex: number }
 export type GradedAttempt = { score: number; total: number; passed: boolean; answersJson: AttemptAnswer[] }
 
 export const submissionSchema = z.object({
@@ -56,7 +59,8 @@ function assertSameQuestions(questions: StoredQuestion[], answers: Submission['a
 // shownIndex is the client's question order (position in the submitted answers): HR analysis only, never grading.
 function gradeOne(question: StoredQuestion, chosen: string, shownIndex: number): AttemptAnswer {
   if (!question.options.includes(chosen)) throw new AcademyError('That answer is not one of the options.', 400)
-  return { questionId: question.id, chosen, correct: chosen === question.correctAnswer, shownIndex }
+  const { correctAnswer } = question
+  return { questionId: question.id, chosen, correct: chosen === correctAnswer, correctAnswer, shownIndex }
 }
 
 export function gradeAttempt(questions: StoredQuestion[], answers: Submission['answers'], passPercent: number): GradedAttempt {
@@ -68,12 +72,13 @@ export function gradeAttempt(questions: StoredQuestion[], answers: Submission['a
   return { score, total, passed: score * 100 >= passPercent * total, answersJson }
 }
 
-export type QuizStatus = 'LOCKED' | 'READY' | 'COOLDOWN' | 'PASSED_UNSIGNED' | 'DONE'
+export type QuizStatus = 'LOCKED' | 'READY' | 'UNAVAILABLE' | 'COOLDOWN' | 'PASSED_UNSIGNED' | 'DONE'
 export type QuizStatusInput = {
   modulesDone: boolean
   latest: { passed: boolean; createdAt: Date } | null
   valuesSigned: boolean
   cooldownMinutes: number
+  usableQuestions: number
   now: Date
 }
 
@@ -82,11 +87,11 @@ export function retakeAt(createdAt: Date, cooldownMinutes: number): Date {
 }
 
 export function quizStatus(input: QuizStatusInput): QuizStatus {
-  const { modulesDone, latest, valuesSigned, cooldownMinutes, now } = input
+  const { modulesDone, latest, valuesSigned, cooldownMinutes, usableQuestions, now } = input
   if (!modulesDone) return 'LOCKED'
-  if (!latest) return 'READY'
-  if (latest.passed) return valuesSigned ? 'DONE' : 'PASSED_UNSIGNED'
-  return now.getTime() < retakeAt(latest.createdAt, cooldownMinutes).getTime() ? 'COOLDOWN' : 'READY'
+  if (latest?.passed) return valuesSigned ? 'DONE' : 'PASSED_UNSIGNED'
+  if (latest && now.getTime() < retakeAt(latest.createdAt, cooldownMinutes).getTime()) return 'COOLDOWN'
+  return usableQuestions >= MIN_QUIZ_QUESTIONS ? 'READY' : 'UNAVAILABLE'
 }
 
 /** True at every multiple of the threshold (3, 6, 9 failed attempts). */

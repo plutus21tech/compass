@@ -4,7 +4,7 @@ import { prisma } from '../lib/db'
 import { AcademyError } from '../lib/academy/errors'
 import { VALUES_STATEMENT, type Submission } from '../lib/academy/quiz'
 import { loadHome } from '../lib/academy/service/course'
-import { clearQuizAttempts, loadQuiz, lockUserRow, notifyQuizFailAlert, submitQuiz } from '../lib/academy/service/quiz'
+import { clearQuizAttempts, loadQuiz, lockUserRow, notifyQuizFailAlert, readAcademyAttempts, submitQuiz } from '../lib/academy/service/quiz'
 import { callTimeLabel } from '../lib/academy/view-labels'
 import { ACADEMY_QUIZ_QUESTIONS } from '../prisma/seed-academy-quiz'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
@@ -13,6 +13,8 @@ import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 const BANK_TEXTS = ACADEMY_QUIZ_QUESTIONS.map((q) => q.questionText)
 const LOCK_HOLD_MS = 500
+const EXTRA_PREFIX = 'act-extra-question'
+const UNAVAILABLE = /^The quiz isn't available right now\. Please contact HR\.$/
 const UPDATED = /^The quiz has been updated\. Please start again\.$/
 
 const fails = (status: number, message?: RegExp) => (error: unknown) => {
@@ -22,7 +24,10 @@ const fails = (status: number, message?: RegExp) => (error: unknown) => {
   return true
 }
 
-const clearBank = () => prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { in: BANK_TEXTS } } })
+const clearBank = () =>
+  prisma.onboardingQuizQuestion.deleteMany({
+    where: { OR: [{ questionText: { in: BANK_TEXTS } }, { questionText: { startsWith: EXTRA_PREFIX } }] },
+  })
 
 /** A released hire and a clean bank: a test that retires a question must not leak into the next. */
 async function releasedHire(): Promise<void> {
@@ -46,9 +51,12 @@ after(async () => {
   await prisma.$disconnect()
 })
 
-/** Answers `wrong` questions wrongly, in the order the bank comes back. */
+/** Answers `wrong` usable questions wrongly, in the order they come back. */
 async function answers(wrong: number): Promise<Submission> {
-  const questions = await prisma.onboardingQuizQuestion.findMany({ where: { questionText: { in: BANK_TEXTS } } })
+  const questions = await prisma.onboardingQuizQuestion.findMany({
+    where: { isActive: true, retiredAt: null, explanation: { not: null } },
+    orderBy: { orderIndex: 'asc' },
+  })
   return {
     answers: questions.map((q, i) => {
       const options = q.optionsJson as string[]
@@ -263,17 +271,148 @@ test('a retired question still resolves in lastResult', ACADEMY_DB_TEST, async (
   assert.ok(view.lastResult?.review.some((r) => r.question === retired.questionText && r.explanation === retired.explanation))
 })
 
-test('an attempt from the legacy quiz, stored in the old shape, reads as an empty review', ACADEMY_DB_TEST, async () => {
-  await readyHire()
-  await prisma.quizAttempt.create({
-    data: {
-      userId: HIRE_ID, score: 1, totalQuestions: 5, passed: false, answersJson: { 'old-question': 'an answer' },
-      createdAt: new Date(Date.now() - 3_600_000),
-    },
+const legacyAttempt = (passed: boolean) =>
+  prisma.quizAttempt.create({
+    data: { userId: HIRE_ID, score: passed ? 5 : 1, totalQuestions: 5, passed, answersJson: { 'old-question': 'an answer' } },
   })
+
+test('a legacy pass does not count as passed', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  await legacyAttempt(true)
   const view = await loadQuiz(prisma, HIRE_ID)
   assert.equal(view.status, 'READY')
-  assert.deepEqual([view.lastResult?.score, view.lastResult?.total, view.lastResult?.review], [1, 5, []])
+  assert.equal(view.lastResult, null)
+  assert.deepEqual(await readAcademyAttempts(prisma, HIRE_ID), [])
+  const { result } = await submitQuiz(prisma, HIRE_ID, await answers(0))
+  assert.equal(result.passed, true)
+})
+
+test('legacy failures do not start a cooldown or count towards the alert', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  for (let n = 0; n < 2; n += 1) await legacyAttempt(false)
+  const view = await loadQuiz(prisma, HIRE_ID)
+  assert.deepEqual([view.status, view.failedCount, view.retakeAt, view.lastResult], ['READY', 0, null, null])
+  const first = await submitQuiz(prisma, HIRE_ID, await answers(12))
+  assert.deepEqual([first.failedCount, first.failAlertDue], [1, false])
+  await endCooldown()
+  await legacyAttempt(false)
+  const later = await loadQuiz(prisma, HIRE_ID)
+  assert.deepEqual([later.status, later.failedCount, later.lastResult?.total], ['READY', 1, 12])
+})
+
+test('readAcademyAttempts returns only Academy attempts, newest first, with their rows parsed', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  await submitQuiz(prisma, HIRE_ID, await answers(12))
+  await endCooldown()
+  await legacyAttempt(false)
+  await submitQuiz(prisma, HIRE_ID, await answers(0))
+  const rows = await readAcademyAttempts(prisma, HIRE_ID)
+  assert.deepEqual(rows.map((r) => r.passed), [true, false])
+  assert.equal(rows[0].answers.length, 12)
+  assert.equal(typeof rows[0].answers[0].correctAnswer, 'string')
+})
+
+test('the review reads the stored correct answer, so a later edit cannot contradict it', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  const body = await answers(0)
+  const { questionId, chosen } = body.answers[0]
+  await submitQuiz(prisma, HIRE_ID, body)
+  const attempt = await prisma.quizAttempt.findFirstOrThrow({ where: { userId: HIRE_ID } })
+  const rows = attempt.answersJson as Array<Record<string, unknown>>
+  assert.equal(rows.find((r) => r.questionId === questionId)?.correctAnswer, chosen)
+  const edited = await prisma.onboardingQuizQuestion.update({ where: { id: questionId }, data: { correctAnswer: 'Edited later by HR' } })
+  const view = await loadQuiz(prisma, HIRE_ID)
+  const row = view.lastResult?.review.find((r) => r.question === edited.questionText)
+  assert.deepEqual([row?.chosen, row?.correctAnswer, row?.correct], [chosen, chosen, true])
+})
+
+/** Leaves `count` usable questions: the rest of the bank is switched off, or extras are added. */
+async function useQuestionCount(count: number): Promise<void> {
+  const bank = await prisma.onboardingQuizQuestion.findMany({ where: { questionText: { in: BANK_TEXTS } }, orderBy: { orderIndex: 'asc' } })
+  const off = bank.slice(count).map((q) => q.id)
+  await prisma.onboardingQuizQuestion.updateMany({ where: { id: { in: off } }, data: { isActive: false } })
+  for (let n = bank.length; n < count; n += 1) {
+    await prisma.onboardingQuizQuestion.create({
+      data: {
+        questionText: `${EXTRA_PREFIX} ${n}`, optionsJson: ['Right', 'Wrong'], correctAnswer: 'Right',
+        explanation: 'A fictional extra question.', orderIndex: 900_000 + n,
+      },
+    })
+  }
+}
+
+async function quietError<T>(run: () => Promise<T>): Promise<{ logged: unknown[][]; outcome: PromiseSettledResult<T> }> {
+  const logged: unknown[][] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { logged.push(args) }
+  try {
+    const [outcome] = await Promise.allSettled([run()])
+    return { logged, outcome }
+  } finally {
+    console.error = original
+  }
+}
+
+for (const count of [0, 9]) {
+  test(`${count} usable questions: no paper, UNAVAILABLE, and a submission is refused and logged`, ACADEMY_DB_TEST, async () => {
+    await readyHire()
+    const body = await answers(0)
+    await useQuestionCount(count)
+    const view = await loadQuiz(prisma, HIRE_ID)
+    assert.deepEqual([view.status, view.paper], ['UNAVAILABLE', null])
+    const home = await loadHome(prisma, HIRE_ID)
+    assert.ok(home.released)
+    assert.equal(home.quiz.status, 'UNAVAILABLE')
+    const { logged, outcome } = await quietError(() => submitQuiz(prisma, HIRE_ID, body))
+    assert.ok(outcome.status === 'rejected')
+    fails(409, UNAVAILABLE)(outcome.reason)
+    assert.deepEqual(logged.flat().find((part) => typeof part === 'object'), { count })
+    assert.equal(await attempts(), 0)
+  })
+}
+
+for (const count of [10, 13]) {
+  test(`${count} usable questions: the paper uses all of them and a pass is graded out of them`, ACADEMY_DB_TEST, async () => {
+    await readyHire()
+    await useQuestionCount(count)
+    const view = await loadQuiz(prisma, HIRE_ID)
+    assert.deepEqual([view.status, view.paper?.questions.length], ['READY', count])
+    const { result } = await submitQuiz(prisma, HIRE_ID, await answers(0))
+    assert.deepEqual([result.score, result.total, result.passed], [count, count, true])
+  })
+}
+
+test('a question with a blank explanation is not usable, and can take the bank below the minimum', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  const bank = await prisma.onboardingQuizQuestion.findMany({ where: { questionText: { in: BANK_TEXTS } }, orderBy: { orderIndex: 'asc' } })
+  const blanks = [null, '', '   ']
+  await prisma.onboardingQuizQuestion.update({ where: { id: bank[0].id }, data: { explanation: blanks[2] } })
+  const view = await loadQuiz(prisma, HIRE_ID)
+  assert.equal(view.paper?.questions.length, 11)
+  assert.equal(view.paper?.questions.some((q) => q.id === bank[0].id), false)
+  await prisma.onboardingQuizQuestion.update({ where: { id: bank[1].id }, data: { explanation: blanks[1] } })
+  await prisma.onboardingQuizQuestion.update({ where: { id: bank[2].id }, data: { explanation: blanks[0] } })
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'UNAVAILABLE')
+})
+
+test('too few questions leaves LOCKED, COOLDOWN and a passed hire as they were', ACADEMY_DB_TEST, async () => {
+  await releasedHire()
+  await useQuestionCount(0)
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'LOCKED')
+
+  await readyHire()
+  await submitQuiz(prisma, HIRE_ID, await answers(12))
+  await useQuestionCount(9)
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'COOLDOWN')
+
+  await readyHire()
+  const passing = await answers(0)
+  await submitQuiz(prisma, HIRE_ID, passing)
+  await useQuestionCount(0)
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'PASSED_UNSIGNED')
+  await assert.rejects(submitQuiz(prisma, HIRE_ID, passing), fails(409, /^You've already passed\.$/))
+  await signValues()
+  assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'DONE')
 })
 
 test('clearQuizAttempts lifts the cooldown and changes nothing else', ACADEMY_DB_TEST, async () => {

@@ -51,12 +51,13 @@ function toStoredQuestion(row: OnboardingQuizQuestion): StoredQuestion {
   }
 }
 
-async function activeQuestions(db: Db): Promise<StoredQuestion[]> {
+/** Active, not retired, and with an explanation: the review owes every question one. */
+async function usableQuestions(db: Db): Promise<StoredQuestion[]> {
   const rows = await db.onboardingQuizQuestion.findMany({
     where: { isActive: true, retiredAt: null },
     orderBy: { orderIndex: 'asc' },
   })
-  return rows.map(toStoredQuestion)
+  return rows.filter((row) => row.explanation?.trim()).map(toStoredQuestion)
 }
 
 async function readPassPercent(db: Db): Promise<number> {
@@ -64,10 +65,31 @@ async function readPassPercent(db: Db): Promise<number> {
   return row?.quizPassPercent ?? DEFAULT_PASS_PERCENT
 }
 
+const storedAnswers = z.array(
+  z.object({ questionId: z.string(), chosen: z.string(), correct: z.boolean(), correctAnswer: z.string() }),
+)
+type StoredAnswer = z.infer<typeof storedAnswers>[number]
+
+export type AcademyAttempt = Omit<QuizAttempt, 'answersJson'> & { answers: StoredAnswer[] }
+
+/**
+ * This user's attempts at the Academy quiz, newest first. The legacy quiz stored a map of answers in the
+ * same table; those attempts are a different quiz, so nothing here or after it may count them.
+ */
+export async function readAcademyAttempts(db: Db, userId: string): Promise<AcademyAttempt[]> {
+  const rows = await db.quizAttempt.findMany({ where: { userId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] })
+  return rows.flatMap(({ answersJson, ...attempt }) => {
+    const parsed = storedAnswers.safeParse(answersJson)
+    return parsed.success ? [{ ...attempt, answers: parsed.data }] : []
+  })
+}
+
 export interface QuizState {
   status: QuizStatus
   dueAt: string | null
-  latest: QuizAttempt | null
+  latest: AcademyAttempt | null
+  /** Holds the answer key: for grading on the server, never for a view. */
+  questions: StoredQuestion[]
   /** Only in COOLDOWN. */
   retakeAt: Date | null
   failedCount: number
@@ -90,31 +112,27 @@ async function readCourseProgress(db: Db, userId: string): Promise<{ modulesDone
 /** Under lockUserRow this is the truth a submission is judged on; without it, it is what a page shows. */
 export async function readQuizState(db: Db, userId: string, cooldownMinutes: number, now: Date): Promise<QuizState> {
   const { modulesDone, dueAt } = await readCourseProgress(db, userId)
-  const latest = await db.quizAttempt.findFirst({ where: { userId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] })
-  const failedCount = await db.quizAttempt.count({ where: { userId, passed: false } })
+  const attempts = await readAcademyAttempts(db, userId)
+  const latest = attempts[0] ?? null
+  const questions = await usableQuestions(db)
   const values = await db.onboardingAcknowledgement.findFirst({
     where: { userId, kind: 'VALUES_CODE_OF_CONDUCT' },
     select: { id: true },
   })
-  const status = quizStatus({ modulesDone, latest, valuesSigned: values !== null, cooldownMinutes, now })
+  const status = quizStatus({
+    modulesDone, latest, valuesSigned: values !== null, cooldownMinutes, usableQuestions: questions.length, now,
+  })
   return {
     status,
     dueAt,
     latest,
+    questions,
     retakeAt: status === 'COOLDOWN' && latest ? retakeAt(latest.createdAt, cooldownMinutes) : null,
-    failedCount,
+    failedCount: attempts.filter((attempt) => !attempt.passed).length,
   }
 }
 
-const storedAnswers = z.array(z.object({ questionId: z.string(), chosen: z.string(), correct: z.boolean() }))
-type StoredAnswer = z.infer<typeof storedAnswers>[number]
-
-/** The legacy quiz stored a map of answers, not these rows. Its attempts have nothing to review. */
-function parseStoredAnswers(stored: unknown): StoredAnswer[] {
-  const parsed = storedAnswers.safeParse(stored)
-  return parsed.success ? parsed.data : []
-}
-
+/** The correct answer comes from the attempt, so a later edit to the question can't contradict `correct`. */
 function toReview(answers: readonly StoredAnswer[], questions: readonly StoredQuestion[]): QuizResultView['review'] {
   const byId = new Map(questions.map((q) => [q.id, q]))
   return answers.flatMap((answer) => {
@@ -123,7 +141,7 @@ function toReview(answers: readonly StoredAnswer[], questions: readonly StoredQu
     return [{
       question: question.questionText,
       chosen: answer.chosen,
-      correctAnswer: question.correctAnswer,
+      correctAnswer: answer.correctAnswer,
       correct: answer.correct,
       explanation: question.explanation,
       valueKey: question.valueKey,
@@ -132,8 +150,8 @@ function toReview(answers: readonly StoredAnswer[], questions: readonly StoredQu
 }
 
 /** Resolved through the attempt's own question ids, so a retired question still shows. */
-async function toLastResult(db: Db, attempt: QuizAttempt): Promise<QuizResultView> {
-  const answers = parseStoredAnswers(attempt.answersJson)
+async function toLastResult(db: Db, attempt: AcademyAttempt): Promise<QuizResultView> {
+  const { answers } = attempt
   const rows = await db.onboardingQuizQuestion.findMany({ where: { id: { in: answers.map((a) => a.questionId) } } })
   return {
     score: attempt.score,
@@ -151,7 +169,7 @@ export async function loadQuiz(db: Db, userId: string): Promise<QuizView> {
   return {
     status: state.status,
     dueAt: state.dueAt,
-    paper: state.status === 'READY' ? toPaper(await activeQuestions(db)) : null,
+    paper: state.status === 'READY' ? toPaper(state.questions) : null,
     lastResult: state.latest ? await toLastResult(db, state.latest) : null,
     retakeAt: state.retakeAt?.toISOString() ?? null,
     failedCount: state.failedCount,
@@ -161,6 +179,10 @@ export async function loadQuiz(db: Db, userId: string): Promise<QuizView> {
 function assertCanSubmit(state: QuizState, timeZone: string | null): void {
   if (state.status === 'READY') return
   if (state.status === 'LOCKED') throw new AcademyError('Finish all 14 modules first.', 403)
+  if (state.status === 'UNAVAILABLE') {
+    console.error('[academy] quiz refused: too few usable questions', { count: state.questions.length })
+    throw new AcademyError("The quiz isn't available right now. Please contact HR.", 409)
+  }
   if (state.status === 'COOLDOWN') {
     const time = callTimeLabel(state.retakeAt?.toISOString() ?? null, timeZone)
     throw new AcademyError(`You can retake the quiz after ${time}.`, 409)
@@ -186,7 +208,7 @@ export async function submitQuiz(db: PrismaClient, userId: string, input: unknow
     const state = await readQuizState(tx, userId, config.retakeCooldownMinutes, new Date())
     assertCanSubmit(state, timeZoneFor(facts.attributes))
 
-    const questions = await activeQuestions(tx)
+    const { questions } = state
     const passPercent = await readPassPercent(tx)
     const graded = gradeAttempt(questions, answers, passPercent)
     await tx.quizAttempt.create({

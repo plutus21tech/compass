@@ -4,7 +4,7 @@ import { VALUE_COLOURS } from '../components/academy/brand'
 import { AcademyError } from '../lib/academy/errors'
 import { ACADEMY_QUIZ_QUESTIONS } from '../prisma/seed-academy-quiz'
 import {
-  VALUES_STATEMENT, crossesFailThreshold, gradeAttempt, quizStatus, retakeAt, shuffled, submissionSchema, toPaper,
+  MIN_QUIZ_QUESTIONS, VALUES_STATEMENT, crossesFailThreshold, gradeAttempt, quizStatus, retakeAt, shuffled, submissionSchema, toPaper,
   type StoredQuestion,
 } from '../lib/academy/quiz'
 
@@ -132,13 +132,35 @@ test('gradeAttempt rejects an unknown option with 400', () => {
 test('quizStatus covers each state', () => {
   const now = new Date('2026-11-05T12:00:00Z')
   const ago = (min: number) => new Date(now.getTime() - min * 60_000)
-  const base = { modulesDone: true, latest: null, valuesSigned: false, cooldownMinutes: 15, now }
+  const base = { modulesDone: true, latest: null, valuesSigned: false, cooldownMinutes: 15, usableQuestions: 12, now }
   assert.equal(quizStatus({ ...base, modulesDone: false }), 'LOCKED')
   assert.equal(quizStatus(base), 'READY')
   assert.equal(quizStatus({ ...base, latest: { passed: false, createdAt: ago(14) } }), 'COOLDOWN')
   assert.equal(quizStatus({ ...base, latest: { passed: false, createdAt: ago(15) } }), 'READY')
   assert.equal(quizStatus({ ...base, latest: { passed: true, createdAt: ago(1) } }), 'PASSED_UNSIGNED')
   assert.equal(quizStatus({ ...base, latest: { passed: true, createdAt: ago(1) }, valuesSigned: true }), 'DONE')
+})
+
+test('quizStatus: too few usable questions is UNAVAILABLE, and only where READY would apply', () => {
+  const now = new Date('2026-11-05T12:00:00Z')
+  const ago = (min: number) => new Date(now.getTime() - min * 60_000)
+  const base = { modulesDone: true, latest: null, valuesSigned: false, cooldownMinutes: 15, usableQuestions: MIN_QUIZ_QUESTIONS - 1, now }
+  assert.equal(MIN_QUIZ_QUESTIONS, 10)
+  assert.equal(quizStatus(base), 'UNAVAILABLE')
+  assert.equal(quizStatus({ ...base, usableQuestions: 0 }), 'UNAVAILABLE')
+  assert.equal(quizStatus({ ...base, usableQuestions: MIN_QUIZ_QUESTIONS }), 'READY')
+  assert.equal(quizStatus({ ...base, latest: { passed: false, createdAt: ago(15) } }), 'UNAVAILABLE')
+  assert.equal(quizStatus({ ...base, modulesDone: false }), 'LOCKED')
+  assert.equal(quizStatus({ ...base, latest: { passed: false, createdAt: ago(14) } }), 'COOLDOWN')
+  assert.equal(quizStatus({ ...base, latest: { passed: true, createdAt: ago(1) } }), 'PASSED_UNSIGNED')
+  assert.equal(quizStatus({ ...base, latest: { passed: true, createdAt: ago(1) }, valuesSigned: true }), 'DONE')
+})
+
+test('gradeAttempt records the correct answer in each row', () => {
+  const result = gradeAttempt(stored, withWrong(1), 80)
+  result.answersJson.forEach((row) => {
+    assert.equal(row.correctAnswer, stored.find((q) => q.id === row.questionId)?.correctAnswer)
+  })
 })
 
 test('retakeAt is the cooldown after the attempt', () => {
