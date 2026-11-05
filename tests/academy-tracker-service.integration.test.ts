@@ -7,6 +7,7 @@ import { syncChecklist, syncChecklists } from '../lib/academy/service/checklist'
 import { loadHome, loadModule } from '../lib/academy/service/course'
 import { saveBankDetails, saveLinkedinUrl } from '../lib/academy/service/fields'
 import { savePayout } from '../lib/academy/service/payout'
+import { saveSetup } from '../lib/academy/service/setup'
 import { unlockModule, verifyLinkedin, tickChecklistItem, clearHireQuiz } from '../lib/academy/service/tracker-actions'
 import { loadAcknowledgementRows, loadDrawer, loadPaymentTracker, loadTracker } from '../lib/academy/service/tracker'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
@@ -21,6 +22,7 @@ import {
   createReleasedHire,
   progressRow,
   scrollAndComplete,
+  setupBody,
 } from './helpers/academy-course-fixtures'
 
 process.env.ONBOARDING_FIELD_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
@@ -35,6 +37,25 @@ const LINKEDIN = 'https://www.linkedin.com/in/cara-lindqvist'
 const WISE = { method: 'WISE', accountHolderName: 'Cara Lindqvist', payoutEmail: 'cara@example.test', currency: 'USD' }
 const BANK = { accountTitle: 'Cara Lindqvist', bankName: 'Fictional Bank', branch: 'Main', iban: 'PK36SCBL0000001123456702' }
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The real client, except that one checklist write fails when `fail` says so. */
+function failingWrites(method: 'createMany' | 'updateMany', fail: (args: unknown) => boolean): PrismaClient {
+  return new Proxy(prisma, {
+    get(target, prop, receiver) {
+      if (prop !== 'onboardingChecklistItem') return Reflect.get(target, prop, receiver)
+      return new Proxy(target.onboardingChecklistItem, {
+        get(model, name) {
+          const real = Reflect.get(model, name).bind(model)
+          if (name !== method) return real
+          return async (args: unknown) => {
+            if (fail(args)) throw new Error('write refused')
+            return real(args)
+          }
+        },
+      })
+    },
+  })
+}
 
 const hasStatus = (status: number) => (e: unknown) => e instanceof AcademyError && e.status === status
 
@@ -83,11 +104,16 @@ async function openLinkedinModule(url: string | null = LINKEDIN) {
 const itemFor = (key: string, newHireId = NEW_HIRE_ID) =>
   prisma.onboardingChecklistItem.findFirstOrThrow({ where: { newHireId, templateItem: { key } } })
 
+async function cleanAll(): Promise<void> {
+  await cleanCourse()
+  await prisma.onboardingChecklistTemplateItem.deleteMany({ where: { key: 'act-new-item' } })
+}
+
 beforeEach(async () => {
-  if (WEEKLY_DB_READY) await cleanCourse()
+  if (WEEKLY_DB_READY) await cleanAll()
 })
 after(async () => {
-  if (WEEKLY_DB_READY) await cleanCourse()
+  if (WEEKLY_DB_READY) await cleanAll()
   await prisma.$disconnect()
 })
 
@@ -97,7 +123,9 @@ test('a plain employee gets 403 from every read at the service seam', ACADEMY_DB
     await assert.rejects(loadTracker(prisma, viewer, {}), hasStatus(403))
     await assert.rejects(loadDrawer(prisma, viewer, NEW_HIRE_ID), hasStatus(403))
     await assert.rejects(loadPaymentTracker(prisma, viewer), hasStatus(403))
+    await assert.rejects(loadAcknowledgementRows(prisma, viewer, NEW_HIRE_ID), hasStatus(403))
   }
+  await assert.rejects(loadAcknowledgementRows(prisma, OA, NEW_HIRE_ID), hasStatus(403))
 })
 
 test('OA is refused the drawer and the full rows, and gets the payment list only', ACADEMY_DB_TEST, async () => {
@@ -229,6 +257,53 @@ test('syncing many hires reads no more than syncing one', ACADEMY_DB_TEST, async
   assert.equal(reads, forOne)
 })
 
+test('a template change never reaches a hire who already has a checklist', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await finishedHire('recent', 5)
+  await extraHire('fresh')
+  await syncChecklists(prisma, [NEW_HIRE_ID, 'act-recent'])
+  const count = (newHireId: string) => prisma.onboardingChecklistItem.count({ where: { newHireId } })
+  assert.equal(await count(NEW_HIRE_ID), 17)
+
+  await prisma.onboardingChecklistTemplateItem.create({
+    data: { key: 'act-new-item', title: 'A new step', ownerRole: 'HR', dueOffsetDays: 1, orderIndex: 99 },
+  })
+  await prisma.onboardingChecklistTemplateItem.update({ where: { key: 'hr-call' }, data: { isActive: false } })
+  await prisma.onboardingChecklistItem.deleteMany({ where: { newHireId: 'act-recent', templateItem: { key: 'hr-call' } } })
+  await prisma.onboardingChecklistTemplateItem.update({ where: { key: 'hr-call' }, data: { isActive: true } })
+
+  await loadTracker(prisma, HR, {})
+  await syncChecklist(prisma, NEW_HIRE_ID)
+  await saveSetup(prisma, NEW_HIRE_ID, setupBody(), P.hr.id)
+  assert.equal(await count(NEW_HIRE_ID), 17, 'neither the sync nor a setup save adds to it')
+  assert.equal(await count('act-recent'), 16, 'a removed row is not brought back')
+  assert.equal(await count('act-fresh'), 18, 'a hire with none gets the new item')
+})
+
+test('one row that will not write does not stop the others', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await syncChecklist(prisma, NEW_HIRE_ID)
+  await prisma.onboardingChecklistItem.updateMany({ where: { newHireId: NEW_HIRE_ID }, data: { doneAt: null, autoTicked: false } })
+  const bad = await itemFor('lead-input')
+  const client = failingWrites('updateMany', (args) => (args as { where: { id: string } }).where.id === bad.id)
+  assert.ok(await syncChecklist(client, NEW_HIRE_ID) > 0)
+  assert.equal((await itemFor('lead-input')).doneAt, null)
+  assert.ok((await itemFor('setup-complete')).doneAt, 'the rest still tick')
+})
+
+test('a tracker read survives a sync that fails, on stored data', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await prisma.onboardingChecklistItem.deleteMany({ where: { newHireId: NEW_HIRE_ID } })
+  const client = failingWrites('createMany', () => true)
+
+  const rows = await loadTracker(client, HR, {})
+  assert.deepEqual(rows.map((r) => [r.newHireId, r.modulesTotal, r.checklistTotal]), [[NEW_HIRE_ID, 14, 0]])
+  const drawer = await loadDrawer(client, HR, NEW_HIRE_ID)
+  assert.equal(drawer.modules.length, 14)
+  assert.deepEqual(drawer.checklist, [])
+  await assert.rejects(loadDrawer(client, HR, 'act-nope'), hasStatus(404))
+})
+
 test('syncChecklist on an unknown hire is a 404', ACADEMY_DB_TEST, async () => {
   await assert.rejects(syncChecklist(prisma, 'act-nope'), hasStatus(404))
 })
@@ -249,6 +324,22 @@ test('unlockModule opens a locked row, the hire can load it, and the card shows 
   assert.ok(home.released)
   assert.equal(home.phases.flatMap((p) => p.modules).find((c) => c.slug === slug)?.status, 'AVAILABLE')
   assert.equal((await loadModule(prisma, HIRE_ID, slug)).slug, slug)
+})
+
+test('unlockModule: 409 before release, and only a course row can be opened', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  const row = await progressRow(SLUGS[5])
+  await prisma.onboardingProgress.update({ where: { id: row.id }, data: { source: 'SINGLE_ASSIGNMENT' } })
+  await assert.rejects(unlockModule(prisma, NEW_HIRE_ID, row.moduleId, P.hr.id), hasStatus(404))
+  const after = await progressRow(SLUGS[5])
+  assert.equal(after.status, 'LOCKED')
+  assert.equal(after.unlockedEarlyById, null)
+
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { academyReleasedAt: null } })
+  await assert.rejects(
+    unlockModule(prisma, NEW_HIRE_ID, row.moduleId, P.hr.id),
+    (e: unknown) => e instanceof AcademyError && e.status === 409 && e.message === "This hire's course hasn't been released yet.",
+  )
 })
 
 test('unlockModule leaves a finished row alone and refuses an unknown module', ACADEMY_DB_TEST, async () => {
@@ -438,17 +529,32 @@ test('tickChecklistItem: each role only its own items, the assigned lead only th
   await assert.rejects(tickChecklistItem(prisma, HR, 'act-nope', { done: true }, when), hasStatus(404))
 })
 
+test('a lead whose role is SECURITY ticks their own hire, never another hire', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await prisma.user.update({ where: { id: P.lead.id }, data: { role: 'SECURITY' } })
+  await extraHire('other', { teamLeadId: P.buddy.id })
+  const when = new Date('2026-11-02T00:00:00.000Z')
+  await syncChecklists(prisma, [NEW_HIRE_ID, 'act-other'], new Date('2026-11-01T00:00:00.000Z'))
+  const viewer = { id: P.lead.id, role: 'SECURITY' }
+
+  const own = await itemFor('team-call')
+  assert.equal((await tickChecklistItem(prisma, viewer, own.id, { done: true }, when)).doneById, P.lead.id)
+  const other = await itemFor('team-call', 'act-other')
+  await assert.rejects(tickChecklistItem(prisma, viewer, other.id, { done: true }, when), hasStatus(403))
+  assert.equal((await itemFor('team-call', 'act-other')).doneAt, null)
+})
+
 test('clearHireQuiz clears through the hire; a hire with no account or a finished one is refused', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await prisma.quizAttempt.create({ data: attempt({ passed: false }) })
-  await clearHireQuiz(prisma, NEW_HIRE_ID)
+  await clearHireQuiz(prisma, NEW_HIRE_ID, P.hr.id)
   assert.equal(await prisma.quizAttempt.count({ where: { userId: HIRE_ID } }), 0)
 
   await extraHire('nouser')
-  await assert.rejects(clearHireQuiz(prisma, 'act-nouser'), hasStatus(404))
-  await assert.rejects(clearHireQuiz(prisma, 'act-nope'), hasStatus(404))
+  await assert.rejects(clearHireQuiz(prisma, 'act-nouser', P.hr.id), hasStatus(404))
+  await assert.rejects(clearHireQuiz(prisma, 'act-nope', P.hr.id), hasStatus(404))
   await prisma.user.update({ where: { id: HIRE_ID }, data: { onboardingCompleted: true } })
-  await assert.rejects(clearHireQuiz(prisma, NEW_HIRE_ID), hasStatus(409))
+  await assert.rejects(clearHireQuiz(prisma, NEW_HIRE_ID, P.hr.id), hasStatus(409))
 })
 
 test('loadAcknowledgementRows gives the export rows, dated in the hire\'s own zone', ACADEMY_DB_TEST, async () => {
@@ -459,7 +565,7 @@ test('loadAcknowledgementRows gives the export rows, dated in the hire\'s own zo
       signedAt: new Date('2026-12-04T20:00:00.000Z'),
     },
   })
-  const [row, ...rest] = await loadAcknowledgementRows(prisma, NEW_HIRE_ID)
+  const [row, ...rest] = await loadAcknowledgementRows(prisma, HR, NEW_HIRE_ID)
   assert.equal(rest.length, 0)
   assert.equal(row.name, P.hire.name)
   assert.equal(row.email, P.hire.email)
@@ -467,6 +573,6 @@ test('loadAcknowledgementRows gives the export rows, dated in the hire\'s own zo
   assert.equal(row.statementText, 'I will follow the rules.')
   assert.equal(row.signedOn, '5 December 2026', 'Karachi is already on the next day')
   await extraHire('nouser')
-  assert.deepEqual(await loadAcknowledgementRows(prisma, 'act-nouser'), [])
-  await assert.rejects(loadAcknowledgementRows(prisma, 'act-nope'), hasStatus(404))
+  assert.deepEqual(await loadAcknowledgementRows(prisma, HR, 'act-nouser'), [])
+  await assert.rejects(loadAcknowledgementRows(prisma, HR, 'act-nope'), hasStatus(404))
 })

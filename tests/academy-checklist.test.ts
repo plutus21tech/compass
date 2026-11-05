@@ -71,3 +71,13 @@ test('canTickItem: HR any, SECURITY and OA their own, the assigned lead team-lea
   assert.equal(canTickItem('EMPLOYEE', item('HR'), 'l', 'l'), false)
   assert.equal(canTickItem('EMPLOYEE', item('TEAM_LEAD'), null, 'l'), false)
 })
+
+test('canTickItem: the assigned lead owns team-lead items whatever their role', () => {
+  const lead = { ownerRole: 'TEAM_LEAD' as const }
+  for (const role of ['SECURITY', 'OA', 'EXECUTION', 'EMPLOYEE']) {
+    assert.equal(canTickItem(role, lead, 'me', 'me'), true, role)
+    assert.equal(canTickItem(role, lead, 'someone-else', 'me'), false, role)
+    assert.equal(canTickItem(role, lead, null, 'me'), false, role)
+  }
+  assert.equal(canTickItem('SECURITY', { ownerRole: 'OA' }, 'me', 'me'), false)
+})

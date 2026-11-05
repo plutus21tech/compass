@@ -21,7 +21,7 @@ import {
 } from '../tracker'
 import { locationLabel, toModuleCard } from '../view'
 import { formatCertificateDate } from '../view-labels'
-import { countChecklists, listChecklist, syncChecklist, syncChecklists } from './checklist'
+import { countChecklists, listChecklist, syncChecklists } from './checklist'
 import { LINKEDIN_MODULE_SLUG } from './fields'
 import { readPayout } from './payout'
 import { listCourseModules, versionIdFor, type CourseModule } from './progress'
@@ -175,12 +175,21 @@ function toRow(hire: HireRow, facts: RowFacts, now: Date): TrackerRow {
   }
 }
 
+/** A read must not fail because a write did: the page shows what is stored, and the next load tries again. */
+async function syncForRead(db: PrismaClient, newHireIds: readonly string[], now: Date): Promise<void> {
+  try {
+    await syncChecklists(db, newHireIds, now)
+  } catch (error) {
+    console.error('[academy] checklist sync failed', { newHireIds, error: error instanceof Error ? error.name : 'unknown' })
+  }
+}
+
 /** HR's list. OA never comes through here: their list is loadPaymentTracker. */
 export async function loadTracker(db: PrismaClient, viewer: TrackerViewer, filters: TrackerFilters): Promise<TrackerRow[]> {
   assertHr(viewer)
   const now = new Date()
   const hires = await listHires(db, filters, now)
-  await syncChecklists(db, hires.map((hire) => hire.id), now)
+  await syncForRead(db, hires.map((hire) => hire.id), now)
   const facts = await gatherRowFacts(db, hires)
   return hires.map((hire) => toRow(hire, facts, now))
 }
@@ -288,7 +297,9 @@ async function drawerPayment(db: PrismaClient, userId: string, viewerId: string)
 export async function loadDrawer(db: PrismaClient, viewer: TrackerViewer, newHireId: string): Promise<TrackerDrawer> {
   assertHr(viewer)
   const now = new Date()
-  await syncChecklist(db, newHireId, now)
+  const found = await db.newHire.findUnique({ where: { id: newHireId }, select: { id: true } })
+  if (!found) throw new AcademyError('New hire not found', 404)
+  await syncForRead(db, [newHireId], now)
   const hire = await db.newHire.findUniqueOrThrow({ where: { id: newHireId }, select: HIRE_SELECT })
   const { userId } = hire
   const checklist = await listChecklist(db, newHireId, now)
@@ -327,8 +338,11 @@ export async function loadDrawer(db: PrismaClient, viewer: TrackerViewer, newHir
   }
 }
 
-/** Every signature of one hire, oldest first, dated as it was for the hire. The route is HR only. */
-export async function loadAcknowledgementRows(db: PrismaClient, newHireId: string): Promise<AcknowledgementRow[]> {
+/** Every signature of one hire, oldest first, dated as it was for the hire. HR only. */
+export async function loadAcknowledgementRows(
+  db: PrismaClient, viewer: TrackerViewer, newHireId: string,
+): Promise<AcknowledgementRow[]> {
+  assertHr(viewer)
   const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: HIRE_SELECT })
   if (!hire) throw new AcademyError('New hire not found', 404)
   if (!hire.userId) return []

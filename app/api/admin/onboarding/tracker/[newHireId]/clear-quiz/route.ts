@@ -13,7 +13,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const user = await requireAcademyHr()
     await guardAcademyMutation(request, user.id)
     const { newHireId } = await context.params
-    await clearHireQuiz(prisma, newHireId)
+    await clearHireQuiz(prisma, newHireId, user.id)
     return NextResponse.json({ success: true })
   } catch (error) {
     return academyErrorResponse(error)

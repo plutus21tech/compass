@@ -76,17 +76,16 @@ export function toItemState(item: ItemTiming, now: Date): ItemState {
   return item.missReason ? 'DONE_LATE' : 'DONE_LATE_NEEDS_REASON'
 }
 
-/** HR any item; Security and OA their own; the hire's assigned team lead the team lead items. */
+/** The hire's assigned team lead owns the team lead items, whatever their role; HR any item; Security and OA their own. */
 export function canTickItem(
   role: string,
   item: { ownerRole: ChecklistOwnerRole },
   leadUserId: string | null,
   userId: string,
 ): boolean {
+  if (item.ownerRole === 'TEAM_LEAD' && leadUserId === userId) return true
   if (role === 'HR') return true
-  if (role === 'SECURITY') return item.ownerRole === 'SECURITY'
-  if (role === 'OA') return item.ownerRole === 'OA'
-  return item.ownerRole === 'TEAM_LEAD' && leadUserId !== null && leadUserId === userId
+  return (role === 'SECURITY' || role === 'OA') && item.ownerRole === role
 }
 
 /** JSON-safe: dates are ISO strings. */

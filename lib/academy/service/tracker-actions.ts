@@ -13,7 +13,10 @@ import type { TrackerViewer } from './tracker'
 const NO_LINK_MESSAGE = "There's no LinkedIn link to verify yet."
 const REASON_MAX = 500
 
+const NOT_RELEASED_MESSAGE = "This hire's course hasn't been released yet."
+
 const hireNotFound = () => new AcademyError('New hire not found', 404)
+const moduleNotFound = () => new AcademyError('Module not found', 404)
 
 export const unlockBodySchema = z.object({ moduleId: z.string().min(1).max(100) }).strict()
 
@@ -21,16 +24,18 @@ export const tickBodySchema = z
   .object({ done: z.boolean(), missReason: z.string().trim().max(REASON_MAX).optional() })
   .strict()
 
-/** HR opens a module early. A row that is already open or finished is left as it is. Routes are HR only. */
+/** HR opens a course module early. A row that is already open or finished is left as it is. Routes are HR only. */
 export async function unlockModule(db: PrismaClient, newHireId: string, moduleId: string, actorId: string): Promise<void> {
-  const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { userId: true } })
-  const userId = hire?.userId
+  const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { userId: true, academyReleasedAt: true } })
   if (!hire) throw hireNotFound()
-  if (!userId) throw new AcademyError('Module not found', 404)
+  if (!hire.academyReleasedAt) throw new AcademyError(NOT_RELEASED_MESSAGE, 409)
+  const { userId } = hire
+  if (!userId) throw moduleNotFound()
   await db.$transaction(async (tx) => {
     const modules = await listCourseModules(tx)
-    if (!modules.some((module) => module.id === moduleId)) throw new AcademyError('Module not found', 404)
+    if (!modules.some((module) => module.id === moduleId)) throw moduleNotFound()
     const row = await lockProgressRow(tx, userId, moduleId)
+    if (row.source !== 'COURSE') throw moduleNotFound()
     if (row.status !== 'LOCKED') return
     await tx.onboardingProgress.update({ where: { id: row.id }, data: { status: 'IN_PROGRESS', unlockedEarlyById: actorId } })
   }, COURSE_TX_OPTIONS)
@@ -88,8 +93,9 @@ export async function tickChecklistItem(
 }
 
 /** The route is HR only. */
-export async function clearHireQuiz(db: PrismaClient, newHireId: string): Promise<void> {
+export async function clearHireQuiz(db: PrismaClient, newHireId: string, actorId: string): Promise<void> {
   const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { userId: true } })
   if (!hire?.userId) throw hireNotFound()
   await clearQuizAttempts(db, hire.userId)
+  console.info('[academy] quiz attempts cleared', { newHireId, actorId })
 }

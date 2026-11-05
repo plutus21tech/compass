@@ -87,8 +87,8 @@ Schema, all additive:
   - `AUTO_TICK_EVENTS`: `LEAD_INPUT_SUBMITTED`, `SETUP_READY`, `ACCOUNT_LINKED`, `COURSE_RELEASED`, `DISCORD_USERNAME_SAVED`, `SECURITY_ACK_SIGNED`, `LINKEDIN_VERIFIED`, `PAYMENT_SETUP_DONE`, `COURSE_COMPLETED`
   - `eventsMet(facts: ChecklistFacts): Set<string>`
   - `toItemState(item, now): 'OPEN' | 'OVERDUE' | 'DONE' | 'DONE_LATE' | 'DONE_LATE_NEEDS_REASON'`
-  - `createChecklist(db, newHireId): Promise<number>`: creates missing rows from active template items, idempotent, and called from `saveSetup`
-  - `syncChecklist(db, newHireId): Promise<number>`: calls `createChecklist` first, so hires set up earlier are backfilled; ticks open items whose event is met, setting `autoTicked` true and `doneAt` now; never unticks; recomputes `dueAt` for open items when the joining date moved
+  - `createChecklist(db, newHireId): Promise<number>`: creates a hire's rows from active template items only if the hire has none, idempotent, and called from `saveSetup`. A hire with any rows keeps exactly those, so a new or reactivated template item never reaches an existing checklist
+  - `syncChecklist(db, newHireId): Promise<number>`: calls `createChecklist` first, so hires set up earlier with no rows are backfilled; ticks open items whose event is met, setting `autoTicked` true and `doneAt` now; never unticks; recomputes `dueAt` for open items when the joining date moved
   - `tickItem(db, itemId, actorId, input: { done: boolean; missReason?: string }): Promise<ChecklistItemView>`: an overdue manual tick needs `missReason`, or 400 "Add a reason for missing this date."; HR can add a reason to a done item; only manual ticks can be unticked
   - `canTickItem(role, item, leadUserId, userId): boolean`: HR any item; SECURITY its own; OA its own; the assigned team lead TEAM_LEAD items
 

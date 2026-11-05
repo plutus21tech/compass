@@ -33,8 +33,18 @@ function toView(row: ItemRow, now: Date): ChecklistItemView {
   }
 }
 
-/** Creates the rows these hires are missing from the active template. Existing rows are never touched. */
-async function createMissingItems(db: Db, hires: ReadonlyArray<{ id: string; onboardingDate: Date }>): Promise<number> {
+/**
+ * Gives a checklist from the active template to the hires who have none. A hire with any rows keeps
+ * exactly those: a template change never adds to, or restores a row on, a checklist already created.
+ */
+async function createFirstChecklists(db: Db, candidates: ReadonlyArray<{ id: string; onboardingDate: Date }>): Promise<number> {
+  const existing = await db.onboardingChecklistItem.groupBy({
+    by: ['newHireId'],
+    where: { newHireId: { in: candidates.map((hire) => hire.id) } },
+  })
+  const started = new Set(existing.map((row) => row.newHireId))
+  const hires = candidates.filter((hire) => !started.has(hire.id))
+  if (hires.length === 0) return 0
   const templates = await db.onboardingChecklistTemplateItem.findMany({
     where: { isActive: true },
     select: { id: true, dueOffsetDays: true },
@@ -56,7 +66,7 @@ async function createMissingItems(db: Db, hires: ReadonlyArray<{ id: string; onb
 export async function createChecklist(db: Db, newHireId: string): Promise<number> {
   const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { id: true, onboardingDate: true } })
   if (!hire) throw new AcademyError('New hire not found', 404)
-  return createMissingItems(db, [hire])
+  return createFirstChecklists(db, [hire])
 }
 
 const SYNC_INCLUDE = {
@@ -97,15 +107,27 @@ async function eventsByHire(db: Db, hires: readonly SyncHire[]): Promise<Map<str
   return new Map(hires.map((hire) => [hire.id, eventsMet(factsFor(hire, signed, paid))]))
 }
 
+/** One row's write. A row that won't write is logged and skipped, so it can't stop the rest. */
+async function writeItem(db: Db, itemId: string, data: Prisma.OnboardingChecklistItemUpdateManyMutationInput): Promise<number> {
+  try {
+    // Guarded on doneAt: null, so a manual tick that landed since the read is never overwritten.
+    const result = await db.onboardingChecklistItem.updateMany({ where: { id: itemId, doneAt: null }, data })
+    return result.count
+  } catch (error) {
+    console.error('[academy] checklist item could not be synced', { itemId, error: error instanceof Error ? error.name : 'unknown' })
+    return 0
+  }
+}
+
 /**
- * For each hire: backfills missing rows, ticks open items whose event is met (never unticks), and
- * moves the due date of open items when the joining date changed. Returns how many items were ticked.
- * The reads don't grow with the list; only rows that actually change are written, one by one.
+ * For each hire: creates the checklist if they have none, ticks open items whose event is met (never
+ * unticks), and moves the due date of open items when the joining date changed. Returns how many items
+ * were ticked. The reads don't grow with the list; only rows that actually change are written, one by one.
  */
 export async function syncChecklists(db: Db, newHireIds: readonly string[], now: Date = new Date()): Promise<number> {
   if (newHireIds.length === 0) return 0
   const hires = await db.newHire.findMany({ where: { id: { in: [...newHireIds] } }, include: SYNC_INCLUDE })
-  await createMissingItems(db, hires)
+  await createFirstChecklists(db, hires)
   const met = await eventsByHire(db, hires)
   const joining = new Map(hires.map((hire) => [hire.id, hire.onboardingDate]))
   const open = await db.onboardingChecklistItem.findMany({ where: { newHireId: { in: [...newHireIds] }, doneAt: null }, include: WITH_TEMPLATE })
@@ -117,10 +139,8 @@ export async function syncChecklists(db: Db, newHireIds: readonly string[], now:
     const dueAt = checklistDueAt(joiningDate, item.dueOffsetDays ?? item.templateItem.dueOffsetDays)
     const tick = event !== null && met.get(item.newHireId)?.has(event) === true
     if (!tick && dueAt.getTime() === item.dueAt.getTime()) continue
-    // Guarded on doneAt: null, so a manual tick that landed since the read is never overwritten.
-    const data = tick ? { dueAt, doneAt: now, autoTicked: true } : { dueAt }
-    const result = await db.onboardingChecklistItem.updateMany({ where: { id: item.id, doneAt: null }, data })
-    if (tick && result.count === 1) ticked += 1
+    const written = await writeItem(db, item.id, tick ? { dueAt, doneAt: now, autoTicked: true } : { dueAt })
+    if (tick && written === 1) ticked += 1
   }
   return ticked
 }

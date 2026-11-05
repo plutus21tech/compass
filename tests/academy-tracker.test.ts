@@ -3,7 +3,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AcademyError } from '../lib/academy/errors'
-import { acknowledgementPdf, acknowledgementsCsv, pdfSafeStatement, type AcknowledgementRow } from '../lib/academy/acknowledgement-export'
+import {
+  acknowledgementFileName,
+  acknowledgementPdf,
+  acknowledgementPdfFields,
+  acknowledgementsCsv,
+  pdfSafeStatement,
+  type AcknowledgementRow,
+} from '../lib/academy/acknowledgement-export'
 import { moduleCardState } from '../lib/academy/progress'
 import { setupSchema } from '../lib/academy/setup'
 import { quizScoreLabel, shapeForRole, trackerFiltersSchema, type TrackerRow } from '../lib/academy/tracker'
@@ -118,6 +125,29 @@ test('pdfSafeStatement never swaps the wording, it only replaces what cannot be 
   assert.equal(pdfSafeStatement(statement), statement)
   assert.equal(pdfSafeStatement('Ação Łódź'), 'Ação Lódz')
   assert.equal(pdfSafeStatement('Sign 李 here'), 'Sign ? here')
+})
+
+test('pdfSafeStatement draws Unicode spaces as a space and Unicode hyphens as a hyphen', () => {
+  assert.equal(pdfSafeStatement('a\u00A0b\u2003c\u202Fd\u3000e\u2028f'), 'a b c d e f')
+  assert.equal(pdfSafeStatement('non\u2010breaking\u2011hyphen'), 'non-breaking-hyphen')
+  assert.equal(pdfSafeStatement('line one\nline two'), 'line one\nline two')
+})
+
+test('the PDF prints only what the signer gave: no name is swapped for other words', () => {
+  const fields = acknowledgementPdfFields({ ...ACK, name: 'Cara 李', typedName: '李小龙', statementText: 'Yes.' })
+  assert.deepEqual(fields.map((f) => f.label), ['Acknowledgement', 'Name', 'Statement', 'Typed name', 'Signed date'])
+  const value = (label: string) => fields.find((f) => f.label === label)?.value
+  assert.equal(value('Name'), 'Cara ?')
+  assert.equal(value('Typed name'), '???')
+  assert.equal(JSON.stringify(fields).includes('team member'), false)
+})
+
+test('the PDF file name has the kind and the id, in ASCII', () => {
+  assert.equal(acknowledgementFileName(ACK), 'academy-acknowledgement-security-sops-a1.pdf')
+  assert.equal(
+    acknowledgementFileName({ ...ACK, kind: 'VALUES_CODE_OF_CONDUCT', id: 'cm9"\r\nX-Bad: é1' }),
+    'academy-acknowledgement-values-code-of-conduct-cm9XBad1.pdf',
+  )
 })
 
 const route = (path: string) => readFileSync(join(__dirname, '..', 'app/api/admin/onboarding', path, 'route.ts'), 'utf8')
