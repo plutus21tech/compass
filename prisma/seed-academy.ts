@@ -10,12 +10,14 @@ import { isAcademyEnabled } from '../lib/academy/flag'
 import { academyLinkSchema, libraryCardSchema } from '../lib/academy/links'
 import { ACADEMY_CARDS, ACADEMY_CHECKLIST, ACADEMY_DEFAULT_LINKS, ACADEMY_MODULES } from './seed-academy-data'
 import { ACADEMY_MODULE_BLOCKS } from './seed-academy-content'
+import { ACADEMY_QUIZ_QUESTIONS } from './seed-academy-quiz'
 
 export interface SeedAcademyResult {
   modulesCreated: number
   modulesRetired: number
   cardsCreated: number
   checklistItemsCreated: number
+  questionsCreated: number
 }
 
 type Tx = Prisma.TransactionClient
@@ -117,16 +119,39 @@ async function ensureChecklist(db: PrismaClient): Promise<number> {
   return result.count
 }
 
+/** Creates each bank question whose text is not stored yet. Never overwrites an existing row. */
+async function ensureQuestions(db: Tx): Promise<number> {
+  const rows = await db.onboardingQuizQuestion.findMany({ select: { questionText: true, orderIndex: true } })
+  const known = new Set(rows.map((r) => r.questionText))
+  const taken = new Set(rows.map((r) => r.orderIndex))
+  let next = Math.max(RETIRED_OFFSET, ...taken) + 1
+  let created = 0
+  for (const [index, q] of ACADEMY_QUIZ_QUESTIONS.entries()) {
+    if (known.has(q.questionText)) continue
+    // Prefer slots 1 to 12; if one is occupied (an HR-added question), go above everything else.
+    const preferred = index + 1
+    const orderIndex = taken.has(preferred) ? next++ : preferred
+    taken.add(orderIndex)
+    const { options, ...fields } = q
+    await db.onboardingQuizQuestion.create({ data: { ...fields, optionsJson: options, orderIndex, isActive: true } })
+    created += 1
+  }
+  return created
+}
+
 export async function seedAcademy(db: PrismaClient): Promise<SeedAcademyResult> {
   // Together: a failure partway must not leave old modules retired with no new ones in place.
-  const { modulesRetired, modulesCreated } = await db.$transaction(
-    async (tx) => ({ modulesRetired: await retireOldModules(tx), modulesCreated: await ensureModules(tx) }),
+  const { modulesRetired, modulesCreated, questionsCreated } = await db.$transaction(
+    async (tx) => {
+      const modulesRetired = await retireOldModules(tx)
+      return { modulesRetired, modulesCreated: await ensureModules(tx), questionsCreated: await ensureQuestions(tx) }
+    },
     { timeout: REORDER_TIMEOUT_MS },
   )
   const cardsCreated = await ensureCards(db)
   await ensureLinks(db)
   const checklistItemsCreated = await ensureChecklist(db)
-  return { modulesCreated, modulesRetired, cardsCreated, checklistItemsCreated }
+  return { modulesCreated, modulesRetired, cardsCreated, checklistItemsCreated, questionsCreated }
 }
 
 function describeHost(url: string | undefined): string {

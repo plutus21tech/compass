@@ -4,6 +4,7 @@ import { prisma } from '../lib/db'
 import { completeTestUsers } from '../scripts/academy-cutover-complete-test-users'
 import { ACADEMY_MODULES, ACADEMY_CARDS, ACADEMY_CHECKLIST } from '../prisma/seed-academy-data'
 import { ACADEMY_MODULE_BLOCKS } from '../prisma/seed-academy-content'
+import { ACADEMY_QUIZ_QUESTIONS } from '../prisma/seed-academy-quiz'
 import { seedAcademy, seedRefusal } from '../prisma/seed-academy'
 import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
@@ -12,11 +13,12 @@ const OLD_SLUG = 'act-seed-retired-old'
 const LEGACY_BENEFITS_SLUG = 'benefits'
 const OLD_QUESTION_TEXT = 'ACT seed old question'
 const NEW_QUESTION_TEXT = 'ACT seed new question'
+const BANK_TEXTS = ACADEMY_QUIZ_QUESTIONS.map((q) => q.questionText)
 const slugs = ACADEMY_MODULES.map((m) => m.slug)
 
 async function clean() {
   await prisma.onboardingModule.deleteMany({ where: { slug: { in: [...slugs, OLD_SLUG, LEGACY_BENEFITS_SLUG] } } })
-  await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { in: [OLD_QUESTION_TEXT, NEW_QUESTION_TEXT] } } })
+  await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { in: [OLD_QUESTION_TEXT, NEW_QUESTION_TEXT, ...BANK_TEXTS] } } })
   for (const c of ACADEMY_CARDS) await prisma.onboardingLibraryCard.deleteMany({ where: { kind: c.kind, title: c.title } })
   await prisma.onboardingChecklistTemplateItem.deleteMany({ where: { key: { in: ACADEMY_CHECKLIST.map((i) => i.key) } } })
   await prisma.onboardingConfig.deleteMany({ where: { id: 'singleton' } })
@@ -133,7 +135,7 @@ test('second run is idempotent and keeps HR edits', ACADEMY_DB_TEST, async () =>
   await prisma.onboardingModule.update({ where: { id: welcome.id }, data: { currentVersionId: v2.id } })
 
   const second = await seedAcademy(prisma)
-  assert.deepEqual(second, { modulesCreated: 0, modulesRetired: 0, cardsCreated: 0, checklistItemsCreated: 0 })
+  assert.deepEqual(second, { modulesCreated: 0, modulesRetired: 0, cardsCreated: 0, checklistItemsCreated: 0, questionsCreated: 0 })
   assert.equal(await prisma.onboardingLibraryCard.count(), cardsBefore)
   assert.equal((await prisma.onboardingChecklistTemplateItem.findUniqueOrThrow({ where: { key: 'contract-signed' } })).title, 'ACT edited title')
   assert.equal((await prisma.onboardingLibraryCard.findUniqueOrThrow({ where: { id: card.id } })).body, 'ACT edited body')
@@ -218,4 +220,31 @@ test('cutover dry run changes nothing, apply completes exactly those users', ACA
     // restore users that were incomplete before (non-fixture ones survive resetAcademyFixtures)
     await prisma.user.updateMany({ where: { id: { in: incompleteIds } }, data: { onboardingCompleted: false } })
   }
+})
+
+test('the quiz bank is created once, never overwritten, and does not collide with retired questions', ACADEMY_DB_TEST, async () => {
+  const first = await seedAcademy(prisma)
+  assert.equal(first.questionsCreated, 12)
+  const rows = await prisma.onboardingQuizQuestion.findMany({ where: { questionText: { in: BANK_TEXTS } }, orderBy: { orderIndex: 'asc' } })
+  assert.equal(rows.length, 12)
+  assert.ok(rows.every((r) => r.isActive && r.retiredAt === null && r.explanation))
+  assert.deepEqual(rows.map((r) => r.orderIndex), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+  const legacy = await prisma.onboardingQuizQuestion.findFirstOrThrow({ where: { questionText: OLD_QUESTION_TEXT } })
+  assert.equal(legacy.isActive, false)
+
+  await prisma.onboardingQuizQuestion.update({ where: { id: rows[0].id }, data: { explanation: 'ACT edited why' } })
+  const second = await seedAcademy(prisma)
+  assert.equal(second.questionsCreated, 0)
+  assert.equal((await prisma.onboardingQuizQuestion.findUniqueOrThrow({ where: { id: rows[0].id } })).explanation, 'ACT edited why')
+})
+
+test('a stage-3 question already sitting on an order slot does not block the bank', ACADEMY_DB_TEST, async () => {
+  await prisma.onboardingQuizQuestion.create({
+    data: { questionText: NEW_QUESTION_TEXT, optionsJson: [], correctAnswer: 'a', orderIndex: 3, explanation: 'ACT why' },
+  })
+  const result = await seedAcademy(prisma)
+  assert.equal(result.questionsCreated, 12)
+  const rows = await prisma.onboardingQuizQuestion.findMany({ where: { questionText: { in: BANK_TEXTS } } })
+  assert.equal(new Set(rows.map((r) => r.orderIndex)).size, 12)
+  assert.ok(!rows.some((r) => r.orderIndex === 3))
 })
