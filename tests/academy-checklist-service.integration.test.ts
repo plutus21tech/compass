@@ -71,7 +71,7 @@ test('syncChecklist ticks the user-fact events', ACADEMY_DB_TEST, async () => {
     where: { id: P.hire.id },
     data: { discordUsername: 'cara#1', linkedinUrl: 'https://example.test/in/cara', onboardingCompleted: true },
   })
-  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { academyReleasedAt: new Date() } })
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { academyReleasedAt: new Date(), linkedinVerifiedAt: new Date() } })
   await prisma.onboardingAcknowledgement.create({ data: { userId: P.hire.id, kind: 'SECURITY_SOPS', statementText: 's', typedName: 'Cara' } })
   await prisma.onboardingPaymentDetails.create({ data: { userId: P.hire.id, method: 'WISE' } })
   await syncChecklist(prisma, NEW_HIRE_ID)
@@ -129,4 +129,66 @@ test('a late auto-tick needs a reason until one is added', ACADEMY_DB_TEST, asyn
 
 test('tickItem: an unknown item is a 404', ACADEMY_DB_TEST, async () => {
   await assert.rejects(tickItem(prisma, 'act-nope', P.hr.id, { done: true }), isAcademyError(404))
+})
+
+test('a profile LinkedIn URL alone does not tick; HR verification does', ACADEMY_DB_TEST, async () => {
+  await prisma.user.update({ where: { id: P.hire.id }, data: { linkedinUrl: 'https://example.test/in/cara' } })
+  await syncChecklist(prisma, NEW_HIRE_ID)
+  assert.equal((await itemFor('linkedin-update')).doneAt, null)
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { linkedinVerifiedAt: new Date() } })
+  await syncChecklist(prisma, NEW_HIRE_ID)
+  assert.ok((await itemFor('linkedin-update')).doneAt)
+})
+
+test('a manual tick followed by sync stays manual', ACADEMY_DB_TEST, async () => {
+  const item = await itemFor('setup-complete')
+  await tickItem(prisma, item.id, P.hr.id, { done: true }, new Date('2026-11-10T10:00:00.000Z'))
+  assert.equal(await syncChecklist(prisma, NEW_HIRE_ID, new Date('2026-11-11T10:00:00.000Z')) >= 0, true)
+  const row = await itemFor('setup-complete')
+  assert.equal(row.autoTicked, false)
+  assert.equal(row.doneById, P.hr.id)
+  assert.equal(row.doneAt?.toISOString(), '2026-11-10T10:00:00.000Z')
+})
+
+test('a manual tick landing between sync read and write is not overwritten', ACADEMY_DB_TEST, async () => {
+  const item = await itemFor('setup-complete')
+  const manualAt = new Date('2026-11-10T10:00:00.000Z')
+  const racing = new Proxy(prisma, {
+    get(target, prop, receiver) {
+      if (prop !== 'onboardingChecklistItem') return Reflect.get(target, prop, receiver)
+      return new Proxy(target.onboardingChecklistItem, {
+        get(model, method) {
+          if (method !== 'findMany') return Reflect.get(model, method).bind(model)
+          return async (args: Parameters<typeof model.findMany>[0]) => {
+            const rows = await model.findMany(args)
+            await tickItem(target, item.id, P.hr.id, { done: true }, manualAt)
+            return rows
+          }
+        },
+      })
+    },
+  })
+  const ticked = await syncChecklist(racing, NEW_HIRE_ID, new Date('2026-11-11T10:00:00.000Z'))
+  const row = await itemFor('setup-complete')
+  assert.equal(row.autoTicked, false)
+  assert.equal(row.doneById, P.hr.id)
+  assert.equal(row.doneAt?.toISOString(), manualAt.toISOString())
+  const others = await prisma.onboardingChecklistItem.count({ where: { newHireId: NEW_HIRE_ID, autoTicked: true } })
+  assert.equal(ticked, others)
+})
+
+test('a tick is judged against the recomputed due date', ACADEMY_DB_TEST, async () => {
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { onboardingDate: new Date('2027-01-12T00:00:00.000Z') } })
+  const now = new Date('2026-12-20T10:00:00.000Z')
+  await syncChecklist(prisma, NEW_HIRE_ID, now)
+  const row = await itemFor('setup-complete')
+  assert.equal(row.dueAt.toISOString(), '2027-01-05T00:00:00.000Z')
+  assert.equal(toItemState(row, now), 'DONE')
+})
+
+test('a row without a stored offset falls back to the template offset', ACADEMY_DB_TEST, async () => {
+  const item = await itemFor('contract-signed')
+  await prisma.onboardingChecklistItem.update({ where: { id: item.id }, data: { dueOffsetDays: null, dueAt: new Date('2026-01-01T00:00:00.000Z') } })
+  await syncChecklist(prisma, NEW_HIRE_ID)
+  assert.equal((await itemFor('contract-signed')).dueAt.toISOString(), '2026-11-17T00:00:00.000Z')
 })

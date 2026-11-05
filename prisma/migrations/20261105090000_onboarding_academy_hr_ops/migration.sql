@@ -1,5 +1,6 @@
 -- AlterTable
 ALTER TABLE "NewHire" ADD COLUMN     "academyReleasedById" TEXT,
+ADD COLUMN     "linkedinVerifiedAt" TIMESTAMP(3),
 ADD COLUMN     "securityCallAt" TIMESTAMP(3);
 
 -- AlterTable

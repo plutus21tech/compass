@@ -1620,6 +1620,7 @@ model NewHire {
   academyReleasedAt DateTime?
   academyReleasedById String?
   securityCallAt    DateTime?
+  linkedinVerifiedAt DateTime?
 
   teamMembers       NewHireTeamMember[]
   checklistItems    OnboardingChecklistItem[]

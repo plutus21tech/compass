@@ -58,7 +58,8 @@ async function gatherFacts(db: Db, newHireId: string): Promise<ChecklistFacts> {
     select: {
       userId: true,
       academyReleasedAt: true,
-      user: { select: { discordUsername: true, linkedinUrl: true, onboardingCompleted: true } },
+      linkedinVerifiedAt: true,
+      user: { select: { discordUsername: true, onboardingCompleted: true } },
     },
   })
   const { setup, readiness } = await loadSetup(db, newHireId)
@@ -76,7 +77,7 @@ async function gatherFacts(db: Db, newHireId: string): Promise<ChecklistFacts> {
     courseReleased: hire.academyReleasedAt !== null,
     discordSaved: Boolean(hire.user?.discordUsername?.trim()),
     securityAckSigned: acks > 0,
-    linkedinVerified: Boolean(hire.user?.linkedinUrl?.trim()),
+    linkedinVerified: hire.linkedinVerifiedAt !== null,
     paymentSetupDone: payments > 0,
     courseCompleted: hire.user?.onboardingCompleted === true,
   }
@@ -94,15 +95,13 @@ export async function syncChecklist(db: Db, newHireId: string, now: Date = new D
   let ticked = 0
   for (const item of open) {
     const event = item.templateItem.autoTickEvent
-    if (event && met.has(event)) {
-      await db.onboardingChecklistItem.update({ where: { id: item.id }, data: { doneAt: now, autoTicked: true } })
-      ticked += 1
-      continue
-    }
     const dueAt = checklistDueAt(hire.onboardingDate, item.dueOffsetDays ?? item.templateItem.dueOffsetDays)
-    if (dueAt.getTime() !== item.dueAt.getTime()) {
-      await db.onboardingChecklistItem.update({ where: { id: item.id }, data: { dueAt } })
-    }
+    const tick = event !== null && met.has(event)
+    if (!tick && dueAt.getTime() === item.dueAt.getTime()) continue
+    // Guarded on doneAt: null, so a manual tick that landed since the read is never overwritten.
+    const data = tick ? { dueAt, doneAt: now, autoTicked: true } : { dueAt }
+    const result = await db.onboardingChecklistItem.updateMany({ where: { id: item.id, doneAt: null }, data })
+    if (tick && result.count === 1) ticked += 1
   }
   return ticked
 }
