@@ -67,9 +67,13 @@ export async function paymentFacts(db: Db, userId: string): Promise<PaymentFacts
       contractType: true,
       payrollProfile: { select: { iban: true } },
       contractorPayoutDetails: { select: { id: true } },
+      onboardingPendingBank: { select: { id: true } },
     },
   })
-  if (user.contractType === 'PK_EMPLOYMENT') return { kind: 'PK', bankSaved: Boolean(user.payrollProfile?.iban) }
+  // Details held until HR creates the payroll profile count as saved.
+  if (user.contractType === 'PK_EMPLOYMENT') {
+    return { kind: 'PK', bankSaved: Boolean(user.payrollProfile?.iban) || user.onboardingPendingBank !== null }
+  }
   return { kind: 'OTHER', payoutSaved: user.contractorPayoutDetails !== null }
 }
 

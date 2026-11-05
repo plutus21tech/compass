@@ -416,6 +416,7 @@ model User {
   newHireTeamMemberships        NewHireTeamMember[]            @relation("NewHireTeamMemberUser")
   onboardingProgressHistory     OnboardingProgressHistory[]    @relation("OnboardingProgressHistoryUser")
   onboardingAcknowledgements    OnboardingAcknowledgement[]    @relation("OnboardingAcknowledgementUser")
+  onboardingPendingBank         OnboardingPendingBankDetails?  @relation("OnboardingPendingBankUser")
   onboardingKeyContacts         OnboardingKeyContact[]         @relation("OnboardingKeyContactUser")
   onboardingProgressAssigned    OnboardingProgress[]           @relation("OnboardingProgressAssignedBy")
   onboardingProgressUnlocked    OnboardingProgress[]           @relation("OnboardingProgressUnlockedEarlyBy")
@@ -3285,6 +3286,20 @@ model OnboardingAcknowledgement {
   user            User                @relation("OnboardingAcknowledgementUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, kind])
+}
+
+/// Bank details a PK hire saved before HR created their payroll profile. Every value is encrypted.
+model OnboardingPendingBankDetails {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  accountTitle String
+  bankName     String
+  branch       String
+  iban         String
+  submittedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation("OnboardingPendingBankUser", fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model OnboardingLibraryCard {

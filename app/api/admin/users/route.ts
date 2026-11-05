@@ -11,6 +11,8 @@ import {
 } from '@/lib/payroll/sensitive-fields'
 import { isPlutusEmail } from '@/lib/onboarding'
 import { isAcademyEnabled } from '@/lib/academy/flag'
+import { omitBankIdentifiers } from '@/lib/academy/bank'
+import { applyPendingBankDetailsSafely } from '@/lib/academy/service/fields'
 import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
 import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNewHireSetup } from '@/lib/academy/profile-input'
 import {
@@ -118,6 +120,8 @@ async function upsertPayrollProfileAndRevision(args: {
       isPayrollActive: payload.isPayrollActive ?? true,
     },
   })
+  // A hire who saved bank details before this profile existed has them waiting.
+  await applyPendingBankDetailsSafely(prisma, userId)
 
   const revision = payload.salaryRevision
   const lines = revision?.lines || []
@@ -276,7 +280,7 @@ export async function GET(_request: NextRequest) {
       academyEnabled,
       users: users.map((entry) => ({
         ...entry,
-        payrollProfile: decryptSensitivePayrollProfileFields(entry.payrollProfile),
+        payrollProfile: decryptSensitivePayrollProfileFields(omitBankIdentifiers(entry.payrollProfile)),
         ...(academyEnabled ? academyFields(entry) : {}),
       })),
       payrollMeta: {
