@@ -12,12 +12,19 @@ const ACADEMY_DIRS = [
   'components/academy',
   'app/api/onboarding/academy',
   'app/api/onboarding/payout',
-  'app/api/admin/onboarding/payout',
+  'app/api/onboarding/new-hires',
+  'app/api/admin/onboarding',
+  'app/(hr)/admin/onboarding',
+  'app/(evaluator)/onboarding',
 ]
 const PAYROLL_DIRS = ['app/api/payroll', 'lib/payroll']
 
-const PAYROLL_IMPORT = /['"](?:@\/lib\/|(?:\.\.?\/)+(?:lib\/)?)payroll(?:\/[^'"]*)?['"]/
-const PAYROLL_DATA = /\b(?:payroll[A-Z]\w*|isPayrollActive|PAYROLL_\w+)\b/
+const PAYROLL_IMPORT = /['"](?:@\/lib\/|(?:\.\.?\/)+(?:lib\/)?)payroll(?:\/[^'"]*)?['"]/i
+// Any identifier built on "payroll", in any case. The plain English word, as in a comment, is fine.
+const PAYROLL_DATA = /payroll\w/i
+
+const ALLOWED_MODELS = ['payrollEmployeeProfile', 'payrollPublicHoliday', 'payrollTravelAllowanceTier']
+const ALLOWED_COLUMNS = ['holidayDate', 'isPayrollActive', 'maxKm', 'minKm', 'monthlyRate', 'transportMode']
 const ACADEMY_IMPORT = /['"](?:@\/lib\/|(?:\.\.?\/)+(?:lib\/)?)academy(?:\/[^'"]*)?['"]/
 
 function sourceFiles(dir: string): string[] {
@@ -32,6 +39,19 @@ const posix = (path: string): string => path.split(sep).join('/')
 const read = (path: string): string => readFileSync(join(ROOT, path), 'utf8')
 const seedFiles = (): string[] =>
   readdirSync(join(ROOT, 'prisma')).filter((name) => /^seed-academy.*\.ts$/.test(name)).map((name) => `prisma/${name}`)
+
+const sorted = (values: Iterable<string>): string[] => [...new Set(values)].sort()
+
+const modelsUsed = (source: string): string[] => sorted([...source.matchAll(/\bdb\.([$\w]+)/g)].map((match) => match[1]))
+
+/** Every key of every select. A nested select or a value other than true shows up as a key that isn't allowed. */
+function columnsSelected(source: string): string[] {
+  const bodies = [...source.matchAll(/\bselect: \{([^}]*)\}/g)].map((match) => match[1])
+  return sorted(bodies.flatMap((body) => body.split(',').map((entry) => entry.trim()).filter(Boolean)).map((entry) => {
+    const column = /^(\w+): true$/.exec(entry)
+    return column ? column[1] : entry
+  }))
+}
 
 const academyFiles = (): string[] => [...ACADEMY_DIRS.flatMap(sourceFiles), ...seedFiles()].map(posix)
 
@@ -48,12 +68,20 @@ test('shared-reads.ts imports nothing from payroll and writes nothing', () => {
   assert.equal(/\.(?:create|createMany|update|updateMany|upsert|delete|deleteMany)\(/.test(source), false)
 })
 
-test('shared-reads.ts reads no person\u2019s pay or bank data, and selects only named columns', () => {
+test('shared-reads.ts touches exactly the three allowed models', () => {
+  assert.deepEqual(modelsUsed(read(SHARED_READS)), ALLOWED_MODELS)
+})
+
+test('shared-reads.ts selects only the allowed columns, on every read', () => {
   const source = read(SHARED_READS)
-  assert.equal(/\b(?:iban|branch|bankName|accountTitle|accountNumber|cnicNumber|salary\w*|payslip\w*)\b/i.test(source), false)
+  assert.deepEqual(columnsSelected(source), ALLOWED_COLUMNS)
   const reads = source.match(/\.(?:findMany|findUnique|findFirst)\(/g) ?? []
   const selects = source.match(/\bselect: \{/g) ?? []
-  assert.equal(reads.length > 0 && selects.length === reads.length, true)
+  assert.equal(selects.length, reads.length)
+})
+
+test('shared-reads.ts runs no raw SQL', () => {
+  assert.equal(/\$(?:query|execute)Raw/.test(read(SHARED_READS)), false)
 })
 
 test('no payroll code imports the Academy', () => {
@@ -66,5 +94,9 @@ test('the guard patterns catch what they are for', () => {
   assert.ok(PAYROLL_IMPORT.test("from '../../payroll/sensitive-fields'"))
   assert.ok(PAYROLL_DATA.test('db.payrollEmployeeProfile.findUnique'))
   assert.ok(PAYROLL_DATA.test('select: { payrollProfile: { select: { iban: true } } }'))
+  assert.ok(PAYROLL_DATA.test('FROM "PayrollEmployeeProfile"'))
+  assert.ok(PAYROLL_DATA.test("import type { PayrollEmployeeProfile } from '@prisma/client'"))
+  assert.ok(PAYROLL_DATA.test('PAYROLL_FIELD_ENCRYPTION_KEY'))
+  assert.equal(PAYROLL_DATA.test('OA enters them into payroll by hand.'), false)
   assert.ok(ACADEMY_IMPORT.test("from '@/lib/academy/service/fields'"))
 })
