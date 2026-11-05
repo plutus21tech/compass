@@ -101,7 +101,10 @@ export interface DrawerAcknowledgement {
 }
 
 export interface DrawerLinkedin {
+  /** The link the hire submitted in Module 8. */
   url: string | null
+  /** The link already on their profile, if any. Verify replaces it with `url`. */
+  profileUrl: string | null
   /** True only while the link on file is the one HR verified. */
   verified: boolean
   verifiedAt: string | null

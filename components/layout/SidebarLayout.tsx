@@ -11,8 +11,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { BookOpen, CalendarCheck, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
-import { withAcademyNav, withGroupItem, withItemPatched, withLockedHandbookNav, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
+import { BookOpen, CalendarCheck, CreditCard, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
+import { withAcademyNav, withGroupItem, withOaPaymentNav, withItemPatched, withLockedHandbookNav, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
 import { shouldRedirectLockedPage } from '@/lib/academy/lockout'
 
 // Context so child pages can access user info
@@ -200,7 +200,11 @@ export function SidebarLayout({
   const finalSidebarConfig =
     baseSidebarConfig === onboardingSidebarConfig
       ? withLockedHandbookNav(sidebarConfigWithSecurity, academyEnabled === true, BookOpen)
-      : withAcademyNav(sidebarConfigWithSecurity, academyEnabled === true, { library: BookOpen, contacts: Users, links: Link2 })
+      : withOaPaymentNav(
+          withAcademyNav(sidebarConfigWithSecurity, academyEnabled === true, { library: BookOpen, contacts: Users, links: Link2 }),
+          academyEnabled === true && user?.role === 'OA',
+          CreditCard,
+        )
 
   return (
     <LayoutUserContext.Provider value={user}>

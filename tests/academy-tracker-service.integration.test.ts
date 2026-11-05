@@ -357,8 +357,11 @@ test('unlockModule leaves a finished row alone and refuses an unknown module', A
 test('verifyLinkedin saves the URL and the next sync ticks linkedin-update', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await openLinkedinModule()
+  await prisma.user.update({ where: { id: HIRE_ID }, data: { linkedinUrl: 'https://www.linkedin.com/in/cara-old-profile' } })
   await syncChecklist(prisma, NEW_HIRE_ID)
   assert.equal((await itemFor('linkedin-update')).doneAt, null)
+  const before = (await loadDrawer(prisma, HR, NEW_HIRE_ID)).linkedin
+  assert.deepEqual({ url: before.url, profileUrl: before.profileUrl, verified: before.verified }, { url: LINKEDIN, profileUrl: 'https://www.linkedin.com/in/cara-old-profile', verified: false })
 
   await verifyLinkedin(prisma, NEW_HIRE_ID, P.hr.id)
   const user = await prisma.user.findUniqueOrThrow({ where: { id: HIRE_ID }, select: { linkedinUrl: true } })
@@ -369,7 +372,7 @@ test('verifyLinkedin saves the URL and the next sync ticks linkedin-update', ACA
   await syncChecklist(prisma, NEW_HIRE_ID)
   assert.ok((await itemFor('linkedin-update')).doneAt)
   const drawer = await loadDrawer(prisma, HR, NEW_HIRE_ID)
-  assert.deepEqual({ url: drawer.linkedin.url, verified: drawer.linkedin.verified }, { url: LINKEDIN, verified: true })
+  assert.deepEqual({ url: drawer.linkedin.url, profileUrl: drawer.linkedin.profileUrl, verified: drawer.linkedin.verified }, { url: LINKEDIN, profileUrl: LINKEDIN, verified: true })
 })
 
 test('verifying an already verified URL changes nothing; a changed URL can be verified again', ACADEMY_DB_TEST, async () => {

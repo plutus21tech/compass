@@ -271,8 +271,10 @@ async function drawerAcknowledgements(db: PrismaClient, userId: string): Promise
 function drawerLinkedin(hire: HireRow, state: OnboardingProgress['state'] | undefined): DrawerLinkedin {
   const parsed = linkedinUrlSchema.safeParse(parseProgressState(state).linkedinUrl)
   const url = parsed.success ? parsed.data : null
+  const profile = linkedinUrlSchema.safeParse(hire.user?.linkedinUrl)
   return {
     url,
+    profileUrl: profile.success ? profile.data : null,
     verified: url !== null && hire.linkedinVerifiedAt !== null && hire.user?.linkedinUrl === url,
     verifiedAt: hire.linkedinVerifiedAt?.toISOString() ?? null,
   }

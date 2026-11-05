@@ -73,3 +73,9 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
   ]
   return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), config)
 }
+
+/** O&A's "Payment details" page: hires' saved payout details, masked. Academy flag on, O&A only. */
+export function withOaPaymentNav(config: SidebarConfig, show: boolean, icon: NavItem['icon']): SidebarConfig {
+  if (!show) return config
+  return withItemAfter(config, { label: 'Payment details', href: '/oa/payment-details', icon }, '/handbook')
+}
