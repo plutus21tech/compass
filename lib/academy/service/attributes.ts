@@ -18,7 +18,10 @@ export async function getPersonAttributes(db: Db, userId: string): Promise<Perso
 /** Validates the whole set (a ZodError on bad input) and saves it. HR-only is enforced by the caller. */
 export async function setPersonAttributes(db: Db, userId: string, input: unknown): Promise<PersonAttributes> {
   const attributes = personAttributesSchema.parse(input)
-  return db.user.update({ where: { id: userId }, data: attributes, select: ATTRIBUTE_SELECT })
+  const saved = await db.user.update({ where: { id: userId }, data: attributes, select: ATTRIBUTE_SELECT })
+  // Held bank details are for Pakistan employees only: a hire moved to anything else must not keep them.
+  if (saved.contractType !== 'PK_EMPLOYMENT') await db.onboardingPendingBankDetails.deleteMany({ where: { userId } })
+  return saved
 }
 
 /** Links a new hire's setup to the freshly created account by copying the attributes. */

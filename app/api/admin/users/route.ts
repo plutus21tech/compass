@@ -11,7 +11,7 @@ import {
 } from '@/lib/payroll/sensitive-fields'
 import { isPlutusEmail } from '@/lib/onboarding'
 import { isAcademyEnabled } from '@/lib/academy/flag'
-import { omitBankIdentifiers } from '@/lib/academy/bank'
+import { omitBankIdentifiers, withoutBlankBankLabels } from '@/lib/academy/bank'
 import { applyPendingBankDetailsSafely } from '@/lib/academy/service/fields'
 import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
 import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNewHireSetup } from '@/lib/academy/profile-input'
@@ -95,7 +95,7 @@ async function upsertPayrollProfileAndRevision(args: {
   const { userId, actorId, payload } = args
   if (!payload) return
 
-  const profileData = encryptSensitivePayrollProfileFields({
+  const encryptedProfileData = encryptSensitivePayrollProfileFields({
     departmentId: payload.payrollDepartmentId || null,
     designation: payload.designation || null,
     officialEmail: payload.officialEmail || null,
@@ -110,6 +110,9 @@ async function upsertPayrollProfileAndRevision(args: {
     accountNumber: payload.accountNumber || null,
     ...(typeof payload.isPayrollActive === 'boolean' ? { isPayrollActive: payload.isPayrollActive } : {}),
   })
+
+  // With the Academy on, a blank bank name or account title means no change (the form can be stale).
+  const profileData = withoutBlankBankLabels(encryptedProfileData, payload, isAcademyEnabled())
 
   const profile = await prisma.payrollEmployeeProfile.upsert({
     where: { userId },

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client'
+import type { OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
 import {
   decryptSensitiveValue,
   encryptPayrollField,
@@ -66,13 +66,49 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
   }
 
   const onProfile = Object.fromEntries(BANK_FIELDS.map((f) => [f, sealed(encryptPayrollField(f, details[f]))]))
-  const { count } = await db.payrollEmployeeProfile.updateMany({ where: { userId }, data: onProfile })
-  if (count > 0) return { held: false }
-
   const held = Object.fromEntries(BANK_FIELDS.map((f) => [f, sealed(encryptSensitiveValue(pendingLabel(f), details[f]))])) as Record<BankField, string>
-  await db.onboardingPendingBankDetails.upsert({ where: { userId }, create: { userId, ...held }, update: held })
+
+  const onProfileNow = await db.$transaction(async (tx) => {
+    await assertBankEditable(tx, userId)
+    await lockPendingRow(tx, userId)
+    const { count } = await tx.payrollEmployeeProfile.updateMany({ where: { userId }, data: onProfile })
+    if (count > 0) {
+      // A held copy is older than what was just written and must never overwrite it later.
+      await tx.onboardingPendingBankDetails.deleteMany({ where: { userId } })
+      return true
+    }
+    await tx.onboardingPendingBankDetails.upsert({ where: { userId }, create: { userId, ...held }, update: held })
+    return false
+  }, COURSE_TX_OPTIONS)
+  console.info('[academy] bank details saved', { userId })
+  if (onProfileNow) return { held: false }
   // HR may have created the profile while this ran; if so the held row moves straight across.
   return { held: !(await applyPendingBankDetails(db, userId)) }
+}
+
+const BANK_MODULE_SLUG = 'getting-paid'
+const BANK_LOCKED_MESSAGE = 'Your bank details are saved. To change them, ask HR.'
+
+/** Bank details change only while Module 11 is open and not completed. Locks that row for the transaction. */
+async function assertBankEditable(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const refusal = new AcademyError(BANK_LOCKED_MESSAGE, 409)
+  let row: OnboardingProgress
+  let index: number
+  try {
+    const found = findCourseModule(await listCourseModules(tx), BANK_MODULE_SLUG)
+    index = found.index
+    row = await lockProgressRow(tx, userId, found.module.id)
+  } catch (error) {
+    if (error instanceof AcademyError && error.status === 404) throw refusal
+    throw error
+  }
+  assertModuleOpen(row, index)
+  if (row.status === 'COMPLETED') throw refusal
+}
+
+/** Apply and save take locks in the same order (held row, then profile), so neither can overwrite a newer write. */
+async function lockPendingRow(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "OnboardingPendingBankDetails" WHERE "userId" = ${userId} FOR UPDATE`
 }
 
 /**
@@ -81,8 +117,15 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
  */
 export async function applyPendingBankDetails(db: PrismaClient, userId: string): Promise<boolean> {
   return db.$transaction(async (tx) => {
+    await lockPendingRow(tx, userId)
     const pending = await tx.onboardingPendingBankDetails.findUnique({ where: { userId } })
     if (!pending) return false
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { contractType: true } })
+    if (user?.contractType !== 'PK_EMPLOYMENT') {
+      // Held details are for Pakistan employees only; someone moved off that contract keeps none.
+      await tx.onboardingPendingBankDetails.deleteMany({ where: { id: pending.id } })
+      return false
+    }
     const profile = await tx.payrollEmployeeProfile.findUnique({ where: { userId }, select: { id: true } })
     if (!profile) return false
     const data = Object.fromEntries(

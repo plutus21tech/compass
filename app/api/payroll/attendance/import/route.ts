@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManagePayroll, canEditPayrollMaster } from '@/lib/permissions'
+import { applyPendingBankDetailsSafely } from '@/lib/academy/service/fields'
 
 export const runtime = 'nodejs'
 
@@ -236,6 +237,8 @@ export async function POST(request: NextRequest) {
             isPayrollActive: true,
           },
         })
+        // The upsert may have just created the profile that held bank details were waiting for.
+        await applyPendingBankDetailsSafely(prisma, userId)
         profilesUpdated++
 
         if (!periodId) continue

@@ -74,3 +74,23 @@ export function omitBankIdentifiers<T extends { iban?: unknown; branch?: unknown
   const { iban: _iban, branch: _branch, ...rest } = profile
   return rest as never
 }
+
+const isBlank = (value: unknown): boolean =>
+  value === undefined || value === null || (typeof value === 'string' && value.trim() === '')
+
+/**
+ * The HR profile form is loaded once and can be stale. With the Academy on, a blank or missing
+ * bankName or accountTitle means "no change", so it cannot wipe what a hire saved meanwhile. With it
+ * off the data is returned as it is. Returns a new object.
+ */
+export function withoutBlankBankLabels<T extends { bankName?: unknown; accountTitle?: unknown }>(
+  data: T,
+  payload: { bankName?: unknown; accountTitle?: unknown },
+  academyEnabled: boolean,
+): T {
+  if (!academyEnabled) return data
+  const next = { ...data }
+  if (isBlank(payload.bankName)) delete next.bankName
+  if (isBlank(payload.accountTitle)) delete next.accountTitle
+  return next
+}
