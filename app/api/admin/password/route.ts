@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession, type SafeUser } from '@/lib/auth'
 import { isAcademyEnabled } from '@/lib/academy/flag'
-import { blocksActionOnAnotherUser } from '@/lib/academy/lockout'
+import { blocksActionOnAnotherUser, isLockedUser } from '@/lib/academy/lockout'
 import { isAdminRole } from '@/lib/permissions'
 import bcrypt from 'bcryptjs'
+
+function finishOnboardingFirst(): NextResponse {
+  return NextResponse.json({ error: 'Finish your onboarding first.' }, { status: 403 })
+}
 
 // getSession lets a locked user through here for their own password, so the route refuses the rest.
 function lockedRefusal(currentUser: SafeUser, targetUserId: unknown): NextResponse | null {
@@ -14,7 +18,7 @@ function lockedRefusal(currentUser: SafeUser, targetUserId: unknown): NextRespon
     actorId: currentUser.id,
     targetUserId,
   })
-  return blocked ? NextResponse.json({ error: 'Finish your onboarding first.' }, { status: 403 }) : null
+  return blocked ? finishOnboardingFirst() : null
 }
 
 // POST - Set or reset password (Admin only, or user changing their own)
@@ -92,15 +96,17 @@ export async function DELETE(request: NextRequest) {
   try {
     const currentUser = await getSession()
 
+    // Removing a password asks for no current password, so a locked user can't do it even to themselves.
+    if (currentUser && isLockedUser({ enabled: isAcademyEnabled(), onboardingCompleted: currentUser.onboardingCompleted })) {
+      return finishOnboardingFirst()
+    }
+
     if (!currentUser || !isAdminRole(currentUser.role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get('userId')
-
-    const refusal = lockedRefusal(currentUser, userId)
-    if (refusal) return refusal
 
     if (!userId) {
       return NextResponse.json({ error: 'User ID required' }, { status: 400 })

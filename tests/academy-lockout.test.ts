@@ -8,7 +8,9 @@ import { withLockedHandbookNav } from '../components/layout/sidebar-nav'
 import {
   ACADEMY_PATH_HEADER,
   blocksActionOnAnotherUser,
+  isLockedUser,
   isPathAllowedWhileLocked,
+  quizResetUserData,
   readLockoutPath,
   shouldBlockSession,
   shouldRedirectLockedPage,
@@ -173,6 +175,21 @@ test('blocksActionOnAnotherUser: a completed user is unaffected', () => {
 
 test('blocksActionOnAnotherUser: flag off changes nothing', () => {
   assert.equal(blocksActionOnAnotherUser({ enabled: false, onboardingCompleted: false, actorId: 'hr', targetUserId: 'someone-else' }), false)
+})
+
+test('isLockedUser: decides the password DELETE, which is refused for a locked user whatever the target', () => {
+  assert.equal(isLockedUser({ enabled: true, onboardingCompleted: false }), true)
+  assert.equal(isLockedUser({ enabled: true, onboardingCompleted: true }), false)
+  assert.equal(isLockedUser({ enabled: false, onboardingCompleted: false }), false)
+  assert.equal(isLockedUser({ enabled: false, onboardingCompleted: true }), false)
+})
+
+test('quizResetUserData: flag on leaves onboardingCompleted out, so a reset can never lock anyone', () => {
+  assert.equal('onboardingCompleted' in quizResetUserData(true), false)
+})
+
+test('quizResetUserData: flag off keeps the legacy reset', () => {
+  assert.deepEqual(quizResetUserData(false), { onboardingCompleted: false })
 })
 
 test('readLockoutPath returns the header, and null when it is absent or unreadable', async () => {

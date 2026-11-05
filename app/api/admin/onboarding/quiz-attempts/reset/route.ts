@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { isAcademyEnabled } from '@/lib/academy/flag'
+import { quizResetUserData } from '@/lib/academy/lockout'
 import { canManageOnboarding } from '@/lib/permissions'
 
 export async function POST(request: NextRequest) {
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest) {
       }),
       prisma.user.update({
         where: { id: userId },
-        data: { onboardingCompleted: false },
+        data: quizResetUserData(isAcademyEnabled()),
       }),
       prisma.newHire.updateMany({
         where: { userId },
