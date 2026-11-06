@@ -5,7 +5,8 @@ import { AcademyError } from '../lib/academy/errors'
 import { MIN_QUIZ_QUESTIONS } from '../lib/academy/quiz'
 import { createQuestion, listQuestions, reactivateQuestion, retireQuestion, updateQuestion } from '../lib/academy/service/quiz-editor'
 import { createTemplateItem, updateTemplateItem } from '../lib/academy/service/checklist-template'
-import { createChecklist } from '../lib/academy/service/checklist'
+import { createChecklist, listChecklist } from '../lib/academy/service/checklist'
+import { tickChecklistItem } from '../lib/academy/service/tracker-actions'
 import { readAcademyAttempts } from '../lib/academy/service/quiz'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import { NEW_HIRE_ID, cleanCourse, createReadyHire } from './helpers/academy-course-fixtures'
@@ -22,9 +23,15 @@ const input = (n: number) => ({
   questionText: `${PREFIX}question ${n}`, options: ['Yes', 'No'], correctAnswer: 'Yes', explanation: `Because ${n}.`,
 })
 
+/** Questions that were active before the first park, so `after` can switch them back on. */
+let parkedIds: string[] | null = null
+
 /** Exactly `count` usable questions, all ours; any seeded bank questions are parked inactive. */
 async function bankOf(count: number): Promise<string[]> {
   await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { startsWith: PREFIX } } })
+  if (parkedIds === null) {
+    parkedIds = (await prisma.onboardingQuizQuestion.findMany({ where: { isActive: true }, select: { id: true } })).map((q) => q.id)
+  }
   await prisma.onboardingQuizQuestion.updateMany({ data: { isActive: false } })
   const ids: string[] = []
   for (let i = 0; i < count; i += 1) ids.push((await createQuestion(prisma, input(i))).id)
@@ -46,6 +53,7 @@ after(async () => {
   if (WEEKLY_DB_READY) {
     await prisma.onboardingQuizQuestion.deleteMany({ where: { questionText: { startsWith: PREFIX } } })
     await dropOurTemplateItems()
+    if (parkedIds) await prisma.onboardingQuizQuestion.updateMany({ where: { id: { in: parkedIds } }, data: { isActive: true } })
     await cleanCourse()
   }
   await prisma.$disconnect()
@@ -113,17 +121,48 @@ test('editing keeps the order index; the list counts usable questions', ACADEMY_
   await assert.rejects(updateQuestion(prisma, 'nope', input(1)), refuses(404))
 })
 
-test('a template edit leaves existing checklist rows alone', ACADEMY_DB_TEST, async () => {
-  const row = (await prisma.onboardingChecklistItem.findMany({ where: { newHireId: NEW_HIRE_ID }, include: { templateItem: true } }))[0]
-  const before = { dueAt: row.dueAt, dueOffsetDays: row.dueOffsetDays }
-  await updateTemplateItem(prisma, row.templateItemId, {
-    title: row.templateItem.title, ownerRole: row.templateItem.ownerRole, dueOffsetDays: row.templateItem.dueOffsetDays - 20,
-    isActive: true, orderIndex: row.templateItem.orderIndex,
+test('a template edit of title, owner and order leaves an existing row alone, and the next hire gets the new values', ACADEMY_DB_TEST, async () => {
+  const row = await prisma.onboardingChecklistItem.findFirstOrThrow({
+    where: { newHireId: NEW_HIRE_ID, templateItem: { key: 'hr-call' } },
+    include: { templateItem: true },
   })
-  const after = await prisma.onboardingChecklistItem.findUniqueOrThrow({ where: { id: row.id } })
-  assert.equal(after.dueAt.toISOString(), before.dueAt.toISOString())
-  assert.equal(after.dueOffsetDays, before.dueOffsetDays)
-  await prisma.onboardingChecklistTemplateItem.update({ where: { id: row.templateItemId }, data: { dueOffsetDays: row.templateItem.dueOffsetDays } })
+  const t = row.templateItem
+  const oa = { id: P.oa.id, role: P.oa.role }
+  try {
+    await updateTemplateItem(prisma, t.id, { title: 'act-ed Renamed call', ownerRole: 'OA', dueOffsetDays: t.dueOffsetDays, isActive: true, orderIndex: 900 })
+    const items = await listChecklist(prisma, NEW_HIRE_ID)
+    const after = items.find((i) => i.key === 'hr-call')
+    assert.equal(after?.title, t.title)
+    assert.equal(after?.ownerRole, 'HR')
+    assert.notEqual(items.at(-1)?.key, 'hr-call')
+    const stored = await prisma.onboardingChecklistItem.findUniqueOrThrow({ where: { id: row.id } })
+    assert.equal(stored.ownerRole, 'HR')
+    assert.equal(stored.orderIndex, t.orderIndex)
+    // OA is not the owner of the existing row, so OA cannot tick it.
+    await assert.rejects(tickChecklistItem(prisma, oa, row.id, { done: true }), refuses(403))
+    // A hire who has no checklist yet gets the new values.
+    await prisma.onboardingChecklistItem.deleteMany({ where: { newHireId: NEW_HIRE_ID } })
+    await createChecklist(prisma, NEW_HIRE_ID)
+    const fresh = await prisma.onboardingChecklistItem.findFirstOrThrow({ where: { newHireId: NEW_HIRE_ID, templateItem: { key: 'hr-call' } } })
+    assert.equal(fresh.title, 'act-ed Renamed call')
+    assert.equal(fresh.ownerRole, 'OA')
+    assert.equal(fresh.orderIndex, 900)
+  } finally {
+    await prisma.onboardingChecklistTemplateItem.update({ where: { id: t.id }, data: { title: t.title, ownerRole: t.ownerRole, orderIndex: t.orderIndex } })
+  }
+})
+
+test('retire turns a serialization failure into a plain 409', ACADEMY_DB_TEST, async () => {
+  const lost = Object.assign(new Error('write conflict'), { code: 'P2034' })
+  const fake = { $transaction: async () => { throw lost } } as unknown as typeof prisma
+  await assert.rejects(retireQuestion(fake, 'x'), refuses(409, /^Someone else just changed the quiz\. Reload and try again\.$/))
+})
+
+test('a question with stale legacy content cannot be brought back', ACADEMY_DB_TEST, async () => {
+  const ids = await bankOf(MIN_QUIZ_QUESTIONS + 1)
+  await retireQuestion(prisma, ids[0])
+  await prisma.onboardingQuizQuestion.update({ where: { id: ids[0] }, data: { optionsJson: ['Only one'], correctAnswer: 'Gone' } })
+  await assert.rejects(reactivateQuestion(prisma, ids[0]), refuses(400, /needs fixing/))
 })
 
 test('a new template item reaches the next hire only, with a unique key from the title', ACADEMY_DB_TEST, async () => {

@@ -6,6 +6,7 @@ type Db = PrismaClient | Prisma.TransactionClient
 
 /** Orders at and above this are retired legacy rows (see prisma/seed-academy.ts). */
 const RETIRED_RANGE_START = 1000
+export const QUIZ_CHANGED_MESSAGE = 'Someone else just changed the quiz. Reload and try again.'
 
 const isUsable = (row: Pick<OnboardingQuizQuestion, 'isActive' | 'retiredAt' | 'explanation'>) =>
   row.isActive && row.retiredAt === null && Boolean(row.explanation?.trim())
@@ -54,6 +55,16 @@ export async function updateQuestion(db: PrismaClient, id: string, input: unknow
 
 /** Soft delete: the row stays so old reviews still resolve. Refused if the quiz would drop below the minimum. */
 export async function retireQuestion(db: PrismaClient, id: string): Promise<OnboardingQuizQuestion> {
+  try {
+    return await retireInTransaction(db, id)
+  } catch (error) {
+    // Serializable: two retires at once can make one lose with P2034.
+    if ((error as { code?: string }).code === 'P2034') throw new AcademyError(QUIZ_CHANGED_MESSAGE, 409)
+    throw error
+  }
+}
+
+function retireInTransaction(db: PrismaClient, id: string): Promise<OnboardingQuizQuestion> {
   return db.$transaction(
     async (tx) => {
       const rows = await tx.onboardingQuizQuestion.findMany()
@@ -70,5 +81,18 @@ export async function reactivateQuestion(db: PrismaClient, id: string): Promise<
   const row = await db.onboardingQuizQuestion.findUnique({ where: { id } })
   if (!row) throw new AcademyError('Question not found', 404)
   if (!row.explanation?.trim()) throw new AcademyError('Add an explanation before bringing this question back.', 400)
+  // Stale legacy content must not return: it has to pass today's rules.
+  const checked = questionInputSchema.safeParse({
+    questionText: row.questionText,
+    options: Array.isArray(row.optionsJson) ? row.optionsJson : [],
+    correctAnswer: row.correctAnswer,
+    explanation: row.explanation,
+    valueKey: row.valueKey,
+    videoChapterKey: row.videoChapterKey,
+  })
+  if (!checked.success) {
+    const problems = checked.error.issues.map((i) => i.message).join(' ')
+    throw new AcademyError(`This question needs fixing before it can come back. ${problems}`, 400)
+  }
   return db.onboardingQuizQuestion.update({ where: { id }, data: { isActive: true, retiredAt: null } })
 }

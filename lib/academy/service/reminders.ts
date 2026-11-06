@@ -171,8 +171,8 @@ async function checklistNotices({ job, hire, hireName, date }: HireTurn): Promis
   if (!hire.teamLeadForm?.leadInputDueAt) return []
   const open = await job.db.onboardingChecklistItem.findMany({
     where: { newHireId: hire.id, doneAt: null },
-    select: { dueAt: true, templateItem: { select: { key: true, title: true, ownerRole: true, autoTickEvent: true } } },
-    orderBy: { templateItem: { orderIndex: 'asc' } },
+    select: { dueAt: true, title: true, ownerRole: true, templateItem: { select: { key: true, autoTickEvent: true } } },
+    orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
   })
   const due = open.filter((item) => storedDate(item.dueAt) <= date)
   const linkedinSubmitted = due.some((item) => item.templateItem.autoTickEvent === 'LINKEDIN_VERIFIED')
@@ -181,13 +181,13 @@ async function checklistNotices({ job, hire, hireName, date }: HireTurn): Promis
   const chasable = due.filter((item) => isOwnerChasable(item.templateItem, linkedinSubmitted))
 
   const outcomes: Outcome[] = []
-  for (const ownerRole of new Set(chasable.map((item) => item.templateItem.ownerRole))) {
+  for (const ownerRole of new Set(chasable.map((item) => item.ownerRole))) {
     const to = ownerAddresses(job, hire, ownerRole)
     const items = chasable
-      .filter((item) => item.templateItem.ownerRole === ownerRole)
+      .filter((item) => item.ownerRole === ownerRole)
       .map((item) => {
         const dueDate = storedDate(item.dueAt)
-        return { title: item.templateItem.title, dueDate, overdue: dueDate < date }
+        return { title: item.title, dueDate, overdue: dueDate < date }
       })
     outcomes.push(
       to.length === 0

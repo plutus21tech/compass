@@ -4,7 +4,20 @@ ADD COLUMN     "linkedinVerifiedAt" TIMESTAMP(3),
 ADD COLUMN     "securityCallAt" TIMESTAMP(3);
 
 -- AlterTable
-ALTER TABLE "OnboardingChecklistItem" ADD COLUMN     "dueOffsetDays" INTEGER;
+ALTER TABLE "OnboardingChecklistItem" ADD COLUMN     "dueOffsetDays" INTEGER,
+ADD COLUMN     "orderIndex" INTEGER,
+ADD COLUMN     "ownerRole" "ChecklistOwnerRole",
+ADD COLUMN     "title" TEXT;
+
+-- Existing rows take their template's current values, then the columns become required.
+UPDATE "OnboardingChecklistItem" AS i
+SET "title" = t."title", "ownerRole" = t."ownerRole", "orderIndex" = t."orderIndex"
+FROM "OnboardingChecklistTemplateItem" AS t
+WHERE t."id" = i."templateItemId";
+
+ALTER TABLE "OnboardingChecklistItem" ALTER COLUMN "orderIndex" SET NOT NULL,
+ALTER COLUMN "ownerRole" SET NOT NULL,
+ALTER COLUMN "title" SET NOT NULL;
 
 -- AlterTable
 ALTER TABLE "OnboardingModule" ADD COLUMN     "draftBlocks" JSONB;

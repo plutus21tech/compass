@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
+import { AcademyError } from '@/lib/academy/errors'
 import { isAcademyEnabled } from '@/lib/academy/flag'
 import { academyErrorResponse, guardAcademyMutation } from '@/lib/academy/http'
 import { reactivateQuestion, retireQuestion, updateQuestion } from '@/lib/academy/service/quiz-editor'
@@ -32,6 +33,9 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (isAcademyEnabled()) {
       await guardAcademyMutation(request, user.id)
       const keys = body && typeof body === 'object' ? Object.keys(body) : []
+      if (keys.includes('isActive') && keys.length > 1) {
+        throw new AcademyError('Send isActive on its own, or edit the question without it.', 400)
+      }
       const toggle = keys.length === 1 && typeof body.isActive === 'boolean'
       const question = toggle
         ? await (body.isActive ? reactivateQuestion(prisma, id) : retireQuestion(prisma, id))

@@ -80,7 +80,7 @@ export function QuizQuestionForm({ question, onSaved, onCancel }: QuizQuestionFo
       <h2 className="text-lg font-medium">{question ? 'Edit question' : 'New question'}</h2>
       {question && (
         <p className="text-sm text-muted-foreground">
-          Changes apply to new attempts. Past attempts keep the answer that was right at the time.
+          Changes apply to new attempts.
         </p>
       )}
       <ErrorNotice message={error} />

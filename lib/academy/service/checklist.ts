@@ -21,8 +21,8 @@ function toView(row: ItemRow, now: Date): ChecklistItemView {
   return {
     id: row.id,
     key: row.templateItem.key,
-    title: row.templateItem.title,
-    ownerRole: row.templateItem.ownerRole as ChecklistOwnerRole,
+    title: row.title,
+    ownerRole: row.ownerRole as ChecklistOwnerRole,
     autoTickEvent: row.templateItem.autoTickEvent,
     dueAt: row.dueAt.toISOString(),
     doneAt: row.doneAt?.toISOString() ?? null,
@@ -47,13 +47,16 @@ async function createFirstChecklists(db: Db, candidates: ReadonlyArray<{ id: str
   if (hires.length === 0) return 0
   const templates = await db.onboardingChecklistTemplateItem.findMany({
     where: { isActive: true },
-    select: { id: true, dueOffsetDays: true },
+    select: { id: true, title: true, ownerRole: true, orderIndex: true, dueOffsetDays: true },
   })
   const created = await db.onboardingChecklistItem.createMany({
     data: hires.flatMap((hire) =>
       templates.map((t) => ({
         newHireId: hire.id,
         templateItemId: t.id,
+        title: t.title,
+        ownerRole: t.ownerRole,
+        orderIndex: t.orderIndex,
         dueOffsetDays: t.dueOffsetDays,
         dueAt: checklistDueAt(hire.onboardingDate, t.dueOffsetDays),
       })),
@@ -169,7 +172,7 @@ export async function listChecklist(db: Db, newHireId: string, now: Date = new D
   const rows = await db.onboardingChecklistItem.findMany({
     where: { newHireId },
     include: WITH_TEMPLATE,
-    orderBy: { templateItem: { orderIndex: 'asc' } },
+    orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
   })
   return rows.map((row) => toView(row, now))
 }

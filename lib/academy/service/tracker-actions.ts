@@ -84,10 +84,10 @@ export async function tickChecklistItem(
 ): Promise<ChecklistItemView> {
   const item = await db.onboardingChecklistItem.findUnique({
     where: { id: itemId },
-    select: { templateItem: { select: { ownerRole: true } }, newHire: { select: { teamLeadId: true } } },
+    select: { ownerRole: true, newHire: { select: { teamLeadId: true } } },
   })
   if (!item) throw new AcademyError('Checklist item not found', 404)
-  const ownerRole = item.templateItem.ownerRole as ChecklistOwnerRole
+  const ownerRole = item.ownerRole as ChecklistOwnerRole
   if (!canTickItem(viewer.role, { ownerRole }, item.newHire.teamLeadId, viewer.id)) throw new AcademyError('Forbidden', 403)
   return tickItem(db, itemId, viewer.id, input, now)
 }

@@ -3344,6 +3344,10 @@ model OnboardingChecklistItem {
   id             String                          @id @default(cuid())
   newHireId      String
   templateItemId String
+  /// Copied from the template when the row is made: a later template edit never reaches it.
+  title          String
+  ownerRole      ChecklistOwnerRole
+  orderIndex     Int
   dueAt          DateTime
   dueOffsetDays  Int?
   doneAt         DateTime?
