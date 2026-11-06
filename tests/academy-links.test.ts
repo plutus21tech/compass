@@ -136,3 +136,15 @@ test('withAcademyNav adds four items to the admin Onboarding group only when ena
 test('withAcademyNav leaves non-admin sidebars alone', () => {
   assert.equal(withAcademyNav(onboardingConfig, true, icons), onboardingConfig)
 })
+
+test('withAcademyNav points the Modules item at the new editor, and off it stays', () => {
+  const config: SidebarConfig = {
+    items: [{ label: 'Dashboard', href: '/admin', icon }],
+    groups: [{ label: 'Onboarding', items: [{ label: 'Modules', href: '/admin/onboarding/modules', icon }] }],
+  }
+  assert.equal(withAcademyNav(config, false, icons), config)
+  const hrefs = withAcademyNav(config, true, icons).groups[0].items.map((i) => i.href)
+  assert.equal(hrefs[0], '/admin/onboarding/academy/modules')
+  assert.equal(hrefs.includes('/admin/onboarding/modules'), false)
+  assert.equal(config.groups[0].items[0].href, '/admin/onboarding/modules')
+})

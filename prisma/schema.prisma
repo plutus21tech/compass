@@ -1687,6 +1687,7 @@ model OnboardingModule {
   currentVersionId String?
   heroImageUrl     String?
   draftBlocks      Json?
+  draftDetails     Json?
 
   versions         OnboardingModuleVersion[]
 }

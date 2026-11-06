@@ -24,7 +24,7 @@ export interface CompletionInput {
 export type CompletionResult = { met: true } | { met: false; reason: string }
 
 const COMPANY_DASHBOARD_KEY = 'COMPANY_DASHBOARD'
-const BUDDY_HELLO_KEY = 'buddy-hello'
+export const BUDDY_HELLO_KEY = 'buddy-hello'
 export const INVOICE_TEMPLATE_KEY = 'invoice-template'
 
 const hasChecklistItem = (blocks: readonly Block[], key: string): boolean =>

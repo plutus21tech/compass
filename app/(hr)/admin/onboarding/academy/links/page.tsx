@@ -11,6 +11,7 @@ import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import {
   ACADEMY_LINK_KEYS,
   academyConfigInputSchema,
+  academyLinkLabel,
   type AcademyConfigView,
   type AcademyLink,
   type AcademyLinkKey,
@@ -21,11 +22,6 @@ import { InvoiceTemplatesEditor, type InvoiceRow } from '../_components/InvoiceT
 import { LinkPicker } from '../_components/LinkPicker'
 
 type LinkMap = Partial<Record<AcademyLinkKey, AcademyLink>>
-
-function labelOf(key: string): string {
-  const words = key.toLowerCase().replace(/_/g, ' ')
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
 
 function withLink(map: LinkMap, key: AcademyLinkKey, link: AcademyLink | null): LinkMap {
   const { [key]: _removed, ...rest } = map
@@ -104,7 +100,7 @@ export default function AcademyLinksPage() {
         <h2 className="text-lg font-medium">Links</h2>
         {ACADEMY_LINK_KEYS.map((key) => (
           <div key={key} className="grid gap-2 md:grid-cols-[14rem_1fr] md:items-start">
-            <Label htmlFor={`link-${key}`} className="pt-2">{labelOf(key)}</Label>
+            <Label htmlFor={`link-${key}`} className="pt-2">{academyLinkLabel(key)}</Label>
             <LinkPicker id={`link-${key}`} value={links[key] ?? null} handbook={handbook} onChange={(next) => setLinks(withLink(links, key, next))} />
           </div>
         ))}

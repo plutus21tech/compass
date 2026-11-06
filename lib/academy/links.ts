@@ -23,6 +23,12 @@ export const ACADEMY_LINK_KEYS = [
 export type AcademyLinkKey = (typeof ACADEMY_LINK_KEYS)[number]
 export type AcademyLink = { kind: 'handbook'; slug: string } | { kind: 'url'; url: string }
 
+/** COMPANY_DASHBOARD reads as "Company dashboard". */
+export function academyLinkLabel(key: AcademyLinkKey): string {
+  const words = key.toLowerCase().replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 const SLUG = /^[a-z0-9-]*$/
 
 export function isHttpsUrl(value: string): boolean {

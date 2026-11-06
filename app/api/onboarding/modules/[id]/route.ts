@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAcademyEnabled } from '@/lib/academy/flag'
 import { blocksModuleSwitch } from '@/lib/academy/service/progress'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
@@ -70,6 +71,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const user = await getSession()
     if (!user || !canManageOnboarding(user.role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (isAcademyEnabled()) {
+      return NextResponse.json({ error: 'Use the new module editor.' }, { status: 409 })
     }
 
     const { id } = await context.params

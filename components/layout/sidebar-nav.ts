@@ -63,6 +63,18 @@ export interface AcademyNavIcons {
   links: NavItem['icon']
 }
 
+/** Sends a group's item somewhere else, keeping its place and label; the same config when it is missing. */
+function withGroupItemMoved(config: SidebarConfig, href: string, nextHref: string): SidebarConfig {
+  if (!config.groups.some((group) => group.items.some((item) => item.href === href))) return config
+  return {
+    ...config,
+    groups: config.groups.map((group) => ({
+      ...group,
+      items: group.items.map((item) => (item.href === href ? { ...item, href: nextHref } : item)),
+    })),
+  }
+}
+
 /** Academy settings pages, under the admin console's Onboarding group only (never the onboarding sidebar). */
 export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: AcademyNavIcons): SidebarConfig {
   if (!enabled || !config.items.some((item) => item.href === '/admin')) return config
@@ -72,7 +84,8 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
     { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
     { label: 'Assign a module', href: '/admin/onboarding/academy/assign', icon: icons.library },
   ]
-  return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), config)
+  const moved = withGroupItemMoved(config, '/admin/onboarding/modules', '/admin/onboarding/academy/modules')
+  return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), moved)
 }
 
 /** O&A's "Payment details" page: hires' saved payout details, masked. Academy flag on, O&A only. */
