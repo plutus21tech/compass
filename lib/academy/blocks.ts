@@ -113,6 +113,16 @@ function conditionHolds(when: ConditionWhen, facts: ConditionFacts): boolean {
   return facts.companyWing === when.companyWing
 }
 
+const COLLECTING_TARGETS: readonly string[] = ['linkedinUrl', 'bank', 'payout']
+
+/**
+ * A re-read or an assignment is for reading, so it collects nothing: these fields go, and the rules
+ * that need them fall back to SCROLL_END through effectiveRule.
+ */
+export function readingBlocks(blocks: readonly Block[]): Block[] {
+  return blocks.filter((b) => !(b.type === 'inputField' && COLLECTING_TARGETS.includes(b.target)))
+}
+
 /** Removes conditional blocks whose rule fails and flattens the ones that pass, at any depth. */
 export function filterBlocks(blocks: Block[], facts: ConditionFacts): Block[] {
   return blocks.flatMap((block): Block[] => {

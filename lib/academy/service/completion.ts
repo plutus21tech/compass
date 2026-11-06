@@ -59,10 +59,14 @@ export async function signValuesAcknowledgement(
 ): Promise<{ signedAt: Date; completed: boolean }> {
   return db.$transaction(async (tx) => {
     await lockUserRow(tx, userId)
-    const user = await tx.user.findUnique({ where: { id: userId }, select: { name: true } })
+    const user = await tx.user.findUnique({ where: { id: userId }, select: { name: true, onboardingCompleted: true } })
     if (!user) throw new AcademyError('User not found', 404)
     if (!(await hasPassed(tx, userId))) throw new AcademyError('Pass the culture quiz first.', 403)
     if (!isTypedNameValid(typedName, user.name)) throw new AcademyError(NAME_MESSAGE, 400)
+    // Someone who finished has done this already: their re-read rows must not stop a repeat call returning.
+    if (!user.onboardingCompleted && !(await readCourseProgress(tx, userId)).modulesDone) {
+      throw new AcademyError('Finish the reopened module first.', 409)
+    }
 
     const signed =
       (await firstValuesSignature(tx, userId)) ??

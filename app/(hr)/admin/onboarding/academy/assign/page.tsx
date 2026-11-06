@@ -11,7 +11,7 @@ import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { academyFetch } from '../_components/academy-api'
 import { ErrorNotice } from '../_components/ErrorNotice'
 
-const URL = '/api/admin/onboarding/assign'
+const ASSIGN_URL = '/api/admin/onboarding/assign'
 const SELECT_CLASS = 'h-10 w-full rounded-xl border border-input bg-background px-3 text-sm'
 
 interface ModuleOption { id: string; number: number; title: string }
@@ -41,7 +41,7 @@ export default function AssignModulePage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    academyFetch<Assignable>(URL)
+    academyFetch<Assignable>(ASSIGN_URL)
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not load the page'))
   }, [])
@@ -60,6 +60,11 @@ export default function AssignModulePage() {
     setChosen(next)
   }
 
+  const pickModule = (next: string) => {
+    setModuleId(next)
+    setConfirming(false)
+  }
+
   const pickAudience = (next: Audience) => {
     setAudience(next)
     setConfirming(false)
@@ -76,7 +81,7 @@ export default function AssignModulePage() {
     setSaving(true)
     try {
       const userIds = audience === 'ALL_ACTIVE' ? 'ALL_ACTIVE' : [...chosen]
-      const { assigned } = await academyFetch<{ assigned: number }>(URL, { method: 'POST', body: { moduleId, userIds } })
+      const { assigned } = await academyFetch<{ assigned: number }>(ASSIGN_URL, { method: 'POST', body: { moduleId, userIds } })
       toast.success(resultMessage(assigned))
       setChosen(new Set())
       setConfirming(false)
@@ -100,7 +105,7 @@ export default function AssignModulePage() {
 
       <div className="space-y-1.5">
         <Label htmlFor="assign-module">Module</Label>
-        <select id="assign-module" value={moduleId} onChange={(e) => setModuleId(e.target.value)} className={SELECT_CLASS}>
+        <select id="assign-module" value={moduleId} onChange={(e) => pickModule(e.target.value)} className={SELECT_CLASS}>
           <option value="">Pick a module</option>
           {data.modules.map((m) => (
             <option key={m.id} value={m.id}>{`${m.number}. ${m.title}`}</option>

@@ -19,7 +19,7 @@ import {
   SLUGS,
   cleanCourse,
   createReadyHire,
-  createReleasedHire,
+  createReleasedHire, openPaymentModule,
   progressRow,
   scrollAndComplete,
   setupBody,
@@ -130,6 +130,7 @@ test('a plain employee gets 403 from every read at the service seam', ACADEMY_DB
 
 test('OA is refused the drawer and the full rows, and gets the payment list only', ACADEMY_DB_TEST, async () => {
   await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await openPaymentModule()
   await savePayout(prisma, HIRE_ID, WISE)
   await assert.rejects(loadDrawer(prisma, OA, NEW_HIRE_ID), hasStatus(403))
   await assert.rejects(loadTracker(prisma, OA, {}), hasStatus(403))
@@ -461,6 +462,7 @@ test('the drawer: modules with versions and dates, wrong questions, acknowledgem
 
 test('the drawer shows payment masked, with the last change time and no plain value', ACADEMY_DB_TEST, async () => {
   await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await openPaymentModule()
   await savePayout(prisma, HIRE_ID, WISE)
   const { payment } = await loadDrawer(prisma, HR, NEW_HIRE_ID)
   assert.ok(payment)
@@ -473,6 +475,7 @@ test('the drawer shows payment masked, with the last change time and no plain va
 
 test('a payment row that cannot be read does not take the drawer down', ACADEMY_DB_TEST, async () => {
   await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await openPaymentModule()
   await savePayout(prisma, HIRE_ID, WISE)
   await prisma.onboardingPaymentDetails.update({ where: { userId: HIRE_ID }, data: { payoutEmail: 'p21enc:v1:not-really' } })
   const { payment, checklist } = await loadDrawer(prisma, HR, NEW_HIRE_ID)
@@ -484,6 +487,7 @@ test('a payment row that cannot be read does not take the drawer down', ACADEMY_
 
 test('a payment save writes one log row with no value; isFirstSave true then false', ACADEMY_DB_TEST, async () => {
   await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await openPaymentModule()
   assert.deepEqual(await savePayout(prisma, HIRE_ID, WISE), { isUpdate: false })
   assert.deepEqual(await savePayout(prisma, HIRE_ID, { ...WISE, method: 'PAYONEER' }), { isUpdate: true })
   const logs = await prisma.onboardingPaymentChangeLog.findMany({ where: { userId: HIRE_ID }, orderBy: { createdAt: 'asc' } })

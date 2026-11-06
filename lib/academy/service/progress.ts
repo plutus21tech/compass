@@ -1,6 +1,6 @@
 import type { OnboardingModule, OnboardingPhase, OnboardingCompletionRule, OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
 import type { PersonAttributes } from '../attributes'
-import { filterBlocks, parseBlocks, type Block } from '../blocks'
+import { filterBlocks, parseBlocks, readingBlocks, type Block } from '../blocks'
 import { effectiveRule, evaluateCompletion, type PaymentFacts } from '../completion'
 import { AcademyError } from '../errors'
 import { resolveAcademyLink } from '../links'
@@ -20,6 +20,9 @@ type Tx = Prisma.TransactionClient
 export const COURSE_TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const
 
 export const COURSE_MODULE_COUNT = 14
+export const BANK_MODULE_SLUG = 'getting-paid'
+export const READING_ONLY_MESSAGE = 'This module is for reading only.'
+const PAYMENT_UNAVAILABLE_MESSAGE = "This isn't available yet."
 
 const PHASES: readonly OnboardingPhase[] = ['DAY_1', 'WEEK_1']
 const notFound = () => new AcademyError('Module not found', 404)
@@ -87,6 +90,24 @@ export async function lockProgressRow(tx: Tx, userId: string, moduleId: string):
   return row
 }
 
+/** Locks this person's Module 11 row. No row means nothing is locked: it just isn't there yet. */
+export async function lockPaymentRow(tx: Tx, userId: string): Promise<{ row: OnboardingProgress; index: number }> {
+  try {
+    const { module, index } = findCourseModule(await listCourseModules(tx), BANK_MODULE_SLUG)
+    return { row: await lockProgressRow(tx, userId, module.id), index }
+  } catch (error) {
+    if (error instanceof AcademyError && error.status === 404) throw paymentUnavailable()
+    throw error
+  }
+}
+
+export const paymentUnavailable = () => new AcademyError(PAYMENT_UNAVAILABLE_MESSAGE, 404)
+
+/** Saved data comes in through the course only: a re-read or an assignment is for reading. */
+export function assertCollectsData(row: Pick<OnboardingProgress, 'source'>): void {
+  if (row.source !== 'COURSE') throw new AcademyError(READING_ONLY_MESSAGE, 403)
+}
+
 /** The `payment` input for evaluateCompletion. Selects only what it needs: values never leave here. */
 export async function paymentFacts(db: Db, userId: string): Promise<PaymentFacts> {
   const user = await db.user.findUniqueOrThrow({
@@ -113,12 +134,15 @@ export function versionIdFor(row: Pick<OnboardingProgress, 'status' | 'versionId
   return row.status === 'COMPLETED' && row.versionId ? row.versionId : module.currentVersionId
 }
 
-/** The version's blocks with this hire's conditions applied. */
-export async function moduleBlocks(db: Db, versionId: string, facts: Pick<LearnerFacts, 'conditions'>): Promise<Block[]> {
+/** The version's blocks with this person's conditions applied, less what a reading row doesn't collect. */
+export async function moduleBlocks(
+  db: Db, versionId: string, facts: Pick<LearnerFacts, 'conditions'>, row: Pick<OnboardingProgress, 'source'>,
+): Promise<Block[]> {
   const version = await db.onboardingModuleVersion.findUnique({ where: { id: versionId }, select: { blocks: true } })
   if (!version) throw notFound()
   try {
-    return filterBlocks(parseBlocks(version.blocks), facts.conditions)
+    const shown = filterBlocks(parseBlocks(version.blocks), facts.conditions)
+    return row.source === 'COURSE' ? shown : readingBlocks(shown)
   } catch (error) {
     console.error('[academy] stored module content failed validation', { versionId, error })
     throw new AcademyError("This module's content couldn't be loaded. Tell HR.", 500)
@@ -189,7 +213,7 @@ export async function recordEvent(db: PrismaClient, userId: string, slug: string
     const facts = await requireRowFacts(tx, userId, row)
     assertModuleOpen(row, index)
     const versionId = versionIdFor(row, module)
-    const blocks = await moduleBlocks(tx, versionId, facts)
+    const blocks = await moduleBlocks(tx, versionId, facts, row)
     assertKnownEventKey(event, blocks, facts)
 
     const now = new Date()
@@ -220,7 +244,7 @@ export async function completeModule(
     if (row.status === 'COMPLETED') return { nextSlug, alreadyCompleted: true }
     assertModuleOpen(row, index)
 
-    const blocks = await moduleBlocks(tx, module.currentVersionId, facts)
+    const blocks = await moduleBlocks(tx, module.currentVersionId, facts, row)
     const state = parseProgressState(row.state)
     const { completion } = await evaluateModule(tx, userId, facts, module, blocks, state, module.currentVersionId)
     if (!completion.met) throw new AcademyError(completion.reason, 409)
@@ -263,7 +287,10 @@ export async function courseDueDates(db: Db, person: DuePerson, joiningDate: Dat
   return { DAY_1: due('DAY_1'), WEEK_1: due('WEEK_1') }
 }
 
-/** Moves the due dates of incomplete course rows; a completed row keeps its date. Returns the rows changed. */
+/**
+ * Moves the due dates of incomplete course rows; a completed row keeps its date. A reopened row has
+ * `assignedById` set and no date on purpose, so it stays out. Returns the rows changed.
+ */
 export async function recomputeDueDates(db: Db, userId: string): Promise<number> {
   const hire = await db.newHire.findUnique({
     where: { userId },
@@ -276,7 +303,7 @@ export async function recomputeDueDates(db: Db, userId: string): Promise<number>
     const dueAt = dueDates[phase]
     const { count } = await db.onboardingProgress.updateMany({
       where: {
-        userId, source: 'COURSE', status: { not: 'COMPLETED' }, module: { phase },
+        userId, source: 'COURSE', assignedById: null, status: { not: 'COMPLETED' }, module: { phase },
         OR: [{ dueAt: null }, { dueAt: { not: dueAt } }],
       },
       data: { dueAt },

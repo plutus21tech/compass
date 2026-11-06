@@ -45,11 +45,12 @@ export async function sendOnce(db: PrismaClient, key: string, send: () => Promis
 }
 
 /** For `after()`: a route's notice must never fail or disturb the action it follows. */
-export async function sendRouteNotice(db: PrismaClient, key: string, send: () => Promise<SendResult>): Promise<void> {
+export async function sendRouteNotice(db: PrismaClient, key: string, send: () => Promise<SendResult>): Promise<Delivery> {
   try {
-    await sendOnce(db, key, send)
+    return await deliverOnce(db, key, send)
   } catch (error) {
     console.error('[academy] notice could not be logged', { key, error: errorName(error) })
+    return 'FAILED'
   }
 }
 

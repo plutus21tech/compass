@@ -84,6 +84,11 @@ export async function progressRow(slug: string) {
   return prisma.onboardingProgress.findFirstOrThrow({ where: { userId: HIRE_ID, module: { slug } } })
 }
 
+/** savePayout needs Module 11 open, so a test about payout alone opens just that row. */
+export async function openPaymentModule(userId: string = HIRE_ID): Promise<void> {
+  await prisma.onboardingProgress.updateMany({ where: { userId, module: { slug: 'getting-paid' } }, data: { status: 'IN_PROGRESS' } })
+}
+
 /** Completes one module that a page scroll is enough for (modules 1 and 2). */
 export async function scrollAndComplete(slug: string) {
   await recordEvent(prisma, HIRE_ID, slug, { type: 'SCROLLED_END' })

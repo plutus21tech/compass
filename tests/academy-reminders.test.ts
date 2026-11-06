@@ -105,7 +105,7 @@ test('each notice names a person, escapes them, and links to Compass', () => {
     academyNotices.firstPaymentSave(name),
     academyNotices.paymentSetupDone(name),
     academyNotices.linkedinSubmitted(name),
-    academyNotices.assignment({ name, title: 'Security', slug: 'security' }),
+    academyNotices.assignment({ name, title: 'Security', slug: 'security', inCourse: false }),
     academyNotices.checklistDigest({ hireName: name, newHireId: 'hire-1', ownerRole: 'HR', items: [{ title: name, dueDate: '2026-12-01', overdue: true }] }),
   ]
   for (const notice of notices) {
@@ -117,10 +117,16 @@ test('each notice names a person, escapes them, and links to Compass', () => {
 })
 
 test('the assignment notice carries the module title, escaped, and one link to the module', () => {
-  const notice = academyNotices.assignment({ name: 'Ana', title: '<i>Security</i>', slug: 'security' })
+  const notice = academyNotices.assignment({ name: 'Ana', title: '<i>Security</i>', slug: 'security', inCourse: false })
   assert.equal(notice.html.includes('<i>Security'), false)
   assert.equal(notice.html.match(/href="/g)?.length, 1)
   assert.ok(notice.html.includes(`href="${COMPASS_URL}/onboarding/security"`))
+})
+
+test('a hire mid-course gets the neutral assignment wording', () => {
+  const { html } = academyNotices.assignment({ name: 'Cara', title: 'Security', slug: 'security', inCourse: true })
+  assert.match(html, /Please read this module again/)
+  assert.equal(html.includes('whenever you have a few minutes'), false)
 })
 
 test('notice wording follows the count and the date', () => {

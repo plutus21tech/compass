@@ -199,10 +199,10 @@ Notices, per §8:
 | Payment details first saved | OA | on save, route | `first-save:{userId}` |
 | Module 11 completed | OA | on completion, route | `payment-done:{userId}` |
 | LinkedIn submitted | HR | on save, route | `linkedin:{userId}` |
-| Module assigned or re-read | Assignee | Task 5 | `assign:{userId}:{moduleId}:{versionId}` |
+| Module assigned or re-read | Assignee | Task 5 | `assign:{userId}:{moduleId}:{versionId}:{utcDate}` |
 | Checklist due today or overdue | Item owner, one digest per hire, per owner | daily at the hire's local 10:00 | `check:{newHireId}:{ownerRole}:{date}` |
 
-- `{date}` is the hire's local date. Owner role resolves to users with that role; TEAM_LEAD to the hire's lead.
+- `{date}` is the hire's local date. `{utcDate}` is the UTC date, so reopening a module notifies again and a same-day repeat stays silent. Owner role resolves to users with that role; TEAM_LEAD to the hire's lead.
 - The daily lead reminder also covers a first request whose email failed, the stage 1 carry-forward.
 - `runOnboardingJob` runs `syncChecklist` for open hires first, then the notices. One person's failure is logged and doesn't stop the run.
 - Cron route: `isCronAuthorized`, skip when `isAcademyEnabled()` is false, `maxDuration = 300`, `dynamic = 'force-dynamic'`. Add `{ "path": "/api/cron/onboarding", "schedule": "0 * * * *" }` to `vercel.json`.

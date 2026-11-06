@@ -2458,11 +2458,15 @@ export const academyNotices = {
       linkLabel: 'Open your course',
       path: '/onboarding',
     }),
-  assignment: (input: { name: string; title: string; slug: string }): AcademyNotice =>
+  assignment: (input: { name: string; title: string; slug: string; inCourse: boolean }): AcademyNotice =>
     academyNotice({
       subject: `A module for you to read: ${input.title}`,
       heading: `Hi ${input.name}`,
-      lines: [`HR has asked you to read "${input.title}" in Compass. It's there whenever you have a few minutes.`],
+      lines: [
+        input.inCourse
+          ? `Please read this module again: "${input.title}".`
+          : `HR has asked you to read "${input.title}" in Compass. It's there whenever you have a few minutes.`,
+      ],
       linkLabel: 'Open the module',
       path: `/onboarding/${encodeURIComponent(input.slug)}`,
     }),
@@ -2570,6 +2574,7 @@ export const sendAssignmentNotice = (input: {
   name: string
   title: string
   slug: string
+  inCourse: boolean
 }): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.assignment(input))
 
 export const sendLeadInputOverdueNotice = (input: {

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { AcademyError } from '../lib/academy/errors'
 import { readPayout, savePayout } from '../lib/academy/service/payout'
-import { ACADEMY_DB_TEST, P, resetAcademyFixtures } from './helpers/academy-test-db'
+import { seedAcademy } from '../prisma/seed-academy'
+import { cleanCourse } from './helpers/academy-course-fixtures'
+import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 // Fictional test key, not a real secret.
@@ -18,13 +20,16 @@ const wise = { method: 'WISE', accountHolderName: 'Cara Lindqvist', payoutEmail:
 
 beforeEach(async () => {
   if (!WEEKLY_DB_READY) return
-  await resetAcademyFixtures(prisma)
+  await cleanCourse()
+  await seedAcademy(prisma)
   await prisma.user.create({ data: { ...P.hr, onboardingCompleted: true } })
   await prisma.user.create({ data: { ...P.hire, onboardingCompleted: true, contractType: 'INDEPENDENT_CONTRACTOR' } })
   await prisma.user.create({ data: { ...P.staff, onboardingCompleted: true, contractType: 'PK_EMPLOYMENT' } })
+  const paymentModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'getting-paid' } })
+  await prisma.onboardingProgress.create({ data: { userId: P.hire.id, moduleId: paymentModule.id, status: 'IN_PROGRESS' } })
 })
 after(async () => {
-  if (WEEKLY_DB_READY) await resetAcademyFixtures(prisma)
+  if (WEEKLY_DB_READY) await cleanCourse()
   await prisma.$disconnect()
 })
 

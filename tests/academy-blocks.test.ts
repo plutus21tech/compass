@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { filterBlocks, parseBlocks, type ConditionFacts } from '../lib/academy/blocks'
+import { filterBlocks, parseBlocks, readingBlocks, type Block, type ConditionFacts } from '../lib/academy/blocks'
 
 const attrs = { officeLocation: 'KARACHI', remoteCountry: null, workMode: 'OFFICE', contractType: null, employmentStatus: null } as const
 const facts = (over: Partial<ConditionFacts> = {}): ConditionFacts => ({
@@ -75,4 +75,11 @@ test('filterBlocks does not mutate its input', () => {
   const before = JSON.stringify(blocks)
   filterBlocks(blocks, facts({ clientAccount: 'Acme' }))
   assert.equal(JSON.stringify(blocks), before)
+})
+
+test('readingBlocks drops what a re-read must not collect, and keeps the Discord field and everything else', () => {
+  const field = (target: 'discordUsername' | 'linkedinUrl' | 'bank' | 'payout'): Block => ({ type: 'inputField', target, label: target })
+  const text: Block = { type: 'richText', markdown: 'Read me' }
+  const kept = readingBlocks([text, field('linkedinUrl'), field('bank'), field('payout'), field('discordUsername')])
+  assert.deepEqual(kept, [text, field('discordUsername')])
 })

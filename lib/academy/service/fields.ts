@@ -1,4 +1,4 @@
-import type { OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import { BANK_LOCKED_MESSAGE, bankDetailsSchema, discordUsernameSchema, linkedinUrlSchema } from '../bank'
 import { AcademyError } from '../errors'
 import { maskAccount } from '../payout'
@@ -7,15 +7,19 @@ import { renderBlocks } from '../view'
 import { buildAcademyContext } from './context'
 import { decryptPaymentField, paymentColumns, writePaymentRow } from './payout'
 import {
+  BANK_MODULE_SLUG,
   COURSE_TX_OPTIONS,
+  assertCollectsData,
   assertModuleOpen,
   findCourseModule,
   listCourseModules,
+  lockPaymentRow,
   lockProgressRow,
   moduleBlocks,
   versionIdFor,
 } from './progress'
 
+export { BANK_MODULE_SLUG }
 export const LINKEDIN_MODULE_SLUG = 'linkedin'
 export const NAME_MESSAGE = 'Type your full name as it appears at the top of this page.'
 
@@ -33,6 +37,7 @@ export async function saveLinkedinUrl(db: PrismaClient, userId: string, value: u
   await db.$transaction(async (tx) => {
     const { module, index } = findCourseModule(await listCourseModules(tx), LINKEDIN_MODULE_SLUG)
     const row = await lockProgressRow(tx, userId, module.id)
+    assertCollectsData(row)
     assertModuleOpen(row, index)
     if (row.status === 'COMPLETED') return
     const state = { ...parseProgressState(row.state), linkedinUrl }
@@ -60,24 +65,21 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
   return { isUpdate }
 }
 
-export const BANK_MODULE_SLUG = 'getting-paid'
-const BANK_UNAVAILABLE_MESSAGE = "This isn't available yet."
+/** A reopened Module 11 is no way round the lock, but only saved details have anything to lock. */
+async function bankConfirmedBefore(tx: Prisma.TransactionClient, userId: string, moduleId: string): Promise<boolean> {
+  const completions = await tx.onboardingProgressHistory.count({ where: { userId, moduleId } })
+  if (completions === 0) return false
+  return (await tx.onboardingPaymentDetails.count({ where: { userId } })) > 0
+}
 
-/** Bank details change only while Module 11 is open and not completed. Locks that row for the transaction. */
+/** Bank details change only the first time Module 11 is open. Locks that row for the transaction. */
 async function assertBankEditable(tx: Prisma.TransactionClient, userId: string): Promise<void> {
-  let row: OnboardingProgress
-  let index: number
-  try {
-    const found = findCourseModule(await listCourseModules(tx), BANK_MODULE_SLUG)
-    index = found.index
-    row = await lockProgressRow(tx, userId, found.module.id)
-  } catch (error) {
-    // No Module 11 row means this hire's course was never released: nothing is locked, it just isn't there.
-    if (error instanceof AcademyError && error.status === 404) throw new AcademyError(BANK_UNAVAILABLE_MESSAGE, 404)
-    throw error
-  }
+  const { row, index } = await lockPaymentRow(tx, userId)
+  assertCollectsData(row)
   assertModuleOpen(row, index)
-  if (row.status === 'COMPLETED') throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
+  if (row.status === 'COMPLETED' || (await bankConfirmedBefore(tx, userId, row.moduleId))) {
+    throw new AcademyError(BANK_LOCKED_MESSAGE, 409)
+  }
 }
 
 export interface BankStatus { saved: boolean; ibanMasked: string | null }
@@ -126,7 +128,7 @@ export async function signAcknowledgement(
     const context = await buildAcademyContext(tx, userId, row)
     if (!context) throw new AcademyError('Module not found', 404)
     const versionId = versionIdFor(row, module)
-    const blocks = renderBlocks(await moduleBlocks(tx, versionId, context), context.placeholders)
+    const blocks = renderBlocks(await moduleBlocks(tx, versionId, context, row), context.placeholders)
     const block = blocks.find((b) => b.type === 'acknowledgement' && b.kind === input.kind)
     if (!block || block.type !== 'acknowledgement') throw new AcademyError("That isn't part of this module.", 400)
 

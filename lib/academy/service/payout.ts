@@ -3,7 +3,7 @@ import { AcademyError } from '../errors'
 import { decryptField, encryptField } from '../field-encryption'
 import { BANK_LOCKED_MESSAGE } from '../bank'
 import { canSavePayout, maskPayout, payoutSchema, type PayoutView } from '../payout'
-import { COURSE_TX_OPTIONS } from './progress'
+import { COURSE_TX_OPTIONS, assertCollectsData, lockPaymentRow, paymentUnavailable } from './progress'
 import { lockUserRow } from './quiz'
 
 const ENCRYPTED_FIELDS = [
@@ -50,6 +50,13 @@ export async function writePaymentRow(
   await tx.onboardingPaymentChangeLog.create({ data: { userId, actorId: userId, method: data.method, isFirstSave } })
 }
 
+/** Only through a person's own course, from when Module 11 opens: a contractor may update after finishing it (§5.9). */
+async function assertPayoutOpen(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const { row } = await lockPaymentRow(tx, userId)
+  assertCollectsData(row)
+  if (row.status === 'LOCKED' && !row.unlockedEarlyById) throw paymentUnavailable()
+}
+
 export async function savePayout(db: PrismaClient, userId: string, input: unknown): Promise<{ isUpdate: boolean }> {
   const parsed = payoutSchema.parse(input)
   const user = await db.user.findUnique({ where: { id: userId }, select: { contractType: true } })
@@ -61,6 +68,7 @@ export async function savePayout(db: PrismaClient, userId: string, input: unknow
   return db.$transaction(async (tx) => {
     // Two saves at once must not both count as the first.
     await lockUserRow(tx, userId)
+    await assertPayoutOpen(tx, userId)
     const existing = await tx.onboardingPaymentDetails.findUnique({ where: { userId }, select: { method: true } })
     // A null contract type may save a payout, but HR blanking the type must not open a way round the bank lock.
     if (existing?.method === 'PK_BANK' && user.contractType === null) throw new AcademyError(BANK_LOCKED_MESSAGE, 409)

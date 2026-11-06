@@ -7,6 +7,9 @@ import { assignModule, listAssignable, notifyAssigned } from '@/lib/academy/serv
 
 const MAX_PEOPLE = 1000
 
+// All active is one long transaction, then the notices in after().
+export const maxDuration = 300
+
 const bodySchema = z
   .object({
     moduleId: z.string().min(1).max(100),

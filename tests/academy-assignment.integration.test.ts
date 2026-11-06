@@ -2,15 +2,17 @@ import test, { after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/db'
+import { BANK_LOCKED_MESSAGE } from '../lib/academy/bank'
 import { shouldBlockSession } from '../lib/academy/lockout'
 import { assignModule, listAssignable, loadAssigned, notifyAssigned, requestReread } from '../lib/academy/service/assignment'
-import { finishCourseIfDone, loadCompletion } from '../lib/academy/service/completion'
+import { finishCourseIfDone, loadCompletion, signValuesAcknowledgement } from '../lib/academy/service/completion'
 import { buildAcademyContext } from '../lib/academy/service/context'
 import { loadHome, loadModule } from '../lib/academy/service/course'
 import { saveBankDetails, saveDiscordUsername, saveLinkedinUrl, signAcknowledgement } from '../lib/academy/service/fields'
 import { savePayout } from '../lib/academy/service/payout'
-import { completeModule, isCourseModule, readCourseProgress, recordEvent, versionIdFor } from '../lib/academy/service/progress'
-import { loadQuiz } from '../lib/academy/service/quiz'
+import { completeModule, isCourseModule, readCourseProgress, recomputeDueDates, recordEvent, versionIdFor } from '../lib/academy/service/progress'
+import { loadQuiz, lockUserRow } from '../lib/academy/service/quiz'
+import { runOnboardingJob, type ReminderSenders } from '../lib/academy/service/reminders'
 import { loadTracker } from '../lib/academy/service/tracker'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
@@ -34,7 +36,15 @@ const HR = { id: P.hr.id, role: 'HR' }
 const BANK = { accountTitle: 'Ana Torvik', bankName: 'Example Bank', branch: 'Main Branch', iban: 'pk36 scbl 0000 0011 2345 6702' }
 const WISE = { method: 'WISE', accountHolderName: 'Ana Torvik', payoutEmail: 'ana@example.test', currency: 'USD' }
 
-const fails = (status: number) => (error: unknown) => (error as { status?: number }).status === status
+const LINKEDIN = 'https://www.linkedin.com/in/fictional-person'
+const DAY_ONE = new Date('2026-12-01T09:00:00.000Z')
+const DAY_TWO = new Date('2026-12-02T09:00:00.000Z')
+
+const fails = (status: number, message?: string) => (error: unknown) => {
+  const { status: actual, message: text } = error as { status?: number; message?: string }
+  return actual === status && (message === undefined || text === message)
+}
+const READING_ONLY = fails(403, 'This module is for reading only.')
 
 const moduleBySlug = (slug: string) => prisma.onboardingModule.findUniqueOrThrow({ where: { slug } })
 const moduleIdOf = async (slug: string): Promise<string> => (await moduleBySlug(slug)).id
@@ -87,17 +97,18 @@ async function completeAsThePageWould(userId: string, name: string, slug: string
     if (block.type === 'dashboardLink') await recordEvent(prisma, userId, slug, { type: 'LINK_OPENED', key: 'COMPANY_DASHBOARD' })
     if (block.type === 'acknowledgement') await signAcknowledgement(prisma, userId, { kind: 'SECURITY_SOPS', typedName: name, moduleSlug: slug })
     if (block.type === 'inputField' && block.target === 'discordUsername') await saveDiscordUsername(prisma, userId, 'fictional.person')
-    if (block.type === 'inputField' && block.target === 'linkedinUrl') await saveLinkedinUrl(prisma, userId, 'https://www.linkedin.com/in/fictional-person')
   }
   await recordEvent(prisma, userId, slug, { type: 'SCROLLED_END' })
   await completeModule(prisma, userId, slug)
 }
 
+let pending: Promise<unknown> = Promise.resolve()
+
 const clearNoticeLog = () => prisma.onboardingNotificationLog.deleteMany({ where: { key: { startsWith: 'assign:act-' } } })
 
 const markInactive = (userId: string) => prisma.payrollEmployeeProfile.create({ data: { userId, isPayrollActive: false } })
 
-interface SentNotice { to: string; name: string; title: string; slug: string }
+interface SentNotice { to: string; name: string; title: string; slug: string; inCourse: boolean }
 
 function recorder(failFor: (to: string) => boolean = () => false) {
   const calls: SentNotice[] = []
@@ -114,6 +125,7 @@ beforeEach(async () => {
 
 after(async () => {
   if (WEEKLY_DB_READY) {
+    await prisma.onboardingNotificationLog.deleteMany({ where: { key: { contains: 'act-' } } })
     await clearNoticeLog()
     await cleanCourse()
   }
@@ -280,7 +292,8 @@ test('a hire mid-course keeps source COURSE, and the quiz locks until they re-co
   const row = await progressRow('welcome')
   assert.equal(row.source, 'COURSE')
   assert.equal(row.status, 'IN_PROGRESS')
-  assert.equal(row.dueAt?.getTime(), due?.getTime())
+  assert.ok(due)
+  assert.equal(row.dueAt, null)
   assert.equal((await readCourseProgress(prisma, HIRE_ID)).modulesDone, false)
   assert.equal((await loadQuiz(prisma, HIRE_ID)).status, 'LOCKED')
 
@@ -371,19 +384,19 @@ test('running the same assign again creates nothing and sends nothing twice', AC
   const module = await moduleBySlug(SECURITY)
   const { calls, send } = recorder()
   const first = await assignModule(prisma, module.id, [STAFF, P.lead.id], P.hr.id)
-  await notifyAssigned(prisma, first.notice, send)
+  await notifyAssigned(prisma, first.notice, { send, now: DAY_ONE })
   assert.deepEqual(calls.map((c) => c.to).sort(), [P.lead.email, P.staff.email].sort())
   assert.ok(calls.every((c) => c.slug === SECURITY && c.title === module.title))
   assert.ok(calls.some((c) => c.name === P.staff.name))
   assert.equal(
-    await prisma.onboardingNotificationLog.count({ where: { key: `assign:${STAFF}:${module.id}:${module.currentVersionId}` } }),
+    await prisma.onboardingNotificationLog.count({ where: { key: `assign:${STAFF}:${module.id}:${module.currentVersionId}:2026-12-01` } }),
     1,
   )
 
   const before = await rowOf(STAFF, SECURITY)
   const second = await assignModule(prisma, module.id, [STAFF, P.lead.id], P.hr.id)
   assert.equal(second.assigned, 0)
-  await notifyAssigned(prisma, second.notice, send)
+  await notifyAssigned(prisma, second.notice, { send, now: DAY_ONE })
   assert.equal(calls.length, 2)
   assert.equal((await rowOf(STAFF, SECURITY))?.updatedAt.getTime(), before?.updatedAt.getTime())
   assert.equal(await prisma.onboardingProgress.count({ where: { userId: STAFF } }), 1)
@@ -399,7 +412,7 @@ test('a failed notice fails nothing, is logged with ids only, and a re-run retri
   console.error = (...args: unknown[]) => { logged.push(args) }
   try {
     const { notice } = await assignModule(prisma, moduleId, [STAFF, P.lead.id], P.hr.id)
-    await notifyAssigned(prisma, notice, failing.send)
+    await notifyAssigned(prisma, notice, { send: failing.send, now: DAY_ONE })
   } finally {
     console.error = original
   }
@@ -410,14 +423,14 @@ test('a failed notice fails nothing, is logged with ids only, and a re-run retri
 
   const retry = recorder()
   const { notice } = await assignModule(prisma, moduleId, [STAFF, P.lead.id], P.hr.id)
-  await notifyAssigned(prisma, notice, retry.send)
+  await notifyAssigned(prisma, notice, { send: retry.send, now: DAY_ONE })
   assert.deepEqual(retry.calls.map((c) => c.to), [P.lead.email])
 })
 
 test('a notice for a module that is gone sends nothing and never throws', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   const { send, calls } = recorder()
-  await notifyAssigned(prisma, { moduleId: 'act-no-module', versionId: 'act-none', userIds: [STAFF] }, send)
+  await notifyAssigned(prisma, { moduleId: 'act-no-module', versionId: 'act-none', userIds: [STAFF] }, { send })
   assert.equal(calls.length, 0)
 })
 
@@ -498,10 +511,6 @@ for (const [label, attributes] of STAFF_ATTRIBUTES) {
     await prisma.user.update({ where: { id: STAFF }, data: attributes as Prisma.UserUpdateInput })
     for (const slug of SLUGS) {
       await assignModule(prisma, await moduleIdOf(slug), [STAFF], P.hr.id)
-      if (slug === 'getting-paid' && 'contractType' in attributes) {
-        if (attributes.contractType === 'PK_EMPLOYMENT') await saveBankDetails(prisma, STAFF, BANK)
-        else await savePayout(prisma, STAFF, WISE)
-      }
       await completeAsThePageWould(STAFF, P.staff.name, slug)
       assert.equal((await rowOf(STAFF, slug))?.status, 'COMPLETED', slug)
     }
@@ -509,14 +518,184 @@ for (const [label, attributes] of STAFF_ATTRIBUTES) {
   })
 }
 
-test('Module 11 falls back to a scroll for staff with no contract type, and nothing reports a payment set up', ACADEMY_DB_TEST, async () => {
+for (const [label, contractType] of [['no contract', null], ['a PK contract', 'PK_EMPLOYMENT'], ['a contractor', 'INDEPENDENT_CONTRACTOR']] as const) {
+  test(`reading Module 11 with ${label}: a scroll completes it, no field shows and nothing can be saved`, ACADEMY_DB_TEST, async () => {
+    await createReleasedHire()
+    await prisma.user.update({ where: { id: STAFF }, data: { contractType } })
+    await assignModule(prisma, await moduleIdOf('getting-paid'), [STAFF], P.hr.id)
+    const view = await loadModule(prisma, STAFF, 'getting-paid')
+    assert.equal(view.progress.effectiveRule, 'SCROLL_END')
+    assert.equal(view.blocks.some((b) => b.type === 'inputField'), false)
+    await assert.rejects(saveBankDetails(prisma, STAFF, BANK), contractType === 'PK_EMPLOYMENT' ? READING_ONLY : fails(400))
+    await assert.rejects(savePayout(prisma, STAFF, WISE), contractType === 'PK_EMPLOYMENT' ? fails(400) : READING_ONLY)
+    assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: STAFF } }), 0)
+    await recordEvent(prisma, STAFF, 'getting-paid', { type: 'SCROLLED_END' })
+    await completeModule(prisma, STAFF, 'getting-paid')
+    assert.equal((await rowOf(STAFF, 'getting-paid'))?.status, 'COMPLETED')
+  })
+}
+
+test('reading Module 8: a scroll completes it, no field shows and the link is refused', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
-  await assignModule(prisma, await moduleIdOf('getting-paid'), [STAFF], P.hr.id)
-  const view = await loadModule(prisma, STAFF, 'getting-paid')
+  await assignModule(prisma, await moduleIdOf('linkedin'), [STAFF], P.hr.id)
+  const view = await loadModule(prisma, STAFF, 'linkedin')
   assert.equal(view.progress.effectiveRule, 'SCROLL_END')
-  assert.equal(view.bankSaved, false)
-  assert.equal(view.payoutSaved, false)
   assert.equal(view.blocks.some((b) => b.type === 'inputField'), false)
+  await assert.rejects(saveLinkedinUrl(prisma, STAFF, LINKEDIN), READING_ONLY)
+})
+
+test('the re-read reset keeps a saved LinkedIn link and clears the rest', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, module: { slug: 'linkedin' } }, data: { status: 'IN_PROGRESS' } })
+  await saveLinkedinUrl(prisma, HIRE_ID, LINKEDIN)
+  await recordEvent(prisma, HIRE_ID, 'linkedin', { type: 'SCROLLED_END' })
+  await completeModule(prisma, HIRE_ID, 'linkedin')
+  await requestReread(prisma, await moduleIdOf('linkedin'), P.hr.id)
+  const row = await progressRow('linkedin')
+  assert.equal(row.status, 'IN_PROGRESS')
+  assert.deepEqual(row.state, { checks: {}, linksOpenedAt: {}, scrolledToEnd: false, linkedinUrl: LINKEDIN })
+})
+
+test('a reopened Module 11 keeps the bank lock when details were saved, and a hire with none can still save', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  const moduleId = await moduleIdOf('getting-paid')
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, moduleId }, data: { status: 'IN_PROGRESS' } })
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  await saveBankDetails(prisma, HIRE_ID, { ...BANK, bankName: 'Other Bank' })
+  await completeModule(prisma, HIRE_ID, 'getting-paid')
+  await requestReread(prisma, moduleId, P.hr.id)
+  await assert.rejects(saveBankDetails(prisma, HIRE_ID, BANK), fails(409, BANK_LOCKED_MESSAGE))
+  assert.equal((await loadModule(prisma, HIRE_ID, 'getting-paid')).progress.effectiveRule, 'PAYMENT_SETUP')
+
+  await prisma.onboardingPaymentDetails.deleteMany({ where: { userId: HIRE_ID } })
+  await saveBankDetails(prisma, HIRE_ID, BANK)
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: HIRE_ID } }), 1)
+})
+
+test('savePayout needs an open Module 11 course row, and a contractor may update after finishing it', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire({ attributes: CONTRACTOR_ATTRIBUTES })
+  await prisma.user.update({ where: { id: STAFF }, data: { contractType: 'INDEPENDENT_CONTRACTOR' } })
+  await assert.rejects(savePayout(prisma, STAFF, WISE), fails(404))
+  await assert.rejects(savePayout(prisma, HIRE_ID, WISE), fails(404))
+  assert.equal(await prisma.onboardingPaymentChangeLog.count({ where: { userId: { in: [STAFF, HIRE_ID] } } }), 0)
+
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, module: { slug: 'getting-paid' } }, data: { status: 'IN_PROGRESS' } })
+  assert.deepEqual(await savePayout(prisma, HIRE_ID, WISE), { isUpdate: false })
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, module: { slug: 'getting-paid' } }, data: { status: 'COMPLETED' } })
+  assert.deepEqual(await savePayout(prisma, HIRE_ID, { ...WISE, currency: 'EUR' }), { isUpdate: true })
+})
+
+test('a reopened course row has no due date: reminders skip it and a recompute leaves it alone', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await scrollAndComplete('welcome')
+  await requestReread(prisma, await moduleIdOf('welcome'), P.hr.id)
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, module: { slug: { notIn: ['welcome'] } } }, data: { dueAt: null, status: 'COMPLETED' } })
+
+  assert.equal(await recomputeDueDates(prisma, HIRE_ID), 0)
+  assert.equal((await progressRow('welcome')).dueAt, null)
+
+  const overdue: unknown[] = []
+  const noop = async () => ({ success: true })
+  const senders: ReminderSenders = {
+    leadInputOverdue: noop,
+    buddy: noop,
+    moduleOverdue: async (input) => {
+      overdue.push(input)
+      return { success: true }
+    },
+    checklistDigest: noop,
+  }
+  await runOnboardingJob(prisma, new Date('2027-01-11T05:00:00.000Z'), senders)
+  assert.deepEqual(overdue, [])
+
+  // The same row with a past date is chased, so the empty list above means something.
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, module: { slug: 'welcome' } }, data: { dueAt: new Date('2026-12-02T00:00:00.000Z') } })
+  await runOnboardingJob(prisma, new Date('2027-01-12T05:00:00.000Z'), senders)
+  assert.equal(overdue.length, 1)
+})
+
+test('a hire signing values with a reopened module is refused until it is done, then finishes', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await finishWholeCourse(HIRE_ID)
+  await prisma.onboardingAcknowledgement.create({
+    data: { userId: HIRE_ID, kind: 'SECURITY_SOPS', statementText: 'Fictional', moduleVersionId: (await moduleBySlug(SECURITY)).currentVersionId, typedName: P.hire.name },
+  })
+  await prisma.quizAttempt.create({ data: { userId: HIRE_ID, score: 10, totalQuestions: 10, passed: true, answersJson: [] } })
+  await requestReread(prisma, await moduleIdOf('welcome'), P.hr.id)
+
+  await assert.rejects(signValuesAcknowledgement(prisma, HIRE_ID, P.hire.name), fails(409, 'Finish the reopened module first.'))
+  assert.equal(await prisma.onboardingAcknowledgement.count({ where: { userId: HIRE_ID, kind: 'VALUES_CODE_OF_CONDUCT' } }), 0)
+  await scrollAndComplete('welcome')
+  assert.equal((await signValuesAcknowledgement(prisma, HIRE_ID, P.hire.name)).completed, true)
+  assert.equal(await isFinished(HIRE_ID), true)
+})
+
+test('a finished hire on a re-read can still repeat the values signature', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await finishHire()
+  await prisma.quizAttempt.create({ data: { userId: HIRE_ID, score: 10, totalQuestions: 10, passed: true, answersJson: [] } })
+  await requestReread(prisma, await moduleIdOf('welcome'), P.hr.id)
+  assert.equal((await signValuesAcknowledgement(prisma, HIRE_ID, P.hire.name)).completed, false)
+})
+
+test('a reopen waits for a hire finishing at that moment and then treats them as finished', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await finishWholeCourse(HIRE_ID)
+  const moduleId = await moduleIdOf('welcome')
+  await prisma.$transaction(async (tx) => {
+    await lockUserRow(tx, HIRE_ID)
+    pending = requestReread(prisma, moduleId, P.hr.id)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    await tx.user.update({ where: { id: HIRE_ID }, data: { onboardingCompleted: true } })
+  }, { timeout: 15_000 })
+  await pending
+  assert.equal((await progressRow('welcome')).source, 'REREAD')
+})
+
+test('reopening notifies on a later day, and a same-day repeat stays silent', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  const moduleId = await moduleIdOf('welcome')
+  const { calls, send } = recorder()
+  await notifyAssigned(prisma, (await assignModule(prisma, moduleId, [STAFF], P.hr.id)).notice, { send, now: DAY_ONE })
+  await recordEvent(prisma, STAFF, 'welcome', { type: 'SCROLLED_END' })
+  await completeModule(prisma, STAFF, 'welcome')
+
+  await notifyAssigned(prisma, (await assignModule(prisma, moduleId, [STAFF], P.hr.id)).notice, { send, now: DAY_ONE })
+  assert.equal(calls.length, 1)
+  await notifyAssigned(prisma, (await assignModule(prisma, moduleId, [STAFF], P.hr.id)).notice, { send, now: DAY_TWO })
+  assert.equal(calls.length, 2)
+})
+
+test('the send limit counts after the once-only check, so running again reaches everyone', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  const moduleId = await moduleIdOf(SECURITY)
+  const { calls, send } = recorder()
+  const original = console.error
+  console.error = () => undefined
+  try {
+    const people = [STAFF, P.lead.id, P.buddy.id, P.hr.id]
+    for (let run = 0; run < people.length + 1; run += 1) {
+      const { notice } = await assignModule(prisma, moduleId, people, P.hr.id)
+      await notifyAssigned(prisma, { ...notice, userIds: people }, { send, now: DAY_ONE, limit: 1 })
+    }
+  } finally {
+    console.error = original
+  }
+  assert.ok(calls.length >= 4)
+  assert.equal(new Set(calls.map((c) => c.to)).size, 4)
+  assert.equal(calls.length, new Set(calls.map((c) => c.to)).size)
+})
+
+test('someone with no email gets no notice and no log row, and a hire mid-course gets the neutral notice', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await scrollAndComplete('welcome')
+  await prisma.user.update({ where: { id: STAFF }, data: { email: null } })
+  const moduleId = await moduleIdOf('welcome')
+  const { calls, send } = recorder()
+  const { notice } = await assignModule(prisma, moduleId, [STAFF, HIRE_ID], P.hr.id)
+  await notifyAssigned(prisma, notice, { send, now: DAY_ONE })
+  assert.deepEqual(calls.map((c) => [c.to, c.inCourse]), [[P.hire.email, true]])
+  assert.equal(await prisma.onboardingNotificationLog.count({ where: { key: { startsWith: `assign:${STAFF}:` } } }), 0)
 })
 
 test('loadAssigned lists open assigned and re-read modules in course order, and nothing else', ACADEMY_DB_TEST, async () => {
