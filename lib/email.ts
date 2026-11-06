@@ -13,6 +13,7 @@ import { shouldReceiveReportForPeriod } from '@/lib/evaluation-profile-rules'
 import { getResolvedEvaluationAssignments } from '@/lib/evaluation-assignments'
 import { renderLeaveRequestEmailAction } from '@/lib/leave-deep-links'
 import { compassUrl } from '@/lib/compass-url'
+import { formatAcademyDate } from '@/lib/academy/view-labels'
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -2356,10 +2357,14 @@ export async function sendTransitionPlanEscalation(requestId: string) {
   }
 }
 
+async function getOaRecipientEmails(): Promise<string[]> {
+  const users = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
+  return users.flatMap((user) => (user.email ? [user.email] : []))
+}
+
 /** Tells O&A that a hire changed bank or payout details. Carries the person's name only, never the details. */
 export async function sendPaymentDetailsUpdatedNotification(personName: string) {
-  const oaUsers = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
-  const recipients = mergeRecipientEmails(oaUsers.map((u) => u.email))
+  const recipients = mergeRecipientEmails(await getOaRecipientEmails())
   if (recipients.length === 0) {
     console.error('[academy] no O&A recipients configured for payment details notification')
     return { success: false, message: 'No O&A recipients configured' }
@@ -2393,8 +2398,19 @@ export interface AcademySendResult {
 type AcademyOwnerRole = 'HR' | 'SECURITY' | 'OA' | 'TEAM_LEAD'
 
 /** Plain text goes in; everything shown is escaped here. */
-function academyNotice(input: { subject: string; heading: string; lines: string[]; linkLabel: string; path: string }): AcademyNotice {
-  const lines = input.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n      ')
+function academyNotice(input: {
+  subject: string
+  heading: string
+  lines: string[]
+  list?: string[]
+  closing?: string
+  linkLabel: string
+  path: string
+}): AcademyNotice {
+  const paragraph = (line: string): string => `<p>${escapeHtml(line)}</p>`
+  const list = input.list ? [`<ul>${input.list.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`] : []
+  const closing = input.closing ? [paragraph(input.closing)] : []
+  const lines = [...input.lines.map(paragraph), ...list, ...closing].join('\n      ')
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #0D9488;">${escapeHtml(input.heading)}</h2>
@@ -2404,6 +2420,31 @@ function academyNotice(input: { subject: string; heading: string; lines: string[
   `
   return { subject: input.subject, html }
 }
+
+export interface AcademyDigestItem {
+  title: string
+  /** YYYY-MM-DD, as the item stores it. */
+  dueDate: string
+  overdue: boolean
+}
+
+/** Where each owner can clear their tasks. */
+function ownerTaskLink(ownerRole: AcademyOwnerRole, newHireId: string): { linkLabel: string; path: string } {
+  const id = encodeURIComponent(newHireId)
+  switch (ownerRole) {
+    case 'HR':
+      return { linkLabel: 'Open the tracker', path: '/admin/onboarding/tracker' }
+    case 'OA':
+      return { linkLabel: 'Open payment details', path: '/oa/payment-details' }
+    case 'SECURITY':
+      return { linkLabel: 'Open the security checklist', path: `/security/onboarding/${id}` }
+    case 'TEAM_LEAD':
+      return { linkLabel: 'Open the team lead form', path: `/team-lead-form/${id}` }
+  }
+}
+
+const digestLine = ({ title, dueDate, overdue }: AcademyDigestItem): string =>
+  overdue ? `${title}: was due ${formatAcademyDate(`${dueDate}T00:00:00.000Z`, 'UTC')}` : `${title}: due today`
 
 const moduleCountLabel = (count: number): string => `${count} onboarding module${count === 1 ? '' : 's'}`
 
@@ -2447,25 +2488,20 @@ export const academyNotices = {
       linkLabel: 'Open your course',
       path: '/onboarding',
     }),
-  checklistItem: (input: {
-    title: string
+  checklistDigest: (input: {
     hireName: string
+    newHireId: string
     ownerRole: AcademyOwnerRole
-    dueDate: string
-    overdue: boolean
+    items: readonly AcademyDigestItem[]
   }): AcademyNotice => {
-    const hr = input.ownerRole === 'HR'
+    const count = input.items.length
     return academyNotice({
-      subject: `Onboarding task for ${input.hireName}: ${input.title}`,
-      heading: 'An onboarding task is waiting on you',
-      lines: [
-        input.overdue
-          ? `"${input.title}" for ${input.hireName} was due on ${input.dueDate} and is still open.`
-          : `"${input.title}" for ${input.hireName} is due today.`,
-        'Please finish it when you can, so their onboarding stays on track.',
-      ],
-      linkLabel: hr ? 'Open the tracker' : 'Open Compass',
-      path: hr ? '/admin/onboarding/tracker' : '/',
+      subject: `Onboarding tasks for ${input.hireName}`,
+      heading: `${count === 1 ? 'An onboarding task is' : 'Onboarding tasks are'} waiting on you`,
+      lines: [`You have ${count} open onboarding task${count === 1 ? '' : 's'} for ${input.hireName}:`],
+      list: input.items.map(digestLine),
+      closing: `Please finish ${count === 1 ? 'it' : 'them'} when you can, so their onboarding stays on track.`,
+      ...ownerTaskLink(input.ownerRole, input.newHireId),
     })
   },
   firstPaymentSave: (name: string): AcademyNotice =>
@@ -2518,11 +2554,6 @@ async function deliverAcademyNotice(
   }
 }
 
-async function oaEmails(): Promise<string[]> {
-  const users = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
-  return users.flatMap((user) => (user.email ? [user.email] : []))
-}
-
 export const sendCourseReleasedNotice = (to: string, name: string): Promise<AcademySendResult> =>
   deliverAcademyNotice([to], academyNotices.courseReleased(name))
 
@@ -2543,21 +2574,20 @@ export const sendModuleOverdueNotice = (input: {
   moduleCount: number
 }): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.moduleOverdue(input), [input.cc])
 
-export const sendChecklistItemNotice = (input: {
+export const sendChecklistDigestNotice = (input: {
   to: readonly string[]
-  title: string
   hireName: string
+  newHireId: string
   ownerRole: AcademyOwnerRole
-  dueDate: string
-  overdue: boolean
-}): Promise<AcademySendResult> => deliverAcademyNotice(input.to, academyNotices.checklistItem(input))
+  items: readonly AcademyDigestItem[]
+}): Promise<AcademySendResult> => deliverAcademyNotice(input.to, academyNotices.checklistDigest(input))
 
 export async function sendFirstPaymentSaveNotice(name: string): Promise<AcademySendResult> {
-  return deliverAcademyNotice(await oaEmails(), academyNotices.firstPaymentSave(name))
+  return deliverAcademyNotice(await getOaRecipientEmails(), academyNotices.firstPaymentSave(name))
 }
 
 export async function sendPaymentSetupDoneNotice(name: string): Promise<AcademySendResult> {
-  return deliverAcademyNotice(await oaEmails(), academyNotices.paymentSetupDone(name))
+  return deliverAcademyNotice(await getOaRecipientEmails(), academyNotices.paymentSetupDone(name))
 }
 
 export async function sendLinkedinSubmittedNotice(name: string): Promise<AcademySendResult> {

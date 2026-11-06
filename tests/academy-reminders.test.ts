@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { COMPASS_URL } from '../lib/compass-url'
 import {
+  isOwnerChasable,
   isLocalHour,
   isReminderWindow,
   localDateKey,
@@ -29,6 +30,12 @@ test('isLocalHour follows daylight saving, reads midnight as 0, and a null zone 
   assert.equal(isLocalHour(at('2026-12-02T19:00:00.000Z'), 'Asia/Karachi', 0), true)
   assert.equal(isLocalHour(at('2026-12-02T05:00:00.000Z'), null, 10), true)
   assert.equal(isLocalHour(at('2026-12-02T06:00:00.000Z'), null, 10), false)
+})
+
+test('isLocalHour follows Casablanca out of its usual offset during Ramadan', () => {
+  // tz database 2025b: UTC+1 on 10 February 2026, UTC+0 on 1 March 2026.
+  assert.equal(isLocalHour(at('2026-02-10T09:00:00.000Z'), 'Africa/Casablanca', 10), true)
+  assert.equal(isLocalHour(at('2026-03-01T10:00:00.000Z'), 'Africa/Casablanca', 10), true)
 })
 
 test('the reminder window opens at local 10:00 and shuts at 18:00, so a failed send gets later runs the same day', () => {
@@ -98,7 +105,7 @@ test('each notice names a person, escapes them, and links to Compass', () => {
     academyNotices.firstPaymentSave(name),
     academyNotices.paymentSetupDone(name),
     academyNotices.linkedinSubmitted(name),
-    academyNotices.checklistItem({ title: name, hireName: name, ownerRole: 'HR', dueDate: '2026-12-01', overdue: true }),
+    academyNotices.checklistDigest({ hireName: name, newHireId: 'hire-1', ownerRole: 'HR', items: [{ title: name, dueDate: '2026-12-01', overdue: true }] }),
   ]
   for (const notice of notices) {
     assert.ok(notice.subject.length > 0)
@@ -111,16 +118,42 @@ test('each notice names a person, escapes them, and links to Compass', () => {
 test('notice wording follows the count and the date', () => {
   assert.match(academyNotices.moduleOverdue({ hireName: 'Cara', moduleCount: 1 }).subject, /1 onboarding module /)
   assert.match(academyNotices.moduleOverdue({ hireName: 'Cara', moduleCount: 3 }).subject, /3 onboarding modules /)
-  const item = { title: 'Laptop', hireName: 'Cara', ownerRole: 'SECURITY' as const, dueDate: '2026-12-01' }
-  assert.match(academyNotices.checklistItem({ ...item, overdue: false }).html, /due today/)
-  assert.match(academyNotices.checklistItem({ ...item, overdue: true }).html, /was due on 2026-12-01/)
+  const digest = academyNotices.checklistDigest({
+    hireName: 'Cara', newHireId: 'hire-1', ownerRole: 'SECURITY',
+    items: [{ title: 'Laptop', dueDate: '2026-12-01', overdue: false }, { title: 'Phone', dueDate: '2026-11-28', overdue: true }],
+  })
+  assert.match(digest.html, /You have 2 open onboarding tasks for Cara/)
+  assert.match(digest.html, /<li>Laptop: due today<\/li>/)
+  assert.match(digest.html, /<li>Phone: was due 28 Nov 2026<\/li>/)
+  assert.doesNotMatch(digest.html, /2026-11-28/)
+  const single = academyNotices.checklistDigest({ hireName: 'Cara', newHireId: 'hire-1', ownerRole: 'HR', items: [{ title: 'Laptop', dueDate: '2026-12-01', overdue: false }] })
+  assert.match(single.html, /You have 1 open onboarding task for Cara/)
 })
 
-test('the tracker link only goes to HR, who are the ones who can open it', () => {
-  const item = { title: 'Laptop', hireName: 'Cara', dueDate: '2026-12-01', overdue: false }
-  assert.match(academyNotices.checklistItem({ ...item, ownerRole: 'HR' }).html, /\/admin\/onboarding\/tracker/)
-  for (const ownerRole of ['SECURITY', 'OA', 'TEAM_LEAD'] as const) {
-    assert.doesNotMatch(academyNotices.checklistItem({ ...item, ownerRole }).html, /\/admin\/onboarding/)
+test('each owner is linked to the page where they can clear their tasks', () => {
+  const link = (ownerRole: 'HR' | 'SECURITY' | 'OA' | 'TEAM_LEAD') =>
+    academyNotices.checklistDigest({ hireName: 'Cara', newHireId: 'hire/1', ownerRole, items: [{ title: 'Laptop', dueDate: '2026-12-01', overdue: false }] }).html
+  assert.ok(link('HR').includes(`href="${COMPASS_URL}/admin/onboarding/tracker"`))
+  assert.ok(link('OA').includes(`href="${COMPASS_URL}/oa/payment-details"`))
+  assert.ok(link('SECURITY').includes(`href="${COMPASS_URL}/security/onboarding/hire%2F1"`))
+  assert.ok(link('TEAM_LEAD').includes(`href="${COMPASS_URL}/team-lead-form/hire%2F1"`))
+})
+
+test('owners are chased only for what they can clear', () => {
+  const item = (key: string, autoTickEvent: string | null = null) => ({ key, autoTickEvent })
+  assert.equal(isOwnerChasable(item('contract-signed'), false), true)
+  assert.equal(isOwnerChasable(item('setup-complete', 'SETUP_READY'), false), true)
+  assert.equal(isOwnerChasable(item('lead-input', 'LEAD_INPUT_SUBMITTED'), true), false)
+  for (const event of ['SECURITY_ACK_SIGNED', 'PAYMENT_SETUP_DONE', 'DISCORD_USERNAME_SAVED', 'COURSE_COMPLETED']) {
+    assert.equal(isOwnerChasable(item('any', event), true), false, event)
+  }
+  assert.equal(isOwnerChasable(item('linkedin-update', 'LINKEDIN_VERIFIED'), false), false)
+  assert.equal(isOwnerChasable(item('linkedin-update', 'LINKEDIN_VERIFIED'), true), true)
+})
+
+test('the owner panels show only with the flag on', () => {
+  for (const page of ['app/(evaluator)/team-lead-form/[newHireId]/page.tsx', 'app/(security)/security/onboarding/[newHireId]/page.tsx']) {
+    assert.match(read(page), /academyEnabled && newHireId && <MyChecklist newHireId=\{newHireId\} \/>/, page)
   }
 })
 
@@ -145,4 +178,10 @@ test('route notices run after the response', () => {
     ['app/api/onboarding/payout/route.ts', /after\(\(\) => notifyFirstPaymentSave\(prisma, user\.id, user\.name\)\)/],
   ]
   for (const [file, pattern] of wiring) assert.match(read(file), pattern, file)
+})
+
+test('a first-save notice is retried by later saves: its key is what stops a repeat', () => {
+  for (const file of ['app/api/onboarding/academy/bank/route.ts', 'app/api/onboarding/payout/route.ts']) {
+    assert.match(read(file), /\n    after\(\(\) => notifyFirstPaymentSave\(/, file)
+  }
 })

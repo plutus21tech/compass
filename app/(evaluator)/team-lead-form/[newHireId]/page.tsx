@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft, Save } from 'lucide-react'
+import { MyChecklist } from '@/components/academy/hr/MyChecklist'
 import { isLeadInputSubmitted } from '@/lib/academy/setup'
 
 interface TeamLeadFormData {
@@ -229,6 +230,8 @@ export default function TeamLeadFormPage() {
               {submitted ? 'Submitted' : 'Submit Form'}
             </Button>
           </div>
+
+          {academyEnabled && newHireId && <MyChecklist newHireId={newHireId} />}
         </CardContent>
       </Card>
       </motion.div>

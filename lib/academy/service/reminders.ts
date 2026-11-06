@@ -1,15 +1,17 @@
 import type { ChecklistOwnerRole, Prisma, PrismaClient } from '@prisma/client'
 import {
   sendBuddyNotice,
-  sendChecklistItemNotice,
+  sendChecklistDigestNotice,
   sendLeadInputOverdueNotice,
   sendModuleOverdueNotice,
 } from '@/lib/email'
 import { isPastDue } from '../checklist'
-import { isReminderWindow, localDateKey, oldestOverdue, overdueDayCount } from '../reminders'
+import { isOwnerChasable, isReminderWindow, localDateKey, oldestOverdue, overdueDayCount } from '../reminders'
+import { parseProgressState } from '../progress'
 import { isLeadInputSubmitted } from '../setup'
 import { timeZoneFor } from '../time'
 import { syncChecklists } from './checklist'
+import { LINKEDIN_MODULE_SLUG } from './fields'
 import { deliverOnce, type SendResult } from './notify'
 import { listCourseModules } from './progress'
 import { SETUP_INCLUDE } from './setup-read'
@@ -24,13 +26,12 @@ export interface ReminderSenders {
   leadInputOverdue(input: { to: string; leadName: string; hireName: string; newHireId: string }): Promise<SendResult>
   buddy(input: { to: string; buddyName: string; hireName: string }): Promise<SendResult>
   moduleOverdue(input: { to: string; cc: string | null; hireName: string; moduleCount: number }): Promise<SendResult>
-  checklistItem(input: {
+  checklistDigest(input: {
     to: readonly string[]
-    title: string
     hireName: string
+    newHireId: string
     ownerRole: ChecklistOwnerRole
-    dueDate: string
-    overdue: boolean
+    items: ReadonlyArray<{ title: string; dueDate: string; overdue: boolean }>
   }): Promise<SendResult>
 }
 
@@ -38,7 +39,7 @@ export const emailSenders: ReminderSenders = {
   leadInputOverdue: sendLeadInputOverdueNotice,
   buddy: sendBuddyNotice,
   moduleOverdue: sendModuleOverdueNotice,
-  checklistItem: sendChecklistItemNotice,
+  checklistDigest: sendChecklistDigestNotice,
 }
 
 export interface JobSummary {
@@ -67,7 +68,7 @@ const HIRE_SELECT = {
   remoteCountry: true,
   teamLead: { select: { name: true, email: true } },
   buddy: { select: { name: true, email: true } },
-  teamLeadForm: SETUP_INCLUDE.teamLeadForm,
+  teamLeadForm: { select: { ...SETUP_INCLUDE.teamLeadForm.select, createdAt: true } },
   user: { select: { name: true, email: true, officeLocation: true, remoteCountry: true, onboardingCompleted: true } },
 } satisfies Prisma.NewHireSelect
 
@@ -91,12 +92,12 @@ interface HireTurn {
   date: string
 }
 
-function logFailure(step: string, ids: { newHireId: string; itemId?: string }, error: unknown): void {
+function logFailure(step: string, ids: { newHireId: string }, error: unknown): void {
   console.error('[academy] reminder step failed', { step, ...ids, error: error instanceof Error ? error.name : 'unknown' })
 }
 
 /** One step's failure stays that step's: the rest of the hire and the rest of the run carry on. */
-async function guarded(step: string, ids: { newHireId: string; itemId?: string }, run: () => Promise<Outcome>): Promise<Outcome> {
+async function guarded(step: string, ids: { newHireId: string }, run: () => Promise<Outcome>): Promise<Outcome> {
   try {
     return await run()
   } catch (error) {
@@ -108,9 +109,12 @@ async function guarded(step: string, ids: { newHireId: string; itemId?: string }
 const isFinished = (hire: Hire): boolean => hire.status === 'COMPLETED' || hire.user?.onboardingCompleted === true
 const storedDate = (date: Date): string => date.toISOString().slice(0, 10)
 
-async function leadInputNotice({ job, hire, hireName, date }: HireTurn): Promise<Outcome> {
-  const dueAt = hire.teamLeadForm?.leadInputDueAt
-  if (!dueAt || !isPastDue(dueAt, job.now) || isLeadInputSubmitted(hire.teamLeadForm)) return 'NOT_DUE'
+async function leadInputNotice({ job, hire, hireName, timeZone, date }: HireTurn): Promise<Outcome> {
+  const form = hire.teamLeadForm
+  const dueAt = form?.leadInputDueAt
+  if (!form || !dueAt || !isPastDue(dueAt, job.now) || isLeadInputSubmitted(form)) return 'NOT_DUE'
+  // A setup saved after the due date has just sent the first request: the reminder starts tomorrow.
+  if (localDateKey(form.createdAt, timeZone) === date) return 'NOT_DUE'
   const lead = hire.teamLead
   if (!lead?.email) return 'NO_RECIPIENT'
   const to = lead.email
@@ -146,24 +150,51 @@ async function overdueNotice({ job, hire, hireName, timeZone, date }: HireTurn):
   )
 }
 
+/** Only a link the hire saved in the module can be verified, so only that counts as submitted. */
+async function hasSubmittedLinkedin(job: JobContext, userId: string | null): Promise<boolean> {
+  if (!userId) return false
+  const row = await job.db.onboardingProgress.findFirst({
+    where: { userId, module: { slug: LINKEDIN_MODULE_SLUG } },
+    select: { state: true },
+  })
+  return parseProgressState(row?.state).linkedinUrl !== undefined
+}
+
+function ownerAddresses(job: JobContext, hire: Hire, ownerRole: ChecklistOwnerRole): string[] {
+  if (ownerRole !== 'TEAM_LEAD') return job.ownerEmails.get(ownerRole) ?? []
+  return hire.teamLead?.email ? [hire.teamLead.email] : []
+}
+
+/** One digest per hire, per owner, per day. A failure takes the whole digest to a later run. */
 async function checklistNotices({ job, hire, hireName, date }: HireTurn): Promise<Outcome[]> {
-  const items = await job.db.onboardingChecklistItem.findMany({
+  // Only a saved setup sets this: hires from before the Academy have nothing to be chased for.
+  if (!hire.teamLeadForm?.leadInputDueAt) return []
+  const open = await job.db.onboardingChecklistItem.findMany({
     where: { newHireId: hire.id, doneAt: null },
-    select: { id: true, dueAt: true, templateItem: { select: { title: true, ownerRole: true } } },
+    select: { dueAt: true, templateItem: { select: { key: true, title: true, ownerRole: true, autoTickEvent: true } } },
     orderBy: { templateItem: { orderIndex: 'asc' } },
   })
-  const due = items.filter((item) => storedDate(item.dueAt) <= date)
+  const due = open.filter((item) => storedDate(item.dueAt) <= date)
+  const linkedinSubmitted = due.some((item) => item.templateItem.autoTickEvent === 'LINKEDIN_VERIFIED')
+    ? await hasSubmittedLinkedin(job, hire.userId)
+    : false
+  const chasable = due.filter((item) => isOwnerChasable(item.templateItem, linkedinSubmitted))
+
   const outcomes: Outcome[] = []
-  for (const item of due) {
-    const { title, ownerRole } = item.templateItem
-    const dueDate = storedDate(item.dueAt)
-    const to = ownerRole === 'TEAM_LEAD' ? (hire.teamLead?.email ? [hire.teamLead.email] : []) : (job.ownerEmails.get(ownerRole) ?? [])
+  for (const ownerRole of new Set(chasable.map((item) => item.templateItem.ownerRole))) {
+    const to = ownerAddresses(job, hire, ownerRole)
+    const items = chasable
+      .filter((item) => item.templateItem.ownerRole === ownerRole)
+      .map((item) => {
+        const dueDate = storedDate(item.dueAt)
+        return { title: item.templateItem.title, dueDate, overdue: dueDate < date }
+      })
     outcomes.push(
       to.length === 0
         ? 'NO_RECIPIENT'
-        : await guarded('checklist', { newHireId: hire.id, itemId: item.id }, () =>
-            deliverOnce(job.db, `check:${item.id}:${date}`, () =>
-              job.senders.checklistItem({ to, title, hireName, ownerRole, dueDate, overdue: dueDate < date }),
+        : await guarded('checklist', { newHireId: hire.id }, () =>
+            deliverOnce(job.db, `check:${hire.id}:${ownerRole}:${date}`, () =>
+              job.senders.checklistDigest({ to, hireName, newHireId: hire.id, ownerRole, items }),
             ),
           ),
     )
@@ -249,7 +280,7 @@ export async function runOnboardingJob(db: PrismaClient, now: Date, senders: Rem
 
   const outcomes = results.flatMap((result) => result.outcomes)
   const count = (outcome: Outcome): number => outcomes.filter((value) => value === outcome).length
-  return {
+  const summary: JobSummary = {
     hires: hires.length,
     limited,
     ticked: results.reduce((total, result) => total + result.ticked, 0),
@@ -257,4 +288,7 @@ export async function runOnboardingJob(db: PrismaClient, now: Date, senders: Rem
     failed: count('FAILED'),
     noRecipient: count('NO_RECIPIENT'),
   }
+  console.info('[academy] reminder job', summary)
+  if (summary.noRecipient > 0) console.warn('[academy] reminder notices had no recipient', { count: summary.noRecipient })
+  return summary
 }

@@ -200,7 +200,7 @@ Notices, per §8:
 | Module 11 completed | OA | on completion, route | `payment-done:{userId}` |
 | LinkedIn submitted | HR | on save, route | `linkedin:{userId}` |
 | Module assigned or re-read | Assignee | Task 5 | `assign:{userId}:{moduleId}:{versionId}` |
-| Checklist due today or overdue | Item owner | daily at the hire's local 10:00 | `check:{itemId}:{date}` |
+| Checklist due today or overdue | Item owner, one digest per hire, per owner | daily at the hire's local 10:00 | `check:{newHireId}:{ownerRole}:{date}` |
 
 - `{date}` is the hire's local date. Owner role resolves to users with that role; TEAM_LEAD to the hire's lead.
 - The daily lead reminder also covers a first request whose email failed, the stage 1 carry-forward.

@@ -28,7 +28,8 @@ export async function PUT(request: NextRequest) {
     await guardAcademyMutation(request, user.id)
     const { isUpdate } = await saveBankDetails(prisma, user.id, await request.json())
     if (isUpdate) after(() => notifyPaymentDetailsChanged(user.id, user.name))
-    else after(() => notifyFirstPaymentSave(prisma, user.id, user.name))
+    // On an update too: if the first notice failed, this is its retry. Its key stops a repeat.
+    after(() => notifyFirstPaymentSave(prisma, user.id, user.name))
     // Writes never echo details back.
     return NextResponse.json({ success: true }, { headers: NO_STORE })
   } catch (error) {

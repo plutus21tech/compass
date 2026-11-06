@@ -439,6 +439,8 @@ All notifications are email, using the existing `lib/email.ts` / `EmailQueue` pa
 
 If the Vercel plan doesn't allow hourly crons, fall back to one run per time zone or a daily batch at 05:00 UTC (10:00 PKT), and record that in this document. Authentication uses the existing `lib/cron-auth.ts`.
 
+**Stage 4 decision: the reminder window is 10:00 to 17:59 local.** Reminders first go at 10:00, and the later runs of that working day stay open. A send that failed or a cron run that came late would otherwise have no later run, and a notice with one date, like the buddy's, would be lost. The notification log stops anyone hearing twice. Something that first falls due during the day goes at the next run.
+
 ## 9. Access and lockout
 
 - **Lockout rule:** a user with `onboardingCompleted = false` can only reach:

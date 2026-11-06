@@ -1,5 +1,6 @@
 // Pure rules for the hourly job. Server only because of the cron check, but free of data access.
 import { isCronAuthorized } from '@/lib/cron-auth'
+import type { AutoTickEvent } from './checklist'
 import { isAcademyEnabled } from './flag'
 import { moduleCardState, type ModuleCardRow } from './progress'
 
@@ -61,6 +62,24 @@ export function oldestOverdue(rows: readonly ModuleCardRow[], now: Date): Overdu
   const dueDates = rows.flatMap((row) => (row.dueAt && moduleCardState(row, now).overdue ? [row.dueAt.getTime()] : []))
   if (dueDates.length === 0) return null
   return { count: dueDates.length, oldestDueAt: new Date(Math.min(...dueDates)) }
+}
+
+/** Open until the hire acts, so mailing the item's owner would chase someone who can't clear it. */
+const HIRE_DRIVEN_EVENTS: readonly string[] = [
+  'SECURITY_ACK_SIGNED',
+  'PAYMENT_SETUP_DONE',
+  'DISCORD_USERNAME_SAVED',
+  'COURSE_COMPLETED',
+] satisfies readonly AutoTickEvent[]
+const LINKEDIN_EVENT: AutoTickEvent = 'LINKEDIN_VERIFIED'
+/** The lead's overdue reminder already covers this one. */
+const LEAD_INPUT_ITEM_KEY = 'lead-input'
+
+/** Whether an open item belongs in its owner's digest. HR can only verify a LinkedIn link once there is one. */
+export function isOwnerChasable(item: { key: string; autoTickEvent: string | null }, linkedinSubmitted: boolean): boolean {
+  if (item.key === LEAD_INPUT_ITEM_KEY) return false
+  if (item.autoTickEvent === LINKEDIN_EVENT) return linkedinSubmitted
+  return item.autoTickEvent === null || !HIRE_DRIVEN_EVENTS.includes(item.autoTickEvent)
 }
 
 export type CronGate = { action: 'refuse'; status: 401 } | { action: 'skip' } | { action: 'run' }

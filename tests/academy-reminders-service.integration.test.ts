@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { PrismaClient } from '@prisma/client'
 import { prisma } from '../lib/db'
 import { notifyFirstPaymentSave, notifyPaymentSetupDone } from '../lib/academy/service/notify-oa'
+import { listMyChecklist } from '../lib/academy/service/tracker-actions'
 import { notifyCourseReleased, notifyLinkedinSubmitted, sendOnce } from '../lib/academy/service/notify'
 import { runOnboardingJob, type ReminderSenders } from '../lib/academy/service/reminders'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
@@ -31,26 +32,30 @@ function recorder(fails: (call: Call) => boolean = () => false): { calls: Call[]
       leadInputOverdue: record('lead'),
       buddy: record('buddy'),
       moduleOverdue: record('overdue'),
-      checklistItem: record('check'),
+      checklistDigest: record('check'),
     },
   }
 }
 
 const ofKind = (calls: readonly Call[], kind: string) => calls.filter((call) => call.kind === kind)
-const titled = (calls: readonly Call[], title: string) => ofKind(calls, 'check').filter((call) => call.title === title)
+type Digest = Call & { ownerRole: string; items: Array<{ title: string; overdue: boolean }> }
+const digests = (calls: readonly Call[]) => ofKind(calls, 'check') as Digest[]
+const titled = (calls: readonly Call[], title: string) => digests(calls).filter((call) => call.items.some((item) => item.title === title))
 const logKeys = async (prefix: string) =>
   (await prisma.onboardingNotificationLog.findMany({ where: { key: { startsWith: prefix } } })).map((row) => row.key)
 
 async function quietly<T>(run: () => Promise<T>): Promise<{ result: T; logged: unknown[][] }> {
   const logged: unknown[][] = []
-  const { error, warn } = console
+  const { error, warn, info } = console
   console.error = (...args: unknown[]) => { logged.push(args) }
   console.warn = (...args: unknown[]) => { logged.push(args) }
+  console.info = (...args: unknown[]) => { logged.push(args) }
   try {
     return { result: await run(), logged }
   } finally {
     console.error = error
     console.warn = warn
+    console.info = info
   }
 }
 
@@ -268,20 +273,113 @@ test('a failed buddy notice is retried by the next run, so it is not lost', ACAD
   assert.equal(ofKind(calls, 'buddy').length, 1)
 })
 
-test("a checklist item due today mails its owner once, and TEAM_LEAD goes to the hire's lead", ACADEMY_DB_TEST, async () => {
+test("a due item goes into its owner's daily digest once, and TEAM_LEAD goes to the hire's lead", ACADEMY_DB_TEST, async () => {
   await createReadyHire()
   await clearLog()
   const { calls, senders } = recorder()
   await job(JOINING_DAY_10AM, senders)
   await job(hoursAfter(JOINING_DAY_10AM, 1), senders)
 
-  const hrCall = titled(calls, 'HR onboarding call held')
-  assert.equal(hrCall.length, 1)
-  assert.ok(hrCall[0].to.includes(P.hr.email)) // every HR user: the shared test database may hold others
-  assert.deepEqual([hrCall[0].overdue, hrCall[0].ownerRole], [false, 'HR'])
-  assert.deepEqual(titled(calls, 'Team onboarding call held').map(({ to }) => to), [[P.lead.email]])
-  const item = await prisma.onboardingChecklistItem.findFirstOrThrow({ where: { newHireId: NEW_HIRE_ID, templateItem: { key: 'hr-call' } } })
-  assert.deepEqual(await logKeys(`check:${item.id}`), [`check:${item.id}:2026-12-01`])
+  const hr = digests(calls).filter((call) => call.ownerRole === 'HR')
+  assert.equal(hr.length, 1)
+  assert.ok(hr[0].to.includes(P.hr.email)) // every HR user: the shared test database may hold others
+  assert.equal(hr[0].newHireId, NEW_HIRE_ID)
+  assert.equal(hr[0].items.find((item) => item.title === 'HR onboarding call held')?.overdue, false)
+  assert.equal(hr[0].items.find((item) => item.title === 'Signed contract on file')?.overdue, true)
+  assert.deepEqual(digests(calls).filter((call) => call.ownerRole === 'TEAM_LEAD').map(({ to }) => to), [[P.lead.email]])
+  assert.ok((await logKeys('check:')).includes(`check:${NEW_HIRE_ID}:HR:2026-12-01`))
+})
+
+test('a failed digest is retried whole, and another owner is not sent theirs twice', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await clearLog()
+  const failing = recorder((call) => (call as Digest).ownerRole === 'HR')
+  const { result } = await job(JOINING_DAY_10AM, failing.senders)
+  assert.equal(result.failed, 1)
+  const { calls, senders } = recorder()
+  await job(hoursAfter(JOINING_DAY_10AM, 1), senders)
+  assert.deepEqual(digests(calls).map((call) => call.ownerRole), ['HR'])
+  assert.ok(digests(calls)[0].items.length > 1)
+})
+
+test('a hire with no saved setup gets no checklist mail', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await prisma.teamLeadForm.deleteMany({ where: { newHireId: NEW_HIRE_ID } })
+  await clearLog()
+  const { calls, senders } = recorder()
+  await job(JOINING_DAY_10AM, senders)
+  assert.equal(digests(calls).length, 0)
+  assert.equal(ofKind(calls, 'buddy').length, 1) // the rest of the job still sees them
+})
+
+test('the lead gets one mail about their input, not a digest as well', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await prisma.teamLeadForm.update({ where: { newHireId: NEW_HIRE_ID }, data: { submittedAt: null } })
+  await clearLog()
+  const { calls, senders } = recorder()
+  await job(new Date('2026-11-25T05:00:00.000Z'), senders)
+  assert.equal(ofKind(calls, 'lead').length, 1)
+  assert.equal(titled(calls, 'Tutorials and documentation from Team Manager').length, 0)
+  assert.equal(digests(calls).some((call) => call.ownerRole === 'TEAM_LEAD'), false)
+})
+
+test('a late setup does not send the overdue reminder on the day the form was made', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const made = new Date('2026-11-25T04:00:00.000Z')
+  await prisma.teamLeadForm.update({ where: { newHireId: NEW_HIRE_ID }, data: { submittedAt: null, createdAt: made } })
+  await clearLog()
+  const { calls, senders } = recorder()
+  await job(new Date('2026-11-25T05:00:00.000Z'), senders)
+  assert.equal(ofKind(calls, 'lead').length, 0)
+  await job(new Date('2026-11-26T05:00:00.000Z'), senders)
+  assert.equal(ofKind(calls, 'lead').length, 1)
+})
+
+test('owners are not chased for what only the hire can move', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await clearLog()
+  const { calls, senders } = recorder()
+  await job(new Date('2026-12-15T05:00:00.000Z'), senders)
+  const hireDriven = [
+    'Security acknowledgement signed', 'Invoice Sharing/Bank Account Setup + Accounting Team Updated',
+    'Creation Discord Account (with profile photo)', 'Academy and culture quiz complete', 'LinkedIn Profile Update',
+  ]
+  for (const title of hireDriven) assert.equal(titled(calls, title).length, 0, title)
+})
+
+test('the LinkedIn item is chased once the hire has submitted a link', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await clearLog()
+  await prisma.onboardingProgress.updateMany({
+    where: { userId: HIRE_ID, module: { slug: 'linkedin' } },
+    data: { state: { checks: {}, linksOpenedAt: {}, scrolledToEnd: false, linkedinUrl: 'https://www.linkedin.com/in/cara' } },
+  })
+  const { calls, senders } = recorder()
+  await job(new Date('2026-12-15T05:00:00.000Z'), senders)
+  assert.equal(titled(calls, 'LinkedIn Profile Update').length, 1)
+})
+
+test('the summary is logged as counts, and a warning shows when a notice had nobody to go to', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await clearLog()
+  const { senders } = recorder()
+  const { result, logged } = await job(JOINING_DAY_10AM, senders)
+  assert.ok(result.noRecipient > 0)
+  assert.deepEqual(logged.find((args) => args[0] === '[academy] reminder job')?.[1], result)
+  assert.deepEqual(Object.values(result).filter((value) => typeof value === 'string'), [])
+  assert.ok(logged.some((args) => args[0] === '[academy] reminder notices had no recipient'))
+})
+
+test('listMyChecklist gives each person their own items and nobody else any', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const owners = async (id: string, role: string) =>
+    [...new Set((await listMyChecklist(prisma, { id, role }, NEW_HIRE_ID)).map((item) => item.ownerRole))]
+  assert.deepEqual(await owners(P.lead.id, 'EMPLOYEE'), ['TEAM_LEAD'])
+  assert.deepEqual(await owners(P.oa.id, 'SECURITY'), ['SECURITY'])
+  assert.deepEqual(await owners(P.staff.id, 'EMPLOYEE'), [])
+  assert.deepEqual(await owners(P.hr.id, 'HR'), []) // HR have the tracker
+  assert.deepEqual(await owners(P.lead.id, 'HR'), ['TEAM_LEAD']) // an HR user who leads this hire still has those
+  await assert.rejects(() => listMyChecklist(prisma, { id: P.lead.id, role: 'EMPLOYEE' }, 'act-nobody'), /New hire not found/)
 })
 
 test('an overdue item mails daily, a done or later item does not, and sync runs before the notices', ACADEMY_DB_TEST, async () => {
@@ -290,7 +388,7 @@ test('an overdue item mails daily, a done or later item does not, and sync runs 
   const { calls, senders } = recorder()
   await job(JOINING_DAY_10AM, senders)
   const contract = 'Signed contract on file'
-  assert.equal(titled(calls, contract)[0].overdue, true)
+  assert.equal(titled(calls, contract).length, 1)
   assert.equal(titled(calls, 'LinkedIn Profile Update').length, 0) // not due yet
   assert.equal(titled(calls, 'Setup fields complete (team, buddy, calls, core hours)').length, 0) // ticked by the sync
 

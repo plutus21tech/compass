@@ -4,7 +4,7 @@ import { linkedinUrlSchema } from '../bank'
 import { canTickItem, type ChecklistItemView, type ChecklistOwnerRole } from '../checklist'
 import { AcademyError } from '../errors'
 import { parseProgressState } from '../progress'
-import { tickItem, type TickInput } from './checklist'
+import { listChecklist, tickItem, type TickInput } from './checklist'
 import { LINKEDIN_MODULE_SLUG } from './fields'
 import { COURSE_TX_OPTIONS, findCourseModule, listCourseModules, lockProgressRow } from './progress'
 import { clearQuizAttempts } from './quiz'
@@ -90,6 +90,24 @@ export async function tickChecklistItem(
   const ownerRole = item.templateItem.ownerRole as ChecklistOwnerRole
   if (!canTickItem(viewer.role, { ownerRole }, item.newHire.teamLeadId, viewer.id)) throw new AcademyError('Forbidden', 403)
   return tickItem(db, itemId, viewer.id, input, now)
+}
+
+/**
+ * The items this person owns on one hire, for the pages they already use. HR can tick anything but
+ * work from the tracker, so only a hire they lead shows here. Someone with no items gets an empty list.
+ */
+export async function listMyChecklist(
+  db: PrismaClient, viewer: TrackerViewer, newHireId: string, now: Date = new Date(),
+): Promise<ChecklistItemView[]> {
+  const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { teamLeadId: true } })
+  if (!hire) throw hireNotFound()
+  const isLead = hire.teamLeadId === viewer.id
+  const items = await listChecklist(db, newHireId, now)
+  return items.filter(
+    ({ ownerRole }) =>
+      canTickItem(viewer.role, { ownerRole }, hire.teamLeadId, viewer.id) &&
+      (viewer.role !== 'HR' || (ownerRole === 'TEAM_LEAD' && isLead)),
+  )
 }
 
 /** The route is HR only. */
