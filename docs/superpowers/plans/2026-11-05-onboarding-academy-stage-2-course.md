@@ -516,16 +516,11 @@ Carried forward. None of this is built in stage 2. `2026-11-05-onboarding-academ
 - Done in stage 3: route-level coverage in `e2e/academy.spec.ts`, and the reset no longer touches `NewHire.status`.
 
 **Stage 4 (HR operations)**
-- Store who released a course (`_actorId` is unused).
+- Done in stage 4: who released a course is stored, Verify reuses `linkedinUrlSchema`, OA reads payment details masked with a logged reveal, checklist auto-ticks are derived from stored data, and the tracker and its routes have end-to-end coverage.
 - Module management must create progress rows for hires whose course is already released.
-- Reuse `linkedinUrlSchema` for Verify.
-- Route-level tests.
-- **OA's read view of payment details.** The tracker shows `OnboardingPaymentDetails` through the existing masked API (`GET /api/admin/onboarding/payout/[userId]`) and its logged reveal, for PK and contractor rows alike. Until then OA can only reach them through that API. Show OA what is new, since they enter it into payroll by hand.
-- Checklist auto-ticks are derived from stored data at backfill, not recorded as events.
 - Early-unlocked modules need `ModuleCardView` support, so Home can show them as such.
 - The bank letter download, once HR sends the text. Until then Module 11 says "HR will share your bank letter".
 
 **Not in any stage yet**
-- The "Lost or stolen" box pinned to everyone's home screen (spec, Module 7).
-- Security call time is missing from the setup fields, so the Home side card shows HR and team calls only.
+- Done in stage 4: the "Lost or stolen" box on the dashboard, and Security call time in the setup fields.
 - `accountNumber` is still returned by `GET /api/admin/users`.

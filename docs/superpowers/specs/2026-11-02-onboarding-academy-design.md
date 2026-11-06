@@ -249,6 +249,13 @@ HR can download these from the tracker drawer, one at a time as a PDF, or all of
 
 - "Completion of Manager's Onboarding Checklist" is owned by the team lead and is never auto-ticked.
 
+**Stage 4 decisions.**
+- Rows are created once per hire, when the setup is first saved and the hire has none. An item HR adds to the template later does not reach hires already set up.
+- Each hire's checklist keeps its own title, owner and order, as well as its own due offset. A later fix to the template does not reach people in progress.
+- Auto-ticks are derived from stored data when the tracker loads and in the hourly job. An auto-tick that lands after its date needs no reason at that moment; it shows as "Closed late, reason needed" until HR adds one.
+- `linkedin-update` ticks only after HR verifies (`NewHire.linkedinVerifiedAt`), not when the hire saves their own link.
+- Leads and Security tick their own items on the per-hire pages they already use. A lead can tick that hire's team-lead items whatever their role.
+
 ### 5.9 Payment details (Module 11)
 
 Onboarding keeps these **out of payroll** (D4). Model **`OnboardingPaymentDetails`**, one row per user, whichever form saved it:
@@ -269,7 +276,7 @@ Contract type chooses the form: PK employment gets the bank form (version A), ev
 
 **Access.**
 - The hire enters and can update their own details, and never reads the values back: they see that the details are saved, and a PK hire also sees a masked IBAN. A saved PK row is locked once Module 11 is complete.
-- **HR and OA can read them only**: read-only, masked by default, with a "Reveal" action that is logged in `OnboardingPaymentRevealLog`. This is an API until the stage 4 tracker shows them.
+- **HR and OA can read them only**: read-only, masked by default, with a "Reveal" action that is logged in `OnboardingPaymentRevealLog`. HR sees them in the tracker drawer and OA on its Payment details page, both through that API.
 - No other role can see them.
 
 Changing saved details, by either form, notifies OA by email. A failed email never fails the save.
@@ -418,6 +425,15 @@ During the build, run the design pass with the project's frontend-design / impec
   - They see an "Assigned to you" card on their dashboard and can open `/onboarding/[slug]` directly.
   - They are **never locked out**; see D2.
 
+**Stage 4 decisions.**
+- **Re-reads and assignments are read-only.** The Module 8 and 11 input fields are hidden, saves are refused, and the completion rule falls back to scrolling to the end. Staff cannot enter bank details through an assignment.
+- **Reopened rows have no due date,** so nobody is shown as overdue through no fault of theirs.
+- **The module editor is structured.** HR edits the text of each block and adds, removes and reorders blocks. The server refuses draft changes to fixed structure (input targets, acknowledgements, video, dashboard link, conditions) and refuses a publish that could not be completed.
+- **The acknowledgement stays top-level** and payment stays in its contract branches. Other required blocks may sit in conditionals because they fall back.
+- **Any Module 7 publish asks signers still in the course to sign again,** because the SOP text may change even when the statement does not. A re-read of the same version needs no new signature.
+- **With the flag on, the old `/admin/onboarding/modules` and `/admin/onboarding/quiz` pages redirect** to the new editors. Quiz attempts are cleared from the tracker drawer.
+- **The "If something is lost, stolen or damaged" box** on everyone's dashboard is Module 7's first warning box from its published version, so an HR edit reaches it. It fills in `{security contacts}` from Key Contacts and hides if the module has no such block.
+
 ## 8. Notifications and scheduled jobs
 
 All notifications are email, using the existing `lib/email.ts` / `EmailQueue` pattern. Links use `COMPASS_URL`.
@@ -441,6 +457,13 @@ If the Vercel plan doesn't allow hourly crons, fall back to one run per time zon
 
 **Stage 4 decision: the reminder window is 10:00 to 17:59 local.** Reminders first go at 10:00, and the later runs of that working day stay open. A send that failed or a cron run that came late would otherwise have no later run, and a notice with one date, like the buddy's, would be lost. The notification log stops anyone hearing twice. Something that first falls due during the day goes at the next run.
 
+**Stage 4 decisions on checklist mail.**
+- Reminders go only to hires with a saved setup. Items due before the first setup save are not reminded, though HR still sees them.
+- There is one digest per hire per owner per day, not one mail per item.
+- Nobody is mailed about a step only the hire can move. Leads and Security tick their own items on their existing per-hire pages, so they can clear what they are chased for.
+- OA gets no checklist mail for its seeded item.
+- Assignment mail is keyed on the UTC date as well, so reopening a module on a later day notifies again and a same-day repeat stays silent.
+
 ## 9. Access and lockout
 
 - **Lockout rule:** a user with `onboardingCompleted = false` can only reach:
@@ -456,6 +479,12 @@ If the Vercel plan doesn't allow hourly crons, fall back to one run per time zon
   - **Tracker read access:** OA can read the payment-related columns.
   - **Lead input:** the assigned team lead or HR.
   - **Security checklist:** HR or Security (unchanged).
+
+**Stage 4 decisions.**
+- The tracker shows OA only the payment columns, and OA reads payment details masked with a logged reveal on its own Payment details page.
+- A re-read or an assignment never locks an existing employee out.
+- A payout save needs a Module 11 course row for that person, so staff on an assignment cannot write details or mail OA.
+- The values signature is refused while a module is reopened.
 
 ## 10. Feature flag and cutover
 

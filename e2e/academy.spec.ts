@@ -2,8 +2,13 @@ import { test, expect, type Page } from '@playwright/test'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/db'
 import { P } from '../tests/helpers/academy-test-db'
-import { HIRE_ID, NEW_HIRE_ID, cleanCourse, createReadyHire, createReleasedHire, scrollAndComplete } from '../tests/helpers/academy-course-fixtures'
+import { CONTRACTOR_ATTRIBUTES, HIRE_ID, NEW_HIRE_ID, cleanCourse, createReadyHire, createReleasedHire, openPaymentModule, scrollAndComplete } from '../tests/helpers/academy-course-fixtures'
 import { completeModule, recordEvent } from '../lib/academy/service/progress'
+import { saveLinkedinUrl } from '../lib/academy/service/fields'
+import { unlockModule } from '../lib/academy/service/tracker-actions'
+import { setPersonAttributes } from '../lib/academy/service/attributes'
+import { savePayout } from '../lib/academy/service/payout'
+import { requestReread } from '../lib/academy/service/assignment'
 import { loadModule } from '../lib/academy/service/course'
 import { academyE2eSkipReason } from './academy-env'
 import { VALUES_STATEMENT } from '../lib/academy/quiz'
@@ -219,4 +224,125 @@ test('HR edits a module and publishes, and a hire sees it', async ({ page, brows
   await hire.goto('/onboarding/culture-values')
   await expect(hire.getByText('Our values, in fewer words.')).toBeVisible()
   await context.close()
+})
+
+// Fictional test key, not a real secret. The dev server gets the same default from playwright.config.ts.
+process.env.ONBOARDING_FIELD_ENCRYPTION_KEY ??= '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+
+async function openHireDrawer(page: Page): Promise<void> {
+  await page.goto('/admin/onboarding/tracker')
+  await page.getByRole('button', { name: `Open ${P.hire.name}` }).first().click()
+  await page.getByRole('heading', { name: 'HR checklist' }).waitFor()
+}
+
+test('HR ticks a late checklist item with a reason and verifies LinkedIn from the tracker drawer', async ({ page }) => {
+  await createReleasedHire()
+  await giveLogins(P.hr.id)
+  // HR opens the LinkedIn module early, the way the tracker does, so the hire can save a link.
+  const linkedinModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'linkedin' } })
+  await unlockModule(prisma, NEW_HIRE_ID, linkedinModule.id, P.hr.id)
+  await saveLinkedinUrl(prisma, HIRE_ID, 'https://www.linkedin.com/in/cara-lindqvist')
+  // A joining date well in the past makes every manual item overdue, so ticking one has to carry a reason.
+  await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { onboardingDate: new Date(Date.now() - 30 * 86_400_000) } })
+  const item = await prisma.onboardingChecklistItem.findFirstOrThrow({ where: { newHireId: NEW_HIRE_ID, templateItem: { key: 'contract-signed' } } })
+
+  await signIn(page, P.hr.email)
+  await openHireDrawer(page)
+
+  await page.getByLabel('Signed contract on file').click()
+  await page.getByLabel('Reason for missing this date').fill('Waiting on the countersigned copy')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('Item ticked')).toBeVisible()
+  const ticked = await prisma.onboardingChecklistItem.findUniqueOrThrow({ where: { id: item.id } })
+  expect(ticked.doneAt).not.toBeNull()
+  expect(ticked.missReason).toBe('Waiting on the countersigned copy')
+
+  await page.getByRole('button', { name: 'Verify', exact: true }).click()
+  await expect(page.getByText('LinkedIn verified')).toBeVisible()
+  const hire = await prisma.newHire.findUniqueOrThrow({ where: { id: NEW_HIRE_ID } })
+  expect(hire.linkedinVerifiedAt).not.toBeNull()
+})
+
+test('OA sees only payment data in the tracker, and a reveal is logged', async ({ page }) => {
+  test.setTimeout(120_000)
+  await createReleasedHire()
+  await prisma.user.create({ data: { ...P.oa, onboardingCompleted: true } })
+  await giveLogins(P.oa.id)
+  await setPersonAttributes(prisma, HIRE_ID, CONTRACTOR_ATTRIBUTES)
+  await openPaymentModule()
+  await savePayout(prisma, HIRE_ID, { method: 'WISE', accountHolderName: 'Cara', payoutEmail: 'cara@example.test', currency: 'USD' })
+
+  await signIn(page, P.oa.email)
+  const tracker = await page.request.get('/api/admin/onboarding/tracker')
+  expect(tracker.status()).toBe(200)
+  const rows = (await tracker.json()).data as Record<string, unknown>[]
+  expect(rows.length).toBeGreaterThan(0)
+  for (const row of rows) {
+    expect(Object.keys(row).sort()).toEqual(['department', 'joiningDate', 'name', 'newHireId', 'paymentStatus'].sort())
+  }
+  // The full drawer is HR only.
+  expect((await page.request.get(`/api/admin/onboarding/tracker/${NEW_HIRE_ID}`)).status()).toBe(403)
+
+  await page.goto('/oa/payment-details')
+  await page.getByRole('button', { name: /View details/ }).first().click()
+  await expect(page.getByText('Revealing is logged')).toBeVisible()
+  expect(await prisma.onboardingPaymentRevealLog.count({ where: { paymentUserId: HIRE_ID } })).toBe(0)
+  await page.getByRole('button', { name: 'Reveal' }).click()
+  await expect(page.getByRole('button', { name: 'Hide' })).toBeVisible()
+  const logs = await prisma.onboardingPaymentRevealLog.findMany({ where: { paymentUserId: HIRE_ID } })
+  expect(logs.map((l) => l.viewerId)).toEqual([P.oa.id])
+})
+
+const HR_ONLY_ROUTES = [
+  { method: 'GET', url: '/api/admin/onboarding/tracker' },
+  { method: 'GET', url: `/api/admin/onboarding/tracker/${NEW_HIRE_ID}` },
+  { method: 'POST', url: `/api/admin/onboarding/tracker/${NEW_HIRE_ID}/unlock` },
+  { method: 'POST', url: `/api/admin/onboarding/tracker/${NEW_HIRE_ID}/verify-linkedin` },
+  { method: 'POST', url: `/api/admin/onboarding/tracker/${NEW_HIRE_ID}/clear-quiz` },
+  { method: 'GET', url: `/api/admin/onboarding/tracker/${NEW_HIRE_ID}/acknowledgements` },
+  { method: 'GET', url: '/api/admin/onboarding/checklist-template' },
+  { method: 'POST', url: '/api/admin/onboarding/checklist-template' },
+  { method: 'GET', url: '/api/admin/onboarding/content' },
+  { method: 'POST', url: '/api/admin/onboarding/content/none/publish' },
+  { method: 'POST', url: '/api/admin/onboarding/assign' },
+  { method: 'GET', url: `/api/admin/onboarding/payout/${HIRE_ID}` },
+  { method: 'POST', url: `/api/admin/onboarding/payout/${HIRE_ID}/reveal` },
+] as const
+
+test('a plain employee is refused with 403 at every new HR route', async ({ page }) => {
+  await createReadyHire()
+  await giveLogins(P.staff.id)
+  await signIn(page, P.staff.email)
+  for (const { method, url } of HR_ONLY_ROUTES) {
+    const response = await page.request.fetch(url, { method, data: method === 'GET' ? undefined : {} })
+    expect(response.status(), `${method} ${url}`).toBe(403)
+  }
+  expect(await prisma.onboardingPaymentRevealLog.count({ where: { paymentUserId: HIRE_ID } })).toBe(0)
+})
+
+test('a re-read leaves an existing employee unlocked and shows the module on their dashboard', async ({ page }) => {
+  await createReadyHire()
+  await giveLogins(P.staff.id)
+  const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'welcome' } })
+  await requestReread(prisma, module.id, P.hr.id)
+  const row = await prisma.onboardingProgress.findFirstOrThrow({ where: { userId: P.staff.id, moduleId: module.id } })
+  expect(row.source).toBe('REREAD')
+
+  await signIn(page, P.staff.email)
+  await page.goto('/dashboard')
+  await expect(page.getByText('Assigned to you')).toBeVisible()
+  await expect(page.getByText('Please read this again')).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe('/dashboard')
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: P.staff.id }, select: { onboardingCompleted: true } })
+  expect(user.onboardingCompleted).toBe(true)
+})
+
+test('everyone on the dashboard sees the lost-or-stolen box, with the security contacts filled in', async ({ page }) => {
+  await createReadyHire()
+  await giveLogins(P.staff.id)
+  await signIn(page, P.staff.email)
+  await page.goto('/dashboard')
+  await expect(page.getByRole('heading', { name: 'If something is lost, stolen or damaged' })).toBeVisible()
+  await expect(page.getByText(/in cc\./)).toBeVisible()
+  await expect(page.getByText('{security contacts}')).toHaveCount(0)
 })

@@ -272,14 +272,11 @@ Rules, per spec section 5 and section 6 screens 5 and 6:
 Carried forward. None of this is built in stage 3.
 
 **Stage 4 (HR operations)**
-- HR downloads of acknowledgements, with the tracker.
-- **The HR module page's switch stays flipped until reload after a 409.** Course modules can't be switched off, the server refuses, and the page doesn't put the switch back.
-- **The module editor must keep Module 7's acknowledgement block.** `CHECKLIST_AND_ACK` no longer falls back to scroll-to-end, and finishing the course needs the SECURITY_SOPS signature, so a Module 7 without that block would block the hire for good.
-- **Sends run in `after`.** The platform has to finish them, and a crash loses the notice, so the tracker must show finished hires.
-- **The quiz editor retires questions, it doesn't delete them.** An HR hard delete of a question thins old reviews.
+- Done in stage 4: HR acknowledgement downloads, the module editor keeping Module 7's acknowledgement block, the quiz editor retiring questions and keeping `explanation`, and the tracker showing finished hires.
+- **The HR module page's switch stays flipped until reload after a 409.** Course modules can't be switched off, the server refuses, and the page doesn't put the switch back. With the flag on the old page redirects to the new editor, so this matters only for the flag-off page.
+- **Sends run in `after`.** The platform has to finish them, and a crash loses the notice.
 - **`blocksModuleSwitch` isn't flag-gated.** It matters only if the seed ran and the flag went off.
-- **The reset route needs same-origin and rate-limit checks** in the stage 4 HR pass.
-- **The quiz editor must keep `explanation`.** The legacy HR quiz page can blank it, and a blank explanation makes a question unusable and lets a re-seed retire it.
+- Done in stage 4: the reset route runs the same-origin and rate-limit guard with the flag on.
 
 **Stage 5 (video and polish)**
 - Chapter links ("Watch this part") once the video exists.

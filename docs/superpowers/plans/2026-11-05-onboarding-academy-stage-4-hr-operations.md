@@ -335,3 +335,45 @@ Rules:
 - [ ] **Step 4: Update the docs.** Add "After stage 4", and record the plan decisions in the design.
 - [ ] **Step 5: Run everything.** `npx tsc --noEmit`, `npm test` with no DB env, `npm run test:academy-db`, `npm run test:e2e:academy` three times, `npx next build`, `prisma migrate diff`. Expected: tsc clean, academy tests pass, the same 19 baseline failures, E2E passes each run, build passes, empty diff.
 - [ ] **Step 6: Commit.** `test(academy): cover HR operations end to end`
+
+---
+
+## After stage 4
+
+Carried forward. None of this is built in stage 4.
+
+**Needs a user decision before main**
+- **A finished contractor has no screen to update payout details,** though design §5.9 says they can. The payout fields are read-only once Module 11 is complete, and re-reads and assignments are read-only (a plan decision), so today OA handles a change directly.
+- **A re-read of Module 11 leaves the row's source as `REREAD`,** and the payout API refuses a save unless the person has a course row for that module, so a re-read blocks the payout API until the source returns to the course.
+- **Confirm the hourly cron on the first preview deploy.** `vercel.json` already lists `/api/cron/onboarding` at `0 * * * *`, next to the other crons. If the plan refuses it, use the fallback in design §8.
+
+**Stage 5 (video and polish)**
+- **Preview as** in the editors (design §7).
+- **The most-missed questions report** (design §7, tracker panel).
+- **The bank letter download,** once HR sends the text. Until then Module 11 says "HR will share your bank letter".
+
+**Deferred from stage 4 reviews (minor)**
+- `tickItem` reads then writes with no guard against a concurrent auto-tick, and the day boundary is UTC midnight.
+- `gatherRowFacts` loads progress and quiz data for OA and then discards it.
+- `overdueCount` counts modules only, not checklist items.
+- The first tracker load writes auto-ticks in a burst that could outrun the function timeout.
+- The tracker drawer's `act` needs a ref guard against a double click, and it reloads on a per-request counter.
+- Focus is not moved to the reason field when it opens or closes.
+- `PaymentDetailsScreen` keeps a stale error and does not guard closing a row mid-request.
+- The "30 days" text is a literal, not `FINISHED_WINDOW_DAYS`.
+- The checklist progress bar's "Not released" label is unclear.
+- The sidebar's "Dashboard" now opens the tracker.
+- The "Overdue modules" column label should say what it counts.
+- The mine endpoint answers 404 or an empty list, which reveals whether a hire id exists.
+- A future OA checklist item would link to a page with no panel for it.
+- A form that predates the Academy can get the request mail and a reminder together.
+- The "mine" panel's auto-ticks lag by up to an hour.
+- The Security page needs a `SecurityChecklist` row to load.
+- A quiz in progress when HR changes a correct answer is graded on the new answer, and options no longer present restart the quiz (accepted).
+- `sendOnce` is insert-then-send, so a crash after the insert loses a buddy or route notice (accepted). People who have left but kept a role still get mail, as with every other sender.
+- `listAssignable` runs a query per module.
+- Hard-deleting an HR user nulls `assignedById` on reopened rows, so a recompute gives them due dates again; assigning again on a later day repeats the email.
+- The shared primary button's contrast is 4.4:1, a site-wide token.
+- Editor hints use `###` and `**`; the refusal text shows twice; blank table headers are refused; the sidebar highlights twice.
+- Payment conditionals that depend on location, not contract type, are not checked (the UI cannot build them and the server refuses structure changes). A blank contract type sees only the unconditional bank block.
+- Route-level guard coverage and a concurrent retire test are still to write.

@@ -201,7 +201,7 @@ function firstWord(name: string): string {
   return name.trim().split(/\s+/)[0] ?? ''
 }
 
-function contactList(people: readonly PersonView[], fallback: string): string {
+export function contactList(people: readonly Pick<PersonView, 'name' | 'email'>[], fallback: string): string {
   if (people.length === 0) return fallback
   return people.map((p) => (p.email ? `${p.name} (${p.email})` : p.name)).join(', ')
 }
