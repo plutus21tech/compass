@@ -1,12 +1,13 @@
 import test, { after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
+import type { Prisma } from '@prisma/client'
 import { ZodError } from 'zod'
 import { prisma } from '../lib/db'
 import { parseBlocks, type Block } from '../lib/academy/blocks'
 import { publishProblems } from '../lib/academy/content-rules'
 import { discardDraft, listContentModules, loadContent, publishModule, saveDraft } from '../lib/academy/service/content'
 import { loadModule } from '../lib/academy/service/course'
-import { signAcknowledgement } from '../lib/academy/service/fields'
+import { saveDiscordUsername, signAcknowledgement } from '../lib/academy/service/fields'
 import { completeModule, recordEvent } from '../lib/academy/service/progress'
 import { ACADEMY_MODULE_BLOCKS } from '../prisma/seed-academy-content'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
@@ -31,6 +32,9 @@ const texts = (blocks: readonly Block[]): string[] => blocks.flatMap((b) => (b.t
 const statementOf = (blocks: readonly Block[]): string | undefined =>
   blocks.flatMap((b) => (b.type === 'acknowledgement' ? [b.statement] : []))[0]
 const NOTE = { changeNote: 'Fictional change', askReread: false }
+const FIXED = 'That part of the module can\'t be changed here.'
+const rawDraft = (moduleId: string, blocks: unknown) =>
+  prisma.onboardingModule.update({ where: { id: moduleId }, data: { draftBlocks: blocks as Prisma.InputJsonValue } })
 
 /** Finishes the module, with everything before it opened, as a hire's own page would. */
 async function openModule(slug: string): Promise<void> {
@@ -285,18 +289,70 @@ test('two publishes at once make one version each or refuse, never a clash', ACA
   assert.equal(await versionsOf(moduleId), 2)
 })
 
-test('a hire on a checklist module meets the new version, ticks and all', ACADEMY_DB_TEST, async () => {
+test('an item added after a hire ticked everything blocks them until they tick it', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
-  const moduleId = await moduleIdOf('team-contacts')
-  await openModule('team-contacts')
-  const blocks = seeded('team-contacts').map((b) =>
+  const moduleId = await moduleIdOf('discord')
+  await openModule('discord')
+  const blocks = seeded('discord')
+  const keys = blocks.flatMap((b) => (b.type === 'checklist' ? b.items.map((item) => item.key) : []))
+  assert.ok(keys.length > 0)
+  for (const key of keys) await recordEvent(prisma, HIRE_ID, 'discord', { type: 'CHECK', key, checked: true })
+  await saveDiscordUsername(prisma, HIRE_ID, 'cara.fictional')
+
+  const added = blocks.map((b) =>
     b.type === 'checklist' ? { ...b, items: [...b.items, { key: 'item-fictional', label: 'One more thing' }] } : b,
   )
-  await saveDraft(prisma, moduleId, blocks)
+  await saveDraft(prisma, moduleId, added)
   await publishModule(prisma, moduleId, NOTE, HR)
 
-  await recordEvent(prisma, HIRE_ID, 'team-contacts', { type: 'CHECK', key: 'item-fictional', checked: true })
-  await recordEvent(prisma, HIRE_ID, 'team-contacts', { type: 'CHECK', key: 'buddy-hello', checked: true })
-  const done = await completeModule(prisma, HIRE_ID, 'team-contacts')
-  assert.equal(done.alreadyCompleted, false)
+  await assert.rejects(completeModule(prisma, HIRE_ID, 'discord'), fails(409, /tick every step/i))
+  await recordEvent(prisma, HIRE_ID, 'discord', { type: 'CHECK', key: 'item-fictional', checked: true })
+  assert.equal((await completeModule(prisma, HIRE_ID, 'discord')).alreadyCompleted, false)
+})
+
+test('a raw draft changing an answer box target is refused at save and at publish', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const moduleId = await moduleIdOf('linkedin')
+  const changed = seeded('linkedin').map((b) => (b.type === 'inputField' ? { ...b, target: 'bank' as const } : b))
+  await assert.rejects(saveDraft(prisma, moduleId, changed), fails(409, FIXED))
+  await rawDraft(moduleId, changed)
+  await assert.rejects(publishModule(prisma, moduleId, NOTE, HR), fails(409, FIXED))
+  assert.equal(await versionsOf(moduleId), 1)
+})
+
+test('a raw draft adding an acknowledgement is refused at save and at publish', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const moduleId = await moduleIdOf('how-we-work')
+  const added: Block[] = [...seeded('how-we-work'), { type: 'acknowledgement', kind: 'SECURITY_SOPS', statement: 'A fictional statement.' }]
+  await assert.rejects(saveDraft(prisma, moduleId, added), fails(409, FIXED))
+  await rawDraft(moduleId, added)
+  await assert.rejects(publishModule(prisma, moduleId, NOTE, HR), fails(409, FIXED))
+  assert.equal(await versionsOf(moduleId), 1)
+})
+
+test('text edits, reordering and allowed deletions stay free on a module of fixed blocks', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const moduleId = await moduleIdOf('getting-paid')
+  const blocks = seeded('getting-paid')
+  const reworded = [...blocks].reverse().map((b) => (b.type === 'richText' ? { ...b, markdown: 'Reworded' } : b))
+  await saveDraft(prisma, moduleId, reworded)
+  assert.equal((await publishModule(prisma, moduleId, NOTE, HR)).version, 2)
+})
+
+test('a draft of 200 blocks saves and 201 is refused', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const moduleId = await moduleIdOf('how-we-work')
+  const many = (count: number): Block[] => Array.from({ length: count }, () => ({ type: 'richText', markdown: 'Short' }))
+  await saveDraft(prisma, moduleId, many(200))
+  await assert.rejects(saveDraft(prisma, moduleId, many(201)), fails(400))
+})
+
+test('a draft over 200,000 characters is refused before it is parsed', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const moduleId = await moduleIdOf('how-we-work')
+  const wrap = (length: number): Block[] => [{ type: 'richText', markdown: 'x'.repeat(length) }]
+  await saveDraft(prisma, moduleId, wrap(199_000))
+  await assert.rejects(saveDraft(prisma, moduleId, wrap(200_000)), fails(400, /too long/i))
+  // Not a valid block list, so only a check made before parsing can give this answer.
+  await assert.rejects(saveDraft(prisma, moduleId, [{ type: 'nonsense', text: 'x'.repeat(200_000) }]), fails(400, /too long/i))
 })

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withoutDraft } from '@/lib/academy/content-rules'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
     const progressByModuleId = new Map(progressRows.map((row) => [row.moduleId, row]))
 
     const payload = modules.map((module) => ({
-      ...module,
+      ...withoutDraft(module),
       progress: progressByModuleId.get(module.id) || null,
       status: progressByModuleId.get(module.id)?.status ?? 'LOCKED',
     }))

@@ -43,6 +43,18 @@ function publishedMessage({ version, reopened }: PublishResponse): string {
 const REREAD_FAILED = (version: number) =>
   `Version ${version} is live, but the re-read request didn't go through. Use Assign a module to ask everyone.`
 
+const REFRESH_FAILED = (version: number) => `Version ${version} is live, but this page couldn't refresh. Reload it before you edit again.`
+
+const LEAVE_QUESTION = 'You have unsaved changes. Leave without saving?'
+
+/** A plain click on a link that would take this page somewhere else in Compass. */
+function leavingLink(event: MouseEvent): boolean {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false
+  const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+  if (!(link instanceof HTMLAnchorElement) || link.target === '_blank') return false
+  return link.origin === window.location.origin && link.pathname !== window.location.pathname
+}
+
 interface DetailsFormProps {
   details: ModuleDetails
   onChange: (next: ModuleDetails) => void
@@ -60,7 +72,9 @@ function DetailsForm({ details, onChange }: DetailsFormProps) {
           <TextField
             label="Estimated minutes"
             value={details.estimatedMinutes ? String(details.estimatedMinutes) : ''}
-            onChange={(value) => onChange({ ...details, estimatedMinutes: Number(value) || 0 })}
+            onChange={(value) => {
+              if (/^\d*$/.test(value)) onChange({ ...details, estimatedMinutes: Number(value) })
+            }}
           />
         </div>
       </div>
@@ -85,8 +99,18 @@ function useLeaveWarning(active: boolean): void {
   useEffect(() => {
     if (!active) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    // In-app links never unload the page, so they are stopped here, before Next's router sees the click.
+    const confirmLeave = (event: MouseEvent) => {
+      if (!leavingLink(event) || window.confirm(LEAVE_QUESTION)) return
+      event.preventDefault()
+      event.stopPropagation()
+    }
     window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
+    document.addEventListener('click', confirmLeave, true)
+    return () => {
+      window.removeEventListener('beforeunload', warn)
+      document.removeEventListener('click', confirmLeave, true)
+    }
   }, [active])
 }
 
@@ -187,11 +211,11 @@ export function ModuleEditor({ moduleId }: { moduleId: string }) {
         method: 'POST',
         body: { changeNote: note, askReread, expectedUpdatedAt },
       })
-      await load()
       setNote('')
       setAskReread(false)
       if (result.rereadFailed) setError(REREAD_FAILED(result.version))
       else toast.success(publishedMessage(result))
+      await load().catch(() => setError(result.rereadFailed ? `${REREAD_FAILED(result.version)} Then reload this page.` : REFRESH_FAILED(result.version)))
     })
   }
 

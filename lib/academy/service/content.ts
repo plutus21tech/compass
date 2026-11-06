@@ -1,6 +1,13 @@
 import { Prisma, type OnboardingCompletionRule, type OnboardingModule, type PrismaClient } from '@prisma/client'
 import { parseBlocks, type Block } from '../blocks'
-import { STALE_CONTENT_MESSAGE, moduleDetailsSchema, publishProblems, type ModuleDetails } from '../content-rules'
+import {
+  FIXED_BLOCK_MESSAGE,
+  STALE_CONTENT_MESSAGE,
+  fixedBlocksChanged,
+  moduleDetailsSchema,
+  publishProblems,
+  type ModuleDetails,
+} from '../content-rules'
 import { AcademyError } from '../errors'
 import { requestReread, type AssignmentNotice } from './assignment'
 import { COURSE_TX_OPTIONS, isCourseModule, listCourseModules, type CourseModule } from './progress'
@@ -8,6 +15,7 @@ import { COURSE_TX_OPTIONS, isCourseModule, listCourseModules, type CourseModule
 type Tx = Prisma.TransactionClient
 
 const MAX_DRAFT_CHARS = 200_000
+const MAX_TOP_LEVEL_BLOCKS = 200
 const PHASE_LABELS = { DAY_1: 'Day 1', WEEK_1: 'Week 1' } as const
 
 const notFound = () => new AcademyError('Module not found', 404)
@@ -105,6 +113,20 @@ async function lockCourseModule(tx: Tx, moduleId: string, { expectedUpdatedAt }:
   return module
 }
 
+/** The server's own copy of what the editor treats as fixed: a raw request can't get round it. */
+async function assertFixedBlocksKept(tx: Tx, module: CourseModule, draft: readonly Block[]): Promise<void> {
+  const live = await tx.onboardingModuleVersion.findUniqueOrThrow({ where: { id: module.currentVersionId }, select: { blocks: true } })
+  if (fixedBlocksChanged(parseBlocks(live.blocks), draft)) throw new AcademyError(FIXED_BLOCK_MESSAGE, 409)
+}
+
+/** Checked on the raw input, so an oversized body is turned away before it is walked. */
+function assertDraftSize(blocks: unknown): void {
+  if (Array.isArray(blocks) && blocks.length > MAX_TOP_LEVEL_BLOCKS) {
+    throw new AcademyError(`A module can have ${MAX_TOP_LEVEL_BLOCKS} blocks at most.`, 400)
+  }
+  if ((JSON.stringify(blocks) ?? '').length > MAX_DRAFT_CHARS) throw new AcademyError('This module is too long to save. Take some text out.', 400)
+}
+
 export interface SaveDraftOptions extends FreshnessCheck {
   details?: unknown
 }
@@ -113,11 +135,12 @@ export interface SaveDraftOptions extends FreshnessCheck {
 export async function saveDraft(
   db: PrismaClient, moduleId: string, blocks: unknown, options: SaveDraftOptions = {},
 ): Promise<{ updatedAt: string }> {
+  assertDraftSize(blocks)
   const parsed = parseBlocks(blocks)
-  if (JSON.stringify(parsed).length > MAX_DRAFT_CHARS) throw new AcademyError('This module is too long to save. Take some text out.', 400)
   const details = options.details === undefined ? undefined : moduleDetailsSchema.parse(options.details)
   return db.$transaction(async (tx) => {
-    await lockCourseModule(tx, moduleId, options)
+    const module = await lockCourseModule(tx, moduleId, options)
+    await assertFixedBlocksKept(tx, module, parsed)
     const saved = await tx.onboardingModule.update({
       where: { id: moduleId },
       data: { draftBlocks: toJson(parsed), ...(details ? { draftDetails: toJson(details) } : {}) },
@@ -162,6 +185,7 @@ async function publishDraft(db: PrismaClient, moduleId: string, input: PublishIn
     const module = await lockCourseModule(tx, moduleId, input)
     if (module.draftBlocks === null) throw new AcademyError('There is nothing to publish. Make a change first.', 409)
     const blocks = parseBlocks(module.draftBlocks)
+    await assertFixedBlocksKept(tx, module, blocks)
     const problems = publishProblems(module.completionRule, blocks)
     if (problems.length > 0) throw new AcademyError(`This can't be published yet. ${problems.join(' ')}`, 409)
     const details = module.draftDetails === null ? {} : moduleDetailsSchema.parse(module.draftDetails)

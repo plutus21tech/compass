@@ -65,8 +65,10 @@ async function ensureModules(db: Tx): Promise<number> {
   for (const def of ACADEMY_MODULES) {
     const { slug, ...fields } = def
     const found = existing.find((e) => e.slug === slug)
+    // HR's to edit once it exists: a re-run must not put the seeded words back.
+    const { title: _title, estimatedMinutes: _minutes, headlineLead: _lead, headlineAccent: _accent, ...fixed } = fields
     const mod = found
-      ? await db.onboardingModule.update({ where: { id: found.id }, data: { ...fields } })
+      ? await db.onboardingModule.update({ where: { id: found.id }, data: { ...fixed } })
       : await db.onboardingModule.create({ data: { slug, ...fields, isActive: true } })
     if (!found) created += 1
     const content = parseBlocks(ACADEMY_MODULE_BLOCKS[slug] ?? []) as unknown as Prisma.InputJsonValue

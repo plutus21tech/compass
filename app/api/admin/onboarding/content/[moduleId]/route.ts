@@ -5,17 +5,15 @@ import { requireAcademyHr } from '@/lib/academy/hr-route'
 import { academyErrorResponse, guardAcademyMutation } from '@/lib/academy/http'
 import { discardDraft, loadContent, saveDraft } from '@/lib/academy/service/content'
 
-const MAX_TOP_LEVEL_BLOCKS = 200
-
 interface RouteContext {
   params: Promise<{ moduleId: string }>
 }
 
 const expectedUpdatedAt = z.string().datetime()
 
-// `blocks` and `details` are parsed in saveDraft: parseBlocks, and a strict schema that refuses slug, order, phase, rule and icon.
+// `blocks` and `details` are checked in saveDraft: size, parseBlocks, fixed blocks, and a strict schema that refuses slug, order, phase, rule and icon.
 const saveSchema = z
-  .object({ blocks: z.array(z.unknown()).max(MAX_TOP_LEVEL_BLOCKS), details: z.record(z.string(), z.unknown()), expectedUpdatedAt })
+  .object({ blocks: z.array(z.unknown()), details: z.record(z.string(), z.unknown()), expectedUpdatedAt })
   .strict()
 
 const discardSchema = z.object({ expectedUpdatedAt }).strict()

@@ -8,10 +8,12 @@ import {
   ADDABLE_BLOCKS,
   blockLabel,
   describeCondition,
+  fixedBlocksChanged,
   moduleDetailsSchema,
   newBlock,
   newItemKey,
   publishProblems,
+  withoutDraft,
 } from '../lib/academy/content-rules'
 import { ACADEMY_MODULES } from '../prisma/seed-academy-data'
 import { ACADEMY_MODULE_BLOCKS } from '../prisma/seed-academy-content'
@@ -21,6 +23,11 @@ const field = (target: 'discordUsername' | 'linkedinUrl' | 'bank' | 'payout'): B
 const ack: Block = { type: 'acknowledgement', kind: 'SECURITY_SOPS', statement: 'I agree.' }
 const when = (...children: Block[]): Block => ({ type: 'conditional', when: { clientAccountSet: true }, children })
 const rich = (markdown: string): Block => ({ type: 'richText', markdown })
+const forContracts = (contractType: Array<'PK_EMPLOYMENT' | 'INDEPENDENT_CONTRACTOR' | 'OTHER_EMPLOYMENT'>, ...children: Block[]): Block => ({
+  type: 'conditional', when: { contractType }, children,
+})
+const PK = ['PK_EMPLOYMENT'] as const
+const OTHERS = ['INDEPENDENT_CONTRACTOR', 'OTHER_EMPLOYMENT'] as const
 
 const CASES: Array<{ rule: OnboardingCompletionRule; valid: Block[]; invalid: Block[]; names: RegExp }> = [
   { rule: 'BUDDY_HELLO', valid: [checklist('buddy-hello')], invalid: [checklist('other')], names: /buddy hello/i },
@@ -54,9 +61,34 @@ test('an empty checklist does not satisfy a rule that needs ticks', () => {
   assert.match(publishProblems('CHECKLIST_AND_ACK', [empty, ack])[0], /checklist/i)
 })
 
-test('a required block inside a conditional counts, at any depth', () => {
+test('a required block with a fallback may sit inside a conditional, at any depth', () => {
   assert.deepEqual(publishProblems('BUDDY_HELLO', [when(when(checklist('buddy-hello')))]), [])
-  assert.deepEqual(publishProblems('CHECKLIST_AND_ACK', [when(checklist()), when(ack)]), [])
+  assert.deepEqual(publishProblems('LINK_OPENED', [when({ type: 'dashboardLink', label: 'Open it' })]), [])
+  assert.deepEqual(publishProblems('CHECKLIST_AND_FIELD', [when(checklist()), when(field('discordUsername'))]), [])
+  assert.deepEqual(publishProblems('ALL_LINKS_OPENED', [when({ type: 'tutorialCards' })]), [])
+  assert.deepEqual(publishProblems('CHECKLIST_AND_ACK', [when(checklist()), ack]), [])
+})
+
+test('the acknowledgement has no fallback, so it can never be hidden from anyone', () => {
+  const problems = publishProblems('CHECKLIST_AND_ACK', [checklist(), when(ack)])
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /acknowledgement/i)
+})
+
+test('a PK hire shown only the payout box is refused', () => {
+  const shownPayout = publishProblems('PAYMENT_SETUP', [forContracts([...PK], field('payout')), forContracts([...OTHERS], field('bank'))])
+  assert.ok(shownPayout.some((problem) => /bank/i.test(problem)))
+  assert.ok(publishProblems('PAYMENT_SETUP', [field('payout'), forContracts([...OTHERS], field('bank'))]).some((problem) => /bank/i.test(problem)))
+})
+
+test('a contractor shown only the bank box is refused', () => {
+  const problems = publishProblems('PAYMENT_SETUP', [forContracts([...PK], field('bank')), forContracts(['OTHER_EMPLOYMENT'], field('payout'))])
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /payout/i)
+})
+
+test('payment boxes in their own contract branches can be published', () => {
+  assert.deepEqual(publishProblems('PAYMENT_SETUP', [forContracts([...PK], field('bank')), forContracts([...OTHERS], field('payout'))]), [])
 })
 
 test('the payment pair is checked across branches, as a pair', () => {
@@ -116,6 +148,40 @@ test('every seeded module can be published', () => {
   for (const module of ACADEMY_MODULES) {
     assert.deepEqual(publishProblems(module.completionRule, parseBlocks(ACADEMY_MODULE_BLOCKS[module.slug])), [], module.slug)
   }
+})
+
+test('a draft keeps every fixed block where the live version has it', () => {
+  const video: Block = { type: 'video', videoKey: 'VIDEO_1', summary: 'Hello' }
+  const live: Block[] = [video, ack, when(field('bank')), { type: 'dashboardLink', label: 'Open it' }]
+  assert.equal(fixedBlocksChanged(live, live), false)
+  assert.equal(fixedBlocksChanged(live, [...live].reverse()), false, 'reordering is free')
+  assert.equal(fixedBlocksChanged(live, [ack]), false, 'deleting is free')
+  assert.equal(fixedBlocksChanged(live, [{ ...video, summary: 'New' }, { ...ack, statement: 'New' }, rich('More')]), false, 'text is free')
+})
+
+test('a draft that changes or adds a fixed block is caught', () => {
+  const live: Block[] = [{ type: 'video', videoKey: 'VIDEO_1', summary: 'Hello' }, when(field('bank'))]
+  assert.equal(fixedBlocksChanged(live, [{ type: 'video', videoKey: 'VIDEO_2', summary: 'Hello' }]), true, 'videoKey')
+  assert.equal(fixedBlocksChanged(live, [when(field('payout'))]), true, 'target')
+  assert.equal(fixedBlocksChanged(live, [field('bank')]), true, 'moved out of its conditional')
+  assert.equal(fixedBlocksChanged(live, [{ type: 'conditional', when: { location: ['KARACHI'] }, children: [] }]), true, 'when')
+  assert.equal(fixedBlocksChanged(live, [ack]), true, 'added acknowledgement')
+  assert.equal(fixedBlocksChanged(live, [when(field('bank'), field('bank'))]), true, 'a second copy')
+  assert.equal(fixedBlocksChanged(live, [{ type: 'dashboardLink', label: 'Open' }]), true, 'added dashboard link')
+})
+
+test('the legacy module payload carries no draft', () => {
+  const stripped = withoutDraft({ id: 'a', title: 'B', draftBlocks: [], draftDetails: {} })
+  assert.deepEqual(stripped, { id: 'a', title: 'B' })
+})
+
+test('both legacy module routes strip the draft from everything they send', () => {
+  const list = readFileSync(join(__dirname, '..', 'app/api/onboarding/modules/route.ts'), 'utf8')
+  assert.match(list, /\.\.\.withoutDraft\(module\)/)
+  assert.doesNotMatch(list, /\.\.\.module,/)
+  const one = readFileSync(join(__dirname, '..', 'app/api/onboarding/modules/[id]/route.ts'), 'utf8')
+  assert.match(one, /module: withoutDraft\(module\)/)
+  assert.match(one, /module: withoutDraft\(updated\)/)
 })
 
 test('every kind of condition reads as plain words', () => {

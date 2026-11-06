@@ -144,6 +144,18 @@ test('second run is idempotent and keeps HR edits', ACADEMY_DB_TEST, async () =>
   assert.equal(after2.versions.length, 2)
 })
 
+test('a re-run keeps the title, minutes and headline HR published', ACADEMY_DB_TEST, async () => {
+  await seedAcademy(prisma)
+  const edits = { title: 'Edited by HR', estimatedMinutes: 42, headlineLead: 'EDITED', headlineAccent: 'by HR' }
+  await prisma.onboardingModule.update({ where: { slug: ACADEMY_MODULES[2].slug }, data: edits })
+  await seedAcademy(prisma)
+  const row = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: ACADEMY_MODULES[2].slug } })
+  assert.deepEqual(
+    { title: row.title, estimatedMinutes: row.estimatedMinutes, headlineLead: row.headlineLead, headlineAccent: row.headlineAccent },
+    edits,
+  )
+})
+
 test('a second run leaves blocks unchanged and never overwrites HR edits to version 1', ACADEMY_DB_TEST, async () => {
   await seedAcademy(prisma)
   const snapshot = async () =>

@@ -28,7 +28,7 @@ export function AcknowledgementForm({ block, onChange }: BlockFormProps<'acknowl
   return (
     <AreaField
       label="Statement hires sign"
-      hint="Publishing new wording makes a new version. Anyone who already signed keeps the wording they signed."
+      hint="Anyone who has finished keeps the wording they signed. Anyone still in the course signs the new version."
       value={block.statement}
       onChange={(statement) => onChange({ ...block, statement })}
     />

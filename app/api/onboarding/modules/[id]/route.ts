@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withoutDraft } from '@/lib/academy/content-rules'
 import { isAcademyEnabled } from '@/lib/academy/flag'
 import { blocksModuleSwitch } from '@/lib/academy/service/progress'
 import { getSession } from '@/lib/auth'
@@ -57,7 +58,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({
-      module,
+      module: withoutDraft(module),
       progress,
     })
   } catch (error) {
@@ -123,7 +124,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
     })
 
-    return NextResponse.json({ success: true, module: updated })
+    return NextResponse.json({ success: true, module: withoutDraft(updated) })
   } catch (error) {
     console.error('Failed to update onboarding module:', error)
     return NextResponse.json({ error: 'Failed to update onboarding module' }, { status: 500 })

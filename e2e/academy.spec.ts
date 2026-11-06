@@ -191,3 +191,32 @@ test('a hire passes the quiz, signs, sees the completion screen, downloads the P
   await page.getByRole('link', { name: 'Go to Compass' }).click()
   await page.waitForURL('**/dashboard')
 })
+
+test('HR edits a module and publishes, and a hire sees it', async ({ page, browser }) => {
+  test.setTimeout(180_000)
+  await createReleasedHire()
+  await giveLogins(HIRE_ID, P.hr.id)
+  await scrollAndComplete('welcome')
+  const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'culture-values' } })
+
+  await signIn(page, P.hr.email)
+  await page.goto(`/admin/onboarding/academy/modules/${module.id}`)
+  const summary = page.getByLabel('Summary')
+  await summary.fill('Our values, in fewer words.')
+
+  // Unsaved work is not lost to a stray link.
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await page.getByRole('link', { name: 'All modules' }).click()
+  await expect(summary).toHaveValue('Our values, in fewer words.')
+
+  await page.getByLabel('What changed?').fill('Shorter summary')
+  await page.getByRole('button', { name: 'Publish', exact: true }).click()
+  await expect(page.getByText('Live: version 2')).toBeVisible({ timeout: 30_000 })
+
+  const context = await browser.newContext({ baseURL: page.url().split('/admin')[0] })
+  const hire = await context.newPage()
+  await signIn(hire, P.hire.email)
+  await hire.goto('/onboarding/culture-values')
+  await expect(hire.getByText('Our values, in fewer words.')).toBeVisible()
+  await context.close()
+})
