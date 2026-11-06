@@ -1,5 +1,6 @@
 // Pure culture-quiz rules: paper building, grading, status. No server-only imports.
 import { z } from 'zod'
+import { VALUE_COLOURS } from '@/components/academy/brand'
 import { AcademyError } from './errors'
 
 export const VALUES_STATEMENT =
@@ -98,3 +99,33 @@ export function quizStatus(input: QuizStatusInput): QuizStatus {
 export function crossesFailThreshold(failedCount: number, threshold: number): boolean {
   return threshold > 0 && failedCount > 0 && failedCount % threshold === 0
 }
+
+const VALUE_KEYS = Object.keys(VALUE_COLOURS) as [string, ...string[]]
+const MIN_OPTIONS = 2
+const MAX_OPTIONS = 6
+const norm = (text: string) => text.trim().toLowerCase()
+
+/** What HR may set on a bank question. The explanation is required: every review owes one. */
+export const questionInputSchema = z
+  .object({
+    questionText: z.string().trim().min(1, 'Write the question.').max(500),
+    options: z
+      .array(z.string().trim().min(1, 'An option cannot be blank.').max(300))
+      .min(MIN_OPTIONS, 'Add at least 2 options.')
+      .max(MAX_OPTIONS, 'Use at most 6 options.'),
+    correctAnswer: z.string().trim().min(1, 'Pick the correct answer.').max(300),
+    explanation: z.string().trim().min(1, 'Add an explanation for the review.').max(1000),
+    valueKey: z.enum(VALUE_KEYS).nullish(),
+    videoChapterKey: z.string().trim().max(100).nullish(),
+  })
+  .superRefine((q, ctx) => {
+    if (new Set(q.options.map(norm)).size !== q.options.length) {
+      ctx.addIssue({ code: 'custom', path: ['options'], message: 'Each option must be different.' })
+    }
+    if (!q.options.includes(q.correctAnswer)) {
+      ctx.addIssue({ code: 'custom', path: ['correctAnswer'], message: 'The correct answer must be one of the options.' })
+    }
+  })
+export type QuestionInput = z.infer<typeof questionInputSchema>
+
+export const QUIZ_MINIMUM_MESSAGE = `The quiz needs at least ${MIN_QUIZ_QUESTIONS} questions.`

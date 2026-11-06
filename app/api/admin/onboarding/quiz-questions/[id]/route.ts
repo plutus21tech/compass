@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
+import { isAcademyEnabled } from '@/lib/academy/flag'
+import { academyErrorResponse, guardAcademyMutation } from '@/lib/academy/http'
+import { reactivateQuestion, retireQuestion, updateQuestion } from '@/lib/academy/service/quiz-editor'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -24,6 +27,18 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     const { id } = await context.params
     const body = await request.json()
+
+    // Flag on: the new schema. { isActive } alone brings a question back or retires it.
+    if (isAcademyEnabled()) {
+      await guardAcademyMutation(request, user.id)
+      const keys = body && typeof body === 'object' ? Object.keys(body) : []
+      const toggle = keys.length === 1 && typeof body.isActive === 'boolean'
+      const question = toggle
+        ? await (body.isActive ? reactivateQuestion(prisma, id) : retireQuestion(prisma, id))
+        : await updateQuestion(prisma, id, body)
+      return NextResponse.json({ success: true, question, data: question })
+    }
+
     const options = body.options !== undefined ? parseOptions(body.options) : undefined
     const correctAnswer = typeof body.correctAnswer === 'string' ? body.correctAnswer.trim() : undefined
 
@@ -61,6 +76,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ success: true, question: updated })
   } catch (error) {
+    if (isAcademyEnabled()) return academyErrorResponse(error)
     console.error('Failed to update quiz question:', error)
     return NextResponse.json({ error: 'Failed to update quiz question' }, { status: 500 })
   }
@@ -74,12 +90,21 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params
+
+    // Flag on: retire, never remove, so old reviews still resolve.
+    if (isAcademyEnabled()) {
+      await guardAcademyMutation(_request, user.id)
+      const question = await retireQuestion(prisma, id)
+      return NextResponse.json({ success: true, question, data: question })
+    }
+
     await prisma.onboardingQuizQuestion.delete({
       where: { id },
     })
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (isAcademyEnabled()) return academyErrorResponse(error)
     console.error('Failed to delete quiz question:', error)
     return NextResponse.json({ error: 'Failed to delete quiz question' }, { status: 500 })
   }

@@ -83,8 +83,13 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
     { label: 'Key contacts', href: '/admin/onboarding/academy/contacts', icon: icons.contacts },
     { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
     { label: 'Assign a module', href: '/admin/onboarding/academy/assign', icon: icons.library },
+    { label: 'Checklist template', href: '/admin/onboarding/academy/checklist', icon: icons.links },
   ]
-  const moved = withGroupItemMoved(config, '/admin/onboarding/modules', '/admin/onboarding/academy/modules')
+  const moved = withGroupItemMoved(
+    withGroupItemMoved(config, '/admin/onboarding/modules', '/admin/onboarding/academy/modules'),
+    '/admin/onboarding/quiz',
+    '/admin/onboarding/academy/quiz',
+  )
   return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), moved)
 }
 
