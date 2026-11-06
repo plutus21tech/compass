@@ -63,7 +63,7 @@ const hireName = (hire: HireRow): string => hire.user?.name ?? hire.name
 const hireLocation = (hire: HireRow): string | null => locationLabel(hire.user ?? hire) || null
 
 /** A finish is dated by the values signature, as the certificate is. Older, legacy finishes have none. */
-function listedWhere(now: Date): Prisma.NewHireWhereInput {
+export function listedWhere(now: Date): Prisma.NewHireWhereInput {
   const cutoff = new Date(now.getTime() - FINISHED_WINDOW_DAYS * DAY_MS)
   const signedSince = { some: { kind: VALUES_KIND, signedAt: { gte: cutoff } } } as const
   return {

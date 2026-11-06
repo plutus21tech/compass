@@ -60,7 +60,7 @@ export async function saveBankDetails(db: PrismaClient, userId: string, input: u
   return { isUpdate }
 }
 
-const BANK_MODULE_SLUG = 'getting-paid'
+export const BANK_MODULE_SLUG = 'getting-paid'
 const BANK_UNAVAILABLE_MESSAGE = "This isn't available yet."
 
 /** Bank details change only while Module 11 is open and not completed. Locks that row for the transaction. */

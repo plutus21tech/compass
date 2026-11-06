@@ -2,7 +2,7 @@ import { after, NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { academyErrorResponse, guardAcademyMutation, requireAcademySession } from '@/lib/academy/http'
 import { readOwnBankStatus, saveBankDetails } from '@/lib/academy/service/fields'
-import { notifyPaymentDetailsChanged } from '@/lib/academy/service/notify-oa'
+import { notifyFirstPaymentSave, notifyPaymentDetailsChanged } from '@/lib/academy/service/notify-oa'
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
@@ -28,6 +28,7 @@ export async function PUT(request: NextRequest) {
     await guardAcademyMutation(request, user.id)
     const { isUpdate } = await saveBankDetails(prisma, user.id, await request.json())
     if (isUpdate) after(() => notifyPaymentDetailsChanged(user.id, user.name))
+    else after(() => notifyFirstPaymentSave(prisma, user.id, user.name))
     // Writes never echo details back.
     return NextResponse.json({ success: true }, { headers: NO_STORE })
   } catch (error) {

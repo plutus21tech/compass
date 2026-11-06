@@ -2379,3 +2379,187 @@ export async function sendPaymentDetailsUpdatedNotification(personName: string) 
     return { success: false, error: error instanceof Error ? error.message : 'send failed' }
   }
 }
+
+export interface AcademyNotice {
+  subject: string
+  html: string
+}
+
+export interface AcademySendResult {
+  success: boolean
+  message?: string
+}
+
+type AcademyOwnerRole = 'HR' | 'SECURITY' | 'OA' | 'TEAM_LEAD'
+
+/** Plain text goes in; everything shown is escaped here. */
+function academyNotice(input: { subject: string; heading: string; lines: string[]; linkLabel: string; path: string }): AcademyNotice {
+  const lines = input.lines.map((line) => `<p>${escapeHtml(line)}</p>`).join('\n      ')
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">${escapeHtml(input.heading)}</h2>
+      ${lines}
+      <p><a href="${compassUrl(input.path)}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">${escapeHtml(input.linkLabel)}</a></p>
+    </div>
+  `
+  return { subject: input.subject, html }
+}
+
+const moduleCountLabel = (count: number): string => `${count} onboarding module${count === 1 ? '' : 's'}`
+
+/** Every Onboarding Academy notice. Names only: no pay, bank or other personal data. */
+export const academyNotices = {
+  courseReleased: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: 'Your onboarding course is ready',
+      heading: `Welcome, ${name}`,
+      lines: ['Your onboarding course is ready for you in Compass. Start with the first module when you sign in.'],
+      linkLabel: 'Open your course',
+      path: '/onboarding',
+    }),
+  leadInputOverdue: (input: { leadName: string; hireName: string; newHireId: string }): AcademyNotice =>
+    academyNotice({
+      subject: `${input.hireName} still needs your input`,
+      heading: 'Your input is still needed',
+      lines: [
+        `Hi ${input.leadName}, ${input.hireName}'s role expectations and goals are still waiting on you, and the due date has passed.`,
+        'A few minutes from you now will help them settle in well.',
+      ],
+      linkLabel: 'Add your input',
+      path: `/team-lead-form/${encodeURIComponent(input.newHireId)}`,
+    }),
+  buddy: (input: { buddyName: string; hireName: string }): AcademyNotice =>
+    academyNotice({
+      subject: `You're ${input.hireName}'s buddy`,
+      heading: `You're ${input.hireName}'s buddy`,
+      lines: [`Hi ${input.buddyName}, ${input.hireName} joins today and you're their buddy. Please say hello and help them find their feet.`],
+      linkLabel: 'Open Compass',
+      path: '/',
+    }),
+  moduleOverdue: (input: { hireName: string; moduleCount: number }): AcademyNotice =>
+    academyNotice({
+      subject: `You have ${moduleCountLabel(input.moduleCount)} overdue`,
+      heading: 'A quick nudge on your onboarding',
+      lines: [
+        `Hi ${input.hireName}, you have ${moduleCountLabel(input.moduleCount)} past the due date. Please pick up where you left off today.`,
+        'If something is in your way, let your team lead or HR know.',
+      ],
+      linkLabel: 'Open your course',
+      path: '/onboarding',
+    }),
+  checklistItem: (input: {
+    title: string
+    hireName: string
+    ownerRole: AcademyOwnerRole
+    dueDate: string
+    overdue: boolean
+  }): AcademyNotice => {
+    const hr = input.ownerRole === 'HR'
+    return academyNotice({
+      subject: `Onboarding task for ${input.hireName}: ${input.title}`,
+      heading: 'An onboarding task is waiting on you',
+      lines: [
+        input.overdue
+          ? `"${input.title}" for ${input.hireName} was due on ${input.dueDate} and is still open.`
+          : `"${input.title}" for ${input.hireName} is due today.`,
+        'Please finish it when you can, so their onboarding stays on track.',
+      ],
+      linkLabel: hr ? 'Open the tracker' : 'Open Compass',
+      path: hr ? '/admin/onboarding/tracker' : '/',
+    })
+  },
+  firstPaymentSave: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: `${name} has added their payment details`,
+      heading: 'New payment details',
+      lines: [`${name} has added their payment details for the first time. You can review them in Compass.`],
+      linkLabel: 'Open payment details',
+      path: '/oa/payment-details',
+    }),
+  paymentSetupDone: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: `${name} has finished Module 11`,
+      heading: 'Module 11 finished',
+      lines: [`${name} has finished Module 11, Getting Paid, so their payment details are ready for you.`],
+      linkLabel: 'Open payment details',
+      path: '/oa/payment-details',
+    }),
+  linkedinSubmitted: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: `Please verify ${name}'s LinkedIn link`,
+      heading: 'A LinkedIn link to verify',
+      lines: [`${name} has added their LinkedIn link. Please check it and verify it in the tracker.`],
+      linkLabel: 'Open the tracker',
+      path: '/admin/onboarding/tracker',
+    }),
+}
+
+/** Never throws, and logs no address: the once-only log needs a plain result. */
+async function deliverAcademyNotice(
+  to: ReadonlyArray<string | null | undefined>,
+  notice: AcademyNotice,
+  cc: ReadonlyArray<string | null | undefined> = [],
+): Promise<AcademySendResult> {
+  const recipients = mergeRecipientEmails([...to])
+  if (recipients.length === 0) return { success: false, message: 'No recipients' }
+  const copied = mergeRecipientEmails([...cc]).filter((email) => !recipients.includes(email))
+  try {
+    await transporter.sendMail({
+      from: `P21 Compass <${FROM_EMAIL}>`,
+      to: recipients.join(', '),
+      ...(copied.length > 0 ? { cc: copied.join(', ') } : {}),
+      subject: notice.subject,
+      html: notice.html,
+    })
+    return { success: true }
+  } catch (error) {
+    console.error('[academy] notice not delivered', { error: error instanceof Error ? error.name : 'unknown' })
+    return { success: false, message: 'Send failed' }
+  }
+}
+
+async function oaEmails(): Promise<string[]> {
+  const users = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
+  return users.flatMap((user) => (user.email ? [user.email] : []))
+}
+
+export const sendCourseReleasedNotice = (to: string, name: string): Promise<AcademySendResult> =>
+  deliverAcademyNotice([to], academyNotices.courseReleased(name))
+
+export const sendLeadInputOverdueNotice = (input: {
+  to: string
+  leadName: string
+  hireName: string
+  newHireId: string
+}): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.leadInputOverdue(input))
+
+export const sendBuddyNotice = (input: { to: string; buddyName: string; hireName: string }): Promise<AcademySendResult> =>
+  deliverAcademyNotice([input.to], academyNotices.buddy(input))
+
+export const sendModuleOverdueNotice = (input: {
+  to: string
+  cc: string | null
+  hireName: string
+  moduleCount: number
+}): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.moduleOverdue(input), [input.cc])
+
+export const sendChecklistItemNotice = (input: {
+  to: readonly string[]
+  title: string
+  hireName: string
+  ownerRole: AcademyOwnerRole
+  dueDate: string
+  overdue: boolean
+}): Promise<AcademySendResult> => deliverAcademyNotice(input.to, academyNotices.checklistItem(input))
+
+export async function sendFirstPaymentSaveNotice(name: string): Promise<AcademySendResult> {
+  return deliverAcademyNotice(await oaEmails(), academyNotices.firstPaymentSave(name))
+}
+
+export async function sendPaymentSetupDoneNotice(name: string): Promise<AcademySendResult> {
+  return deliverAcademyNotice(await oaEmails(), academyNotices.paymentSetupDone(name))
+}
+
+export async function sendLinkedinSubmittedNotice(name: string): Promise<AcademySendResult> {
+  return deliverAcademyNotice(await getHrRecipientEmails(), academyNotices.linkedinSubmitted(name))
+}

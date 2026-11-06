@@ -1,4 +1,6 @@
-import { sendPaymentDetailsUpdatedNotification } from '@/lib/email'
+import type { PrismaClient } from '@prisma/client'
+import { sendFirstPaymentSaveNotice, sendPaymentDetailsUpdatedNotification, sendPaymentSetupDoneNotice } from '@/lib/email'
+import { sendRouteNotice, type SendResult } from './notify'
 
 type SendNotification = typeof sendPaymentDetailsUpdatedNotification
 
@@ -17,4 +19,22 @@ export async function notifyPaymentDetailsChanged(
   } catch {
     console.error('[academy] payment details notification failed', { userId })
   }
+}
+
+export async function notifyFirstPaymentSave(
+  db: PrismaClient,
+  userId: string,
+  name: string,
+  send: (name: string) => Promise<SendResult> = sendFirstPaymentSaveNotice,
+): Promise<void> {
+  await sendRouteNotice(db, `first-save:${userId}`, () => send(name))
+}
+
+export async function notifyPaymentSetupDone(
+  db: PrismaClient,
+  userId: string,
+  name: string,
+  send: (name: string) => Promise<SendResult> = sendPaymentSetupDoneNotice,
+): Promise<void> {
+  await sendRouteNotice(db, `payment-done:${userId}`, () => send(name))
 }
