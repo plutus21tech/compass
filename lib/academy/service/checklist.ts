@@ -33,11 +33,15 @@ function toView(row: ItemRow, now: Date): ChecklistItemView {
   }
 }
 
+type FirstChecklistHire = { id: string; onboardingDate: Date; teamLeadForm?: { leadInputDueAt: Date | null } | null }
+
 /**
  * Gives a checklist from the active template to the hires who have none. A hire with any rows keeps
  * exactly those: a template change never adds to, or restores a row on, a checklist already created.
  */
-async function createFirstChecklists(db: Db, candidates: ReadonlyArray<{ id: string; onboardingDate: Date }>): Promise<number> {
+async function createFirstChecklists(db: Db, allCandidates: ReadonlyArray<FirstChecklistHire>): Promise<number> {
+  // A checklist starts at the first setup save, not at the job: a hire with no saved setup gets none.
+  const candidates = allCandidates.filter((hire) => hire.teamLeadForm?.leadInputDueAt != null)
   const existing = await db.onboardingChecklistItem.groupBy({
     by: ['newHireId'],
     where: { newHireId: { in: candidates.map((hire) => hire.id) } },
@@ -67,7 +71,9 @@ async function createFirstChecklists(db: Db, candidates: ReadonlyArray<{ id: str
 }
 
 export async function createChecklist(db: Db, newHireId: string): Promise<number> {
-  const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { id: true, onboardingDate: true } })
+  const hire = await db.newHire.findUnique({ where: { id: newHireId },
+    select: { id: true, onboardingDate: true, teamLeadForm: { select: { leadInputDueAt: true } } },
+  })
   if (!hire) throw new AcademyError('New hire not found', 404)
   return createFirstChecklists(db, [hire])
 }
@@ -161,10 +167,12 @@ export async function countChecklists(db: Db, newHireIds: readonly string[]): Pr
     where: { newHireId: { in: [...newHireIds] } },
     select: { newHireId: true, doneAt: true },
   })
-  return rows.reduce((counts, row) => {
+  const counts = new Map<string, { done: number; total: number }>()
+  for (const row of rows) {
     const current = counts.get(row.newHireId) ?? { done: 0, total: 0 }
-    return new Map(counts).set(row.newHireId, { done: current.done + (row.doneAt ? 1 : 0), total: current.total + 1 })
-  }, new Map<string, { done: number; total: number }>())
+    counts.set(row.newHireId, { done: current.done + (row.doneAt ? 1 : 0), total: current.total + 1 })
+  }
+  return counts
 }
 
 /** One hire's items in template order, each with its state. */

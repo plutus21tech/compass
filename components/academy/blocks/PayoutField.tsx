@@ -65,10 +65,18 @@ export function PayoutField({ label, context }: PayoutFieldProps) {
   const [saved, setSaved] = useState(view.payoutSaved)
   const [editing, setEditing] = useState(false)
 
-  if (readOnly) {
+  // A finished module is read-only, but saved payout details can still be updated (§5.9): this never re-opens it.
+  if (readOnly && !(saved && editing)) {
     return (
       <FieldPanel title={label}>
-        <SavedNote>{saved ? SAVED_LINE : 'No payout details saved.'}</SavedNote>
+        <div className="space-y-3">
+          <SavedNote>{saved ? SAVED_LINE : 'No payout details saved.'}</SavedNote>
+          {saved ? (
+            <Button type="button" variant="outline" className="h-11 rounded-xl bg-white px-5" onClick={() => setEditing(true)}>
+              Update details
+            </Button>
+          ) : null}
+        </div>
       </FieldPanel>
     )
   }

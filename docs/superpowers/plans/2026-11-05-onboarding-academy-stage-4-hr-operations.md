@@ -343,8 +343,6 @@ Rules:
 Carried forward. None of this is built in stage 4.
 
 **Needs a user decision before main**
-- **A finished contractor has no screen to update payout details,** though design §5.9 says they can. The payout fields are read-only once Module 11 is complete, and re-reads and assignments are read-only (a plan decision), so today OA handles a change directly.
-- **A re-read of Module 11 leaves the row's source as `REREAD`,** and the payout API refuses a save unless the person has a course row for that module, so a re-read blocks the payout API until the source returns to the course.
 - **Confirm the hourly cron on the first preview deploy.** `vercel.json` already lists `/api/cron/onboarding` at `0 * * * *`, next to the other crons. If the plan refuses it, use the fallback in design §8.
 
 **Stage 5 (video and polish)**
@@ -353,6 +351,10 @@ Carried forward. None of this is built in stage 4.
 - **The bank letter download,** once HR sends the text. Until then Module 11 says "HR will share your bank letter".
 
 **Deferred from stage 4 reviews (minor)**
+- One-shot notices (OA payment change, reminders) have no resend control.
+- The digest is per hire; one digest per owner across hires is a later improvement.
+- `requestReread` holds row locks for the whole transaction.
+- Contractor payout updates after a re-read were fixed in the final review (design §5.9); a PK employee re-reading Module 11 still sees the bank form, which the server refuses.
 - `tickItem` reads then writes with no guard against a concurrent auto-tick, and the day boundary is UTC midnight.
 - `gatherRowFacts` loads progress and quiz data for OA and then discards it.
 - `overdueCount` counts modules only, not checklist items.

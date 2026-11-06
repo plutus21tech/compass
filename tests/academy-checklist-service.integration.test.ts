@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { AcademyError } from '../lib/academy/errors'
 import { toItemState } from '../lib/academy/checklist'
-import { createChecklist, syncChecklist, tickItem } from '../lib/academy/service/checklist'
+import { createChecklist, syncChecklist, syncChecklists, tickItem } from '../lib/academy/service/checklist'
 import { saveSetup } from '../lib/academy/service/setup'
 import { ACADEMY_CHECKLIST } from '../prisma/seed-academy-data'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
@@ -191,4 +191,16 @@ test('a row without a stored offset falls back to the template offset', ACADEMY_
   await prisma.onboardingChecklistItem.update({ where: { id: item.id }, data: { dueOffsetDays: null, dueAt: new Date('2026-01-01T00:00:00.000Z') } })
   await syncChecklist(prisma, NEW_HIRE_ID)
   assert.equal((await itemFor('contract-signed')).dueAt.toISOString(), '2026-11-17T00:00:00.000Z')
+})
+
+test('a hire with no saved setup gets no rows from syncChecklists, and a template edit before the first save reaches them', ACADEMY_DB_TEST, async () => {
+  await prisma.onboardingChecklistItem.deleteMany({ where: { newHireId: NEW_HIRE_ID } })
+  await prisma.teamLeadForm.deleteMany({ where: { newHireId: NEW_HIRE_ID } })
+  await syncChecklists(prisma, [NEW_HIRE_ID])
+  assert.equal(await prisma.onboardingChecklistItem.count({ where: { newHireId: NEW_HIRE_ID } }), 0)
+
+  await prisma.onboardingChecklistTemplateItem.update({ where: { key: 'contract-signed' }, data: { title: 'Edited before first save' } })
+  await prisma.teamLeadForm.create({ data: { newHireId: NEW_HIRE_ID, leadInputDueAt: new Date() } })
+  assert.equal(await createChecklist(prisma, NEW_HIRE_ID), 17)
+  assert.equal((await itemFor('contract-signed')).title, 'Edited before first save')
 })

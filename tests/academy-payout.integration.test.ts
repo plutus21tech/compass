@@ -126,3 +126,35 @@ test('OTHER instructions and WISE payoutEmail are encrypted at rest', ACADEMY_DB
   assert.ok(row.payoutEmail?.startsWith('p21enc:v1:'))
   assert.equal(row.instructions, null)
 })
+
+async function rereadPaymentRow(withHistory: boolean) {
+  const paymentModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'getting-paid' } })
+  await prisma.onboardingProgress.update({
+    where: { userId_moduleId: { userId: P.hire.id, moduleId: paymentModule.id } },
+    data: { status: 'COMPLETED', source: 'REREAD', completedAt: new Date() },
+  })
+  if (withHistory) {
+    await prisma.onboardingProgressHistory.create({
+      data: { userId: P.hire.id, moduleId: paymentModule.id, completedAt: new Date() },
+    })
+  }
+  return paymentModule.id
+}
+
+test('a finished contractor updates payout details after a Module 11 re-read, and the update is flagged for OA', ACADEMY_DB_TEST, async () => {
+  assert.deepEqual(await savePayout(prisma, P.hire.id, wise), { isUpdate: false })
+  const moduleId = await rereadPaymentRow(true)
+  // isUpdate is what makes the route send OA the change notice.
+  assert.deepEqual(await savePayout(prisma, P.hire.id, bank), { isUpdate: true })
+  const row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.equal(row.method, 'BANK_TRANSFER')
+  const progress = await prisma.onboardingProgress.findUniqueOrThrow({ where: { userId_moduleId: { userId: P.hire.id, moduleId } } })
+  assert.equal(progress.status, 'COMPLETED')
+  assert.equal(progress.source, 'REREAD')
+})
+
+test('staff assigned Module 11 fresh have no history and still get 403', ACADEMY_DB_TEST, async () => {
+  await rereadPaymentRow(false)
+  await assert.rejects(savePayout(prisma, P.hire.id, wise), (e: unknown) => e instanceof AcademyError && e.status === 403)
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: P.hire.id } }), 0)
+})

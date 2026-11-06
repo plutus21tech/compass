@@ -16,6 +16,8 @@ const ACADEMY_DIRS = [
   'app/api/admin/onboarding',
   'app/(hr)/admin/onboarding',
   'app/(evaluator)/onboarding',
+  'app/(oa)/oa/payment-details',
+  'app/api/cron/onboarding',
 ]
 const PAYROLL_DIRS = ['app/api/payroll', 'lib/payroll']
 

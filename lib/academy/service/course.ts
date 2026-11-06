@@ -23,6 +23,7 @@ import {
   evaluateModule,
   findCourseModule,
   listCourseModules,
+  collectsData,
   moduleBlocks,
   toProgressView,
   versionIdFor,
@@ -126,7 +127,7 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
   const row = await markOpened(db, found, now)
   const state = parseProgressState(row.state)
   const versionId = versionIdFor(row, module)
-  const blocks = await moduleBlocks(db, versionId, context, row)
+  const blocks = await moduleBlocks(db, versionId, context, await collectsData(db, row))
   const evaluated = await evaluateModule(db, userId, context, module, blocks, state, versionId)
   const { payment, acknowledgement } = evaluated
   return {

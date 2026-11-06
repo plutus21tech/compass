@@ -64,7 +64,9 @@ async function extraHire(id: string, over: Record<string, unknown> = {}): Promis
   await prisma.newHire.create({
     data: {
       id: `act-${id}`, positionId: `act-pos-${id}`, name: `Hire ${id}`, title: 'Associate', email: `act-${id}@example.test`,
-      onboardingDate: new Date('2026-12-07T00:00:00.000Z'), ...over,
+      onboardingDate: new Date('2026-12-07T00:00:00.000Z'),
+      // A saved setup: the checklist starts at the first setup save.
+      teamLeadForm: { create: { leadInputDueAt: new Date('2026-11-30T00:00:00.000Z') } }, ...over,
     },
   })
 }

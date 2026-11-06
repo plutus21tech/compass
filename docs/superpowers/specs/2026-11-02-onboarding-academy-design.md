@@ -281,6 +281,8 @@ Contract type chooses the form: PK employment gets the bank form (version A), ev
 
 Changing saved details, by either form, notifies OA by email. A failed email never fails the save.
 
+**Updating after Module 11 (stage 4 final review).** A contractor can update payout details after finishing Module 11, and a re-read does not take that away. The payout save is open when the Module 11 row came through the course (`source = COURSE`) or the person has progress history for it (`archive()` writes history on every reopen). A staff member assigned Module 11 fresh has no history, so they only read and the save answers 403. LinkedIn and the bank paths keep refusing anything but a course row, PK bank stays locked by `bankConfirmedBefore`, and LinkedIn stays reading-only. The module's payout block shows an "Update details" button when it is read-only and details are saved. Saving does not re-open the module. OA gets the change notice.
+
 ## 6. The course
 
 ### 6.1 Content blocks
@@ -499,6 +501,8 @@ The flag is server-read and exposed to the layout the same way `SECURITY_CHECKS_
 **Encryption key.** `ONBOARDING_FIELD_ENCRYPTION_KEY` must be set on every environment before the Academy goes live. It is separate from payroll's key. Without it, saving payment details fails.
 
 **Cutover (D11).** Before the server-side lockout goes live, a script marks every user with `onboardingCompleted = false` as complete. These are test accounts from March–April 2026. The script prints the names it changes, and it is run once, deliberately, not on every build.
+
+**Cutover, legacy hires.** The checklist is created at a hire's first setup save, and the job never creates one. Legacy `NewHire` rows in PENDING or ONBOARDING must be marked COMPLETED before the push, or they show on the tracker with no checklist.
 
 **Seeding.** The seed retires the legacy modules and quiz questions, so it must not run until the whole Academy is ready. Nothing reaches main before then, so the seed and the test-account cutover above each still have to be run once, deliberately, around the push that makes the Academy the default. Seed behaviour is unchanged: it refuses to run unless `ONBOARDING_ACADEMY_ENABLED=true` and `ONBOARDING_ACADEMY_SEED_CONFIRM=yes` are set. A seed script, safe to re-run and checked into `prisma/`, does the following:
 - retires the old 11 modules and the old quiz questions

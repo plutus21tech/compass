@@ -7,7 +7,6 @@ import { moduleCardState, parseProgressState } from '../progress'
 import { timeZoneFor } from '../time'
 import {
   quizScoreLabel,
-  shapeForRole,
   type DrawerAcknowledgement,
   type DrawerLinkedin,
   type DrawerModule,
@@ -197,13 +196,28 @@ export async function loadTracker(db: PrismaClient, viewer: TrackerViewer, filte
   return hires.map((hire) => toRow(hire, facts, now))
 }
 
-/** OA's list. Takes no filters: filtering by location or status would tell OA what its rows hide. */
+/**
+ * OA's list. Takes no filters: filtering by location or status would tell OA what its rows hide.
+ * Only hires with saved payment details are listed, and only payment data is fetched.
+ */
 export async function loadPaymentTracker(db: PrismaClient, viewer: TrackerViewer): Promise<OaTrackerRow[]> {
   if (viewer.role !== 'OA') throw forbidden()
-  const now = new Date()
-  const hires = await listHires(db, {}, now)
-  const facts = await gatherRowFacts(db, hires)
-  return hires.map((hire) => shapeForRole(toRow(hire, facts, now), 'OA'))
+  const hires = await listHires(db, {}, new Date())
+  const userIds = hires.flatMap((hire) => (hire.userId ? [hire.userId] : []))
+  const saved = await db.onboardingPaymentDetails.findMany({
+    where: { userId: { in: userIds } },
+    select: { userId: true, method: true, updatedAt: true },
+  })
+  const payments: RowFacts['payments'] = new Map(saved.map((row) => [row.userId, row]))
+  return hires
+    .filter((hire) => hire.userId !== null && payments.has(hire.userId))
+    .map((hire) => ({
+      newHireId: hire.id,
+      name: hireName(hire),
+      department: hire.department,
+      joiningDate: hire.onboardingDate.toISOString(),
+      paymentStatus: paymentStatusOf(hire.userId, payments),
+    }))
 }
 
 async function versionNumbers(db: PrismaClient, ids: readonly string[]): Promise<Map<string, number>> {

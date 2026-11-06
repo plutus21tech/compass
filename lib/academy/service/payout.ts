@@ -3,7 +3,7 @@ import { AcademyError } from '../errors'
 import { decryptField, encryptField } from '../field-encryption'
 import { BANK_LOCKED_MESSAGE } from '../bank'
 import { canSavePayout, maskPayout, payoutSchema, type PayoutView } from '../payout'
-import { COURSE_TX_OPTIONS, assertCollectsData, lockPaymentRow, paymentUnavailable } from './progress'
+import { COURSE_TX_OPTIONS, assertCollectsPayout, lockPaymentRow, paymentUnavailable } from './progress'
 import { lockUserRow } from './quiz'
 
 const ENCRYPTED_FIELDS = [
@@ -53,7 +53,7 @@ export async function writePaymentRow(
 /** Only through a person's own course, from when Module 11 opens: a contractor may update after finishing it (§5.9). */
 async function assertPayoutOpen(tx: Prisma.TransactionClient, userId: string): Promise<void> {
   const { row } = await lockPaymentRow(tx, userId)
-  assertCollectsData(row)
+  await assertCollectsPayout(tx, row)
   if (row.status === 'LOCKED' && !row.unlockedEarlyById) throw paymentUnavailable()
 }
 
