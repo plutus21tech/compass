@@ -105,6 +105,7 @@ test('each notice names a person, escapes them, and links to Compass', () => {
     academyNotices.firstPaymentSave(name),
     academyNotices.paymentSetupDone(name),
     academyNotices.linkedinSubmitted(name),
+    academyNotices.assignment({ name, title: 'Security', slug: 'security' }),
     academyNotices.checklistDigest({ hireName: name, newHireId: 'hire-1', ownerRole: 'HR', items: [{ title: name, dueDate: '2026-12-01', overdue: true }] }),
   ]
   for (const notice of notices) {
@@ -113,6 +114,13 @@ test('each notice names a person, escapes them, and links to Compass', () => {
     assert.match(notice.html, /&lt;b&gt;Cara/)
     assert.ok(notice.html.includes(`href="${COMPASS_URL}`))
   }
+})
+
+test('the assignment notice carries the module title, escaped, and one link to the module', () => {
+  const notice = academyNotices.assignment({ name: 'Ana', title: '<i>Security</i>', slug: 'security' })
+  assert.equal(notice.html.includes('<i>Security'), false)
+  assert.equal(notice.html.match(/href="/g)?.length, 1)
+  assert.ok(notice.html.includes(`href="${COMPASS_URL}/onboarding/security"`))
 })
 
 test('notice wording follows the count and the date', () => {

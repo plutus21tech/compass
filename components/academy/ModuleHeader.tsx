@@ -30,7 +30,7 @@ export function ModuleHeader({ view }: ModuleHeaderProps) {
     <header className="bg-academy-blue text-white">
       <div className="mx-auto flex w-full max-w-[720px] items-start justify-between gap-4 px-5 pb-8 pt-7 sm:pb-10 sm:pt-9">
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold tracking-[0.14em]">{moduleNumberLabel(view.number, view.total)}</p>
+          <p className="text-[13px] font-semibold tracking-[0.14em]">{view.plain ? 'ASSIGNED TO YOU' : moduleNumberLabel(view.number, view.total)}</p>
           <h1 className="mt-3 text-balance text-[2rem] font-extrabold leading-[1.08] tracking-tight sm:text-[2.75rem]">
             {hasHeadline ? (
               <>

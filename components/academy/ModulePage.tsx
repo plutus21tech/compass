@@ -18,9 +18,10 @@ import type { BlockContext } from './types'
 import { useModuleProgress } from './useModuleProgress'
 
 const HOME_HREF = '/onboarding'
+const STAFF_HOME_HREF = '/dashboard'
 const CHECK_MOMENT_MS = 700
 
-const moduleHref = (slug: string | null) => (slug ? `/onboarding/${slug}` : HOME_HREF)
+const moduleHref = (slug: string | null, home: string) => (slug ? `/onboarding/${slug}` : home)
 
 interface ModulePageProps {
   view: ModuleView
@@ -30,6 +31,9 @@ export function ModulePage({ view }: ModulePageProps) {
   const router = useRouter()
   const progress = useModuleProgress(view.slug, view.progress)
   const { previous, nextTitle } = neighbourSlugs(view.rail, view.slug)
+  // An assigned or re-read module has no next one, and staff have no Academy Home to go back to.
+  const home = view.plain ? STAFF_HOME_HREF : HOME_HREF
+  const upNext = view.nextSlug ? nextTitle : null
   const timeZone = view.callTimes.timeZone
   const { state, readOnly, setCheck, openLink, complete } = progress
 
@@ -53,10 +57,10 @@ export function ModulePage({ view }: ModulePageProps) {
       router.refresh()
       return false
     }
-    if (!result.alreadyCompleted) toast.success(completionToast(view.number, nextTitle))
-    setTimeout(() => router.push(moduleHref(result.nextSlug)), CHECK_MOMENT_MS)
+    if (!result.alreadyCompleted) toast.success(completionToast(view.number, upNext))
+    setTimeout(() => router.push(moduleHref(result.nextSlug, home)), CHECK_MOMENT_MS)
     return true
-  }, [complete, nextTitle, router, view.number])
+  }, [complete, home, router, upNext, view.number])
 
   return (
     <div
@@ -65,11 +69,12 @@ export function ModulePage({ view }: ModulePageProps) {
       className={cn(
         academySans.className,
         academySerif.variable,
-        'min-h-full bg-academy-paper text-academy-navy selection:bg-academy-blue/20 lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]',
+        'min-h-full bg-academy-paper text-academy-navy selection:bg-academy-blue/20',
+        !view.plain && 'lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]',
       )}
     >
-      <ModuleMobileBar rail={view.rail} currentSlug={view.slug} timeZone={timeZone} />
-      <ModuleRail rail={view.rail} currentSlug={view.slug} timeZone={timeZone} />
+      {view.plain ? null : <ModuleMobileBar rail={view.rail} currentSlug={view.slug} timeZone={timeZone} />}
+      {view.plain ? null : <ModuleRail rail={view.rail} currentSlug={view.slug} timeZone={timeZone} />}
       <div className="flex min-h-[calc(100dvh-3.5rem)] min-w-0 flex-col">
         <ModuleHeader view={view} />
         <div className="mx-auto w-full max-w-[720px] flex-1 space-y-7 px-5 py-8 text-[16px] text-academy-navy sm:py-10">
@@ -80,10 +85,11 @@ export function ModulePage({ view }: ModulePageProps) {
         </div>
         <CompleteFooter
           state={progress.footer}
-          backHref={moduleHref(previous)}
-          nextHref={moduleHref(view.nextSlug)}
+          backHref={moduleHref(previous, home)}
+          nextHref={moduleHref(view.nextSlug, home)}
           completedOn={view.progress.completedAt ? formatAcademyDate(view.progress.completedAt, timeZone) : null}
           isLastModule={view.nextSlug === null}
+          homeLabel={view.plain ? 'Back to dashboard' : 'Back to Home'}
           onComplete={handleComplete}
         />
       </div>

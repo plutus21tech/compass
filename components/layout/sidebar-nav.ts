@@ -70,6 +70,7 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
     { label: 'Academy library', href: '/admin/onboarding/academy/library', icon: icons.library },
     { label: 'Key contacts', href: '/admin/onboarding/academy/contacts', icon: icons.contacts },
     { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
+    { label: 'Assign a module', href: '/admin/onboarding/academy/assign', icon: icons.library },
   ]
   return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), config)
 }

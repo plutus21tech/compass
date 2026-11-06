@@ -107,8 +107,9 @@ export function isTypedNameValid(typedName: string, name: string): boolean {
 export interface AcknowledgementInput { kind: 'SECURITY_SOPS'; typedName: string; moduleSlug: string }
 
 /**
- * The statement and version come from the module as this hire sees it, never from the client. The
- * first signature stands: signing again returns it. The row lock makes a double submit sign once.
+ * The statement and version come from the module as this person sees it, never from the client. One
+ * signature per version: the first stands and signing that version again returns it, while a new
+ * version adds a row and keeps the old one. The row lock makes a double submit sign once.
  */
 export async function signAcknowledgement(
   db: PrismaClient, userId: string, input: AcknowledgementInput,
@@ -122,7 +123,7 @@ export async function signAcknowledgement(
     const { module, index } = findCourseModule(await listCourseModules(tx), input.moduleSlug)
     const row = await lockProgressRow(tx, userId, module.id)
     assertModuleOpen(row, index)
-    const context = await buildAcademyContext(tx, userId)
+    const context = await buildAcademyContext(tx, userId, row)
     if (!context) throw new AcademyError('Module not found', 404)
     const versionId = versionIdFor(row, module)
     const blocks = renderBlocks(await moduleBlocks(tx, versionId, context), context.placeholders)
@@ -130,7 +131,7 @@ export async function signAcknowledgement(
     if (!block || block.type !== 'acknowledgement') throw new AcademyError("That isn't part of this module.", 400)
 
     const first = await tx.onboardingAcknowledgement.findFirst({
-      where: { userId, kind: input.kind }, orderBy: { signedAt: 'asc' }, select: { signedAt: true },
+      where: { userId, kind: input.kind, moduleVersionId: versionId }, orderBy: { signedAt: 'asc' }, select: { signedAt: true },
     })
     if (first) return { signedAt: first.signedAt }
     const signed = await tx.onboardingAcknowledgement.create({

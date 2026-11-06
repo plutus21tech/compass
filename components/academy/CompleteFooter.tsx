@@ -19,6 +19,7 @@ interface CompleteFooterProps {
   /** Completed date, for the line on a finished module. */
   completedOn: string | null
   isLastModule: boolean
+  homeLabel: string
   /** Resolves true once the module is complete and the page is moving on. */
   onComplete: () => Promise<boolean>
 }
@@ -57,7 +58,7 @@ function DoneCheck() {
   )
 }
 
-export function CompleteFooter({ state, backHref, nextHref, completedOn, isLastModule, onComplete }: CompleteFooterProps) {
+export function CompleteFooter({ state, backHref, nextHref, completedOn, isLastModule, homeLabel, onComplete }: CompleteFooterProps) {
   const [phase, setPhase] = useState<'idle' | 'saving' | 'done'>('idle')
   const blocked = state.kind === 'blocked'
 
@@ -80,7 +81,7 @@ export function CompleteFooter({ state, backHref, nextHref, completedOn, isLastM
         {state.kind === 'done' ? (
           <Button asChild className={ACTION_CLASS}>
             <Link href={nextHref} prefetch={false}>
-              {isLastModule ? 'Back to Home' : 'Next module'}
+              {isLastModule ? homeLabel : 'Next module'}
               <ArrowRight aria-hidden />
             </Link>
           </Button>

@@ -2458,6 +2458,14 @@ export const academyNotices = {
       linkLabel: 'Open your course',
       path: '/onboarding',
     }),
+  assignment: (input: { name: string; title: string; slug: string }): AcademyNotice =>
+    academyNotice({
+      subject: `A module for you to read: ${input.title}`,
+      heading: `Hi ${input.name}`,
+      lines: [`HR has asked you to read "${input.title}" in Compass. It's there whenever you have a few minutes.`],
+      linkLabel: 'Open the module',
+      path: `/onboarding/${encodeURIComponent(input.slug)}`,
+    }),
   leadInputOverdue: (input: { leadName: string; hireName: string; newHireId: string }): AcademyNotice =>
     academyNotice({
       subject: `${input.hireName} still needs your input`,
@@ -2556,6 +2564,13 @@ async function deliverAcademyNotice(
 
 export const sendCourseReleasedNotice = (to: string, name: string): Promise<AcademySendResult> =>
   deliverAcademyNotice([to], academyNotices.courseReleased(name))
+
+export const sendAssignmentNotice = (input: {
+  to: string
+  name: string
+  title: string
+  slug: string
+}): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.assignment(input))
 
 export const sendLeadInputOverdueNotice = (input: {
   to: string

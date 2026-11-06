@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import type { KeyContactGroup, Prisma, PrismaClient, TeamTag } from '@prisma/client'
+import type { KeyContactGroup, OnboardingProgress, Prisma, PrismaClient, TeamTag } from '@prisma/client'
 import type { PersonAttributes } from '../attributes'
 import type { ConditionFacts } from '../blocks'
 import type { AcademyConfigView } from '../links'
@@ -30,6 +30,8 @@ const KEY_CONTACT_GROUPS: readonly KeyContactGroup[] = ['HR', 'SECURITY_IT', 'AC
 
 const PERSON_SELECT = { id: true, name: true, email: true, position: true, discordUsername: true } as const
 
+const STAFF_SELECT = { name: true, position: true, department: true, discordUsername: true, teamTag: true, ...ATTRIBUTE_SELECT } as const
+
 const HIRE_SELECT = {
   id: true,
   preferredName: true,
@@ -56,9 +58,10 @@ const HIRE_SELECT = {
   },
 } satisfies Prisma.NewHireSelect
 
-/** What progress rules need: the released hire and their own record, nothing shared. */
-export interface HireFacts {
-  newHireId: string
+/** What progress rules need: the person's own record, nothing shared. */
+export interface LearnerFacts {
+  /** False for staff reading an assigned module: they have no rail, Home or quiz. */
+  hasCourse: boolean
   name: string
   preferredName: string | null
   title: string
@@ -72,7 +75,6 @@ export interface HireFacts {
   hrCallAt: Date | null
   teamCallAt: Date | null
   securityCallAt: Date | null
-  onboardingDate: Date
   lead: PersonView | null
   buddy: PersonView | null
   team: PersonView[]
@@ -82,7 +84,12 @@ export interface HireFacts {
   teamTools: TeamToolView[]
 }
 
-export interface AcademyContext extends HireFacts {
+export interface HireFacts extends LearnerFacts {
+  newHireId: string
+  onboardingDate: Date
+}
+
+export interface AcademyContext extends LearnerFacts {
   config: AcademyConfigView
   keyContacts: KeyContactsView
   placeholders: Record<PlaceholderKey, string>
@@ -139,6 +146,7 @@ export async function loadHireFacts(db: Db, userId: string): Promise<HireFacts |
     employmentStatus: user.employmentStatus,
   }
   return {
+    hasCourse: true,
     newHireId: hire.id,
     name: user.name,
     preferredName: hire.preferredName,
@@ -169,6 +177,52 @@ export async function loadHireFacts(db: Db, userId: string): Promise<HireFacts |
   }
 }
 
+/** Staff have no NewHire: attributes come from User, and everything set per hire is empty. */
+async function loadStaffFacts(db: Db, userId: string): Promise<LearnerFacts | null> {
+  const user = await db.user.findUnique({ where: { id: userId }, select: STAFF_SELECT })
+  if (!user) return null
+  const attributes: PersonAttributes = {
+    officeLocation: user.officeLocation,
+    remoteCountry: user.remoteCountry,
+    workMode: user.workMode,
+    contractType: user.contractType,
+    employmentStatus: user.employmentStatus,
+  }
+  return {
+    hasCourse: false,
+    name: user.name,
+    preferredName: null,
+    title: user.position ?? '',
+    department: user.department,
+    attributes,
+    teamTag: user.teamTag,
+    discordUsername: user.discordUsername,
+    conditions: { attributes, clientAccount: null, companyWing: null },
+    coreHoursStart: null,
+    coreHoursEnd: null,
+    hrCallAt: null,
+    teamCallAt: null,
+    securityCallAt: null,
+    lead: null,
+    buddy: null,
+    team: [],
+    roleExpectations: null,
+    goals: { day1Goal: null, week1Goal: null, month1Goal: null, month3Goal: null },
+    tutorials: [],
+    teamTools: [],
+  }
+}
+
+/**
+ * Who may use this row. A released hire uses any of theirs. Anyone else only an assigned or re-read
+ * row: a COURSE row without a released course stays shut, so null.
+ */
+export async function loadRowFacts(db: Db, userId: string, row: Pick<OnboardingProgress, 'source'>): Promise<LearnerFacts | null> {
+  const hire = await loadHireFacts(db, userId)
+  if (hire) return hire
+  return row.source === 'COURSE' ? null : loadStaffFacts(db, userId)
+}
+
 type ContactRow = Awaited<ReturnType<typeof listKeyContacts>>[number]
 
 function contactPerson(contact: ContactRow): PersonView {
@@ -183,9 +237,14 @@ function groupContacts(contacts: readonly ContactRow[]): KeyContactsView {
   return Object.fromEntries(KEY_CONTACT_GROUPS.map((group) => [group, inGroup(group)])) as KeyContactsView
 }
 
-/** Everything a page needs for one hire, or null when no released NewHire links to the user. */
-export async function buildAcademyContext(db: Db, userId: string): Promise<AcademyContext | null> {
-  const facts = await loadHireFacts(db, userId)
+/**
+ * Everything a page needs for one person. With no row: only a released hire, so Home and the quiz stay
+ * theirs. With the row being read: also staff, under the rule in loadRowFacts. Otherwise null.
+ */
+export async function buildAcademyContext(
+  db: Db, userId: string, row?: Pick<OnboardingProgress, 'source'>,
+): Promise<AcademyContext | null> {
+  const facts = row ? await loadRowFacts(db, userId, row) : await loadHireFacts(db, userId)
   if (!facts) return null
   const now = new Date()
   const config = await getAcademyConfig(db)

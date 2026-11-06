@@ -35,6 +35,9 @@ const REMOVED_QUESTION = 'This question is no longer in the quiz.'
 
 export interface TrackerViewer { id: string; role: string }
 
+/** A finished hire's re-read row is still their course module, or they would show one short for good. */
+const TRACKED_SOURCES = ['COURSE', 'REREAD'] as const
+
 const forbidden = () => new AcademyError('Forbidden', 403)
 
 function assertHr(viewer: TrackerViewer): void {
@@ -121,7 +124,7 @@ async function gatherRowFacts(db: PrismaClient, hires: readonly HireRow[]): Prom
   const modules = await listCourseModules(db)
   const [progress, attempts, signatures, payments, checklists] = await Promise.all([
     db.onboardingProgress.findMany({
-      where: { userId: { in: userIds }, moduleId: { in: modules.map((m) => m.id) }, source: 'COURSE' },
+      where: { userId: { in: userIds }, moduleId: { in: modules.map((m) => m.id) }, source: { in: [...TRACKED_SOURCES] } },
     }),
     readAcademyAttemptsFor(db, userIds),
     firstValuesSignatures(db, userIds),
@@ -325,7 +328,7 @@ export async function loadDrawer(db: PrismaClient, viewer: TrackerViewer, newHir
   }
   const modules = await listCourseModules(db)
   const rows = await db.onboardingProgress.findMany({
-    where: { userId, moduleId: { in: modules.map((m) => m.id) }, source: 'COURSE' },
+    where: { userId, moduleId: { in: modules.map((m) => m.id) }, source: { in: [...TRACKED_SOURCES] } },
   })
   const signatures = await firstValuesSignatures(db, [userId])
   const linkedinModule = modules.find((m) => m.slug === LINKEDIN_MODULE_SLUG)

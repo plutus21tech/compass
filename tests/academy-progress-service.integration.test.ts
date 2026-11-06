@@ -171,7 +171,10 @@ test('module 7 needs the Security acknowledgement', ACADEMY_DB_TEST, async () =>
   })
   await assert.rejects(completeModule(prisma, HIRE_ID, 'security'), fails(409, /acknowledgement/))
   await prisma.onboardingAcknowledgement.create({
-    data: { userId: HIRE_ID, kind: 'SECURITY_SOPS', statementText: 'Signed', typedName: P.hire.name },
+    data: {
+      userId: HIRE_ID, kind: 'SECURITY_SOPS', statementText: 'Signed', typedName: P.hire.name,
+      moduleVersionId: (await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'security' } })).currentVersionId,
+    },
   })
   const view = await loadModule(prisma, HIRE_ID, 'security')
   assert.equal(view.securityAcknowledgement?.typedName, P.hire.name)

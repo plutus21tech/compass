@@ -14,6 +14,8 @@ import { StatsCard } from '@/components/composed/StatsCard'
 import { UserAvatar } from '@/components/composed/UserAvatar'
 import { EmptyState } from '@/components/composed/EmptyState'
 import { WeeklyQuestionsCard } from '@/components/weekly/WeeklyQuestionsCard'
+import { AssignedCard } from '@/components/academy/AssignedCard'
+import type { AssignedCardView } from '@/lib/academy/view'
 import {
   ClipboardCheck,
   Calendar,
@@ -131,6 +133,7 @@ export default function DashboardPage() {
   const [myEquipment, setMyEquipment] = useState<MyEquipmentItem[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [pendingTeamLeadForms, setPendingTeamLeadForms] = useState<PendingTeamLeadFormItem[]>([])
+  const [assigned, setAssigned] = useState<AssignedCardView[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -142,6 +145,7 @@ export default function DashboardPage() {
       loadUpcomingTeamLeaves(),
       loadMyEquipment(),
       loadTeamMembers(),
+      loadAssignedModules(),
     ]
     // Role-specific data
     if (user.role === 'HR' || user.role === 'SECURITY') {
@@ -236,6 +240,14 @@ export default function DashboardPage() {
     }
   }
 
+  const loadAssignedModules = async () => {
+    try {
+      const res = await fetch('/api/onboarding/academy/assigned', { cache: 'no-store' })
+      const body = await res.json()
+      if (res.ok && Array.isArray(body.data)) setAssigned(body.data)
+    } catch { /* the card simply stays hidden */ }
+  }
+
   const loadPendingTeamLeadForms = async () => {
     try {
       const res = await fetch('/api/onboarding/team-lead-forms/pending')
@@ -289,6 +301,8 @@ export default function DashboardPage() {
           {weekly?.cycle ? `${weekly.cycle.periodName} weekly evaluations` : 'Here\u2019s your overview'}
         </p>
       </motion.div>
+
+      <AssignedCard items={assigned} />
 
       <WeeklyQuestionsCard />
 

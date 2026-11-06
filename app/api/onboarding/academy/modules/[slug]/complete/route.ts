@@ -15,7 +15,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await guardAcademyMutation(request, user.id)
     const { slug } = await context.params
     const data = await completeModule(prisma, user.id, slug)
-    if (slug === BANK_MODULE_SLUG) after(() => notifyPaymentSetupDone(prisma, user.id, user.name))
+    // Only a course row has a next module: an assigned re-read tells OA nothing new.
+    if (slug === BANK_MODULE_SLUG && data.nextSlug) after(() => notifyPaymentSetupDone(prisma, user.id, user.name))
     return NextResponse.json({ success: true, data })
   } catch (error) {
     return academyErrorResponse(error)

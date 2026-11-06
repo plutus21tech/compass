@@ -9,7 +9,7 @@ import { holidayTeamFor, moduleDueAt } from '../schedule'
 import { timeZoneFor } from '../time'
 import { eventKeysFor, latestDue, type ModuleProgressView } from '../view'
 import { ATTRIBUTE_SELECT } from './attributes'
-import { loadHireFacts, type HireFacts } from './context'
+import { loadRowFacts, type HireFacts, type LearnerFacts } from './context'
 import { getAcademyConfig } from './library'
 import { companyHolidayDates } from './shared-reads'
 
@@ -99,10 +99,10 @@ export async function paymentFacts(db: Db, userId: string): Promise<PaymentFacts
   return { kind: 'OTHER', payoutSaved: method !== undefined && method !== 'PK_BANK' }
 }
 
-/** The first signature, which is the one that stands. */
-export async function securityAcknowledgement(db: Db, userId: string) {
+/** The signature for the version being read. The first one on that version is the one that stands. */
+export async function securityAcknowledgement(db: Db, userId: string, versionId: string) {
   return db.onboardingAcknowledgement.findFirst({
-    where: { userId, kind: 'SECURITY_SOPS' },
+    where: { userId, kind: 'SECURITY_SOPS', moduleVersionId: versionId },
     orderBy: { signedAt: 'asc' },
     select: { statementText: true, typedName: true, signedAt: true },
   })
@@ -114,7 +114,7 @@ export function versionIdFor(row: Pick<OnboardingProgress, 'status' | 'versionId
 }
 
 /** The version's blocks with this hire's conditions applied. */
-export async function moduleBlocks(db: Db, versionId: string, facts: Pick<HireFacts, 'conditions'>): Promise<Block[]> {
+export async function moduleBlocks(db: Db, versionId: string, facts: Pick<LearnerFacts, 'conditions'>): Promise<Block[]> {
   const version = await db.onboardingModuleVersion.findUnique({ where: { id: versionId }, select: { blocks: true } })
   if (!version) throw notFound()
   try {
@@ -125,13 +125,14 @@ export async function moduleBlocks(db: Db, versionId: string, facts: Pick<HireFa
   }
 }
 
-/** Runs the module's rule on fresh data. Facts only count if this hire's filtered blocks show the content. */
+/** Runs the module's rule on fresh data. Facts only count if this person's filtered blocks show the content. */
 export async function evaluateModule(
-  db: Db, userId: string, facts: HireFacts, module: CourseModule, blocks: readonly Block[], state: ProgressState,
+  db: Db, userId: string, facts: LearnerFacts, module: CourseModule, blocks: readonly Block[], state: ProgressState,
+  versionId: string,
 ) {
   const config = await getAcademyConfig(db)
   const payment = await paymentFacts(db, userId)
-  const acknowledgement = await securityAcknowledgement(db, userId)
+  const acknowledgement = await securityAcknowledgement(db, userId, versionId)
   const tutorialKeys = blocks.some((b) => b.type === 'tutorialCards') ? facts.tutorials.map((t) => t.key) : []
   const dashboardLinkSet =
     blocks.some((b) => b.type === 'dashboardLink') && resolveAcademyLink(config.links.COMPANY_DASHBOARD) !== null
@@ -164,15 +165,15 @@ export function toProgressView(
   }
 }
 
-function assertKnownEventKey(event: ProgressEvent, blocks: readonly Block[], facts: HireFacts): void {
+function assertKnownEventKey(event: ProgressEvent, blocks: readonly Block[], facts: LearnerFacts): void {
   if (event.type === 'SCROLLED_END') return
   const keys = eventKeysFor(blocks, facts.tutorials.map((t) => t.key))
   const allowed = event.type === 'CHECK' ? keys.checks : keys.links
   if (!allowed.includes(event.key)) throw new AcademyError("That isn't part of this module.", 400)
 }
 
-async function requireHireFacts(db: Db, userId: string): Promise<HireFacts> {
-  const facts = await loadHireFacts(db, userId)
+async function requireRowFacts(db: Db, userId: string, row: OnboardingProgress): Promise<LearnerFacts> {
+  const facts = await loadRowFacts(db, userId, row)
   if (!facts) throw notFound()
   return facts
 }
@@ -185,9 +186,10 @@ export async function recordEvent(db: PrismaClient, userId: string, slug: string
   return db.$transaction(async (tx) => {
     const { module, index } = findCourseModule(await listCourseModules(tx), slug)
     const row = await lockProgressRow(tx, userId, module.id)
-    const facts = await requireHireFacts(tx, userId)
+    const facts = await requireRowFacts(tx, userId, row)
     assertModuleOpen(row, index)
-    const blocks = await moduleBlocks(tx, versionIdFor(row, module), facts)
+    const versionId = versionIdFor(row, module)
+    const blocks = await moduleBlocks(tx, versionId, facts)
     assertKnownEventKey(event, blocks, facts)
 
     const now = new Date()
@@ -197,11 +199,14 @@ export async function recordEvent(db: PrismaClient, userId: string, slug: string
     const saved = finished
       ? row
       : await tx.onboardingProgress.update({ where: { id: row.id }, data: { state: state as unknown as Prisma.InputJsonObject } })
-    return toProgressView(saved, state, await evaluateModule(tx, userId, facts, module, blocks, state), now)
+    return toProgressView(saved, state, await evaluateModule(tx, userId, facts, module, blocks, state, versionId), now)
   }, COURSE_TX_OPTIONS)
 }
 
-/** Everything is read under the row lock, so the rule sees fresh data and a double submit completes once. */
+/**
+ * Everything is read under the row lock, so the rule sees fresh data and a double submit completes once.
+ * Only a COURSE row moves a course on: an assigned or re-read one unlocks nothing and has no next module.
+ */
 export async function completeModule(
   db: PrismaClient, userId: string, slug: string,
 ): Promise<{ nextSlug: string | null; alreadyCompleted: boolean }> {
@@ -209,14 +214,15 @@ export async function completeModule(
     const modules = await listCourseModules(tx)
     const { module, index } = findCourseModule(modules, slug)
     const row = await lockProgressRow(tx, userId, module.id)
-    const facts = await requireHireFacts(tx, userId)
-    const nextId = nextToUnlock(modules, module.id)
+    const facts = await requireRowFacts(tx, userId, row)
+    const nextId = row.source === 'COURSE' ? nextToUnlock(modules, module.id) : null
     const nextSlug = modules.find((m) => m.id === nextId)?.slug ?? null
     if (row.status === 'COMPLETED') return { nextSlug, alreadyCompleted: true }
     assertModuleOpen(row, index)
 
     const blocks = await moduleBlocks(tx, module.currentVersionId, facts)
-    const { completion } = await evaluateModule(tx, userId, facts, module, blocks, parseProgressState(row.state))
+    const state = parseProgressState(row.state)
+    const { completion } = await evaluateModule(tx, userId, facts, module, blocks, state, module.currentVersionId)
     if (!completion.met) throw new AcademyError(completion.reason, 409)
 
     const now = new Date()

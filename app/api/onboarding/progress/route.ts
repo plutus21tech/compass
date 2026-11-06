@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
+import { isAcademyEnabled } from '@/lib/academy/flag'
 import { prisma } from '@/lib/db'
 import { hasCompletedAllModules } from '@/lib/onboarding'
 
@@ -43,6 +44,11 @@ export async function POST(request: NextRequest) {
     const user = await getSession()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Staff can reach this route, and it would finish an assigned module without its rule or signature.
+    if (isAcademyEnabled()) {
+      return NextResponse.json({ error: 'Open the module to complete it.' }, { status: 409 })
     }
 
     const body = await request.json()

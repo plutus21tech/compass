@@ -113,20 +113,21 @@ function invoiceTemplateHref(context: AcademyContext): string | null {
 }
 
 export async function loadModule(db: PrismaClient, userId: string, slug: string): Promise<ModuleView> {
-  const context = await buildAcademyContext(db, userId)
-  if (!context) throw notFound()
   const modules = await listCourseModules(db)
   const { module, index } = findCourseModule(modules, slug)
   const rows = await readRows(db, userId, modules)
   const found = rows.find((r) => r.moduleId === module.id)
   if (!found) throw notFound()
+  const context = await buildAcademyContext(db, userId, found)
+  if (!context) throw notFound()
   assertModuleOpen(found, index)
 
   const now = new Date()
   const row = await markOpened(db, found, now)
   const state = parseProgressState(row.state)
-  const blocks = await moduleBlocks(db, versionIdFor(row, module), context)
-  const evaluated = await evaluateModule(db, userId, context, module, blocks, state)
+  const versionId = versionIdFor(row, module)
+  const blocks = await moduleBlocks(db, versionId, context)
+  const evaluated = await evaluateModule(db, userId, context, module, blocks, state, versionId)
   const { payment, acknowledgement } = evaluated
   return {
     slug: module.slug,
@@ -139,7 +140,8 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
     heroImageUrl: module.heroImageUrl,
     estimatedMinutes: module.estimatedMinutes ?? 0,
     phase: module.phase,
-    rail: cardsFor(modules, rows.map((r) => (r.id === row.id ? row : r)), now),
+    plain: !context.hasCourse,
+    rail: context.hasCourse ? cardsFor(modules, rows.map((r) => (r.id === row.id ? row : r)), now) : [],
     blocks: renderBlocks(blocks, context.placeholders),
     lead: context.lead,
     team: context.team,
@@ -158,7 +160,7 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
     securityAcknowledgement: acknowledgement && { ...acknowledgement, signedAt: acknowledgement.signedAt.toISOString() },
     discordUsername: context.discordUsername,
     progress: toProgressView(row, state, evaluated, now),
-    nextSlug: modules[index + 1]?.slug ?? null,
+    nextSlug: row.source === 'COURSE' ? (modules[index + 1]?.slug ?? null) : null,
   }
 }
 

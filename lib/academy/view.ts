@@ -104,6 +104,8 @@ export interface ModuleView {
   heroImageUrl: string | null
   estimatedMinutes: number
   phase: OnboardingPhase
+  /** Staff reading an assigned module: no course around it, so no rail and an empty one here. */
+  plain: boolean
   rail: ModuleCardView[]
   /** Conditions applied and placeholders rendered in every text field. */
   blocks: Block[]
@@ -127,6 +129,14 @@ export interface ModuleView {
   discordUsername: string | null
   progress: ModuleProgressView
   nextSlug: string | null
+}
+
+/** One open module on a person's "Assigned to you" card. */
+export interface AssignedCardView {
+  slug: string
+  title: string
+  estimatedMinutes: number
+  reread: boolean
 }
 
 export interface QuizResultView {

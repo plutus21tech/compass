@@ -44,3 +44,15 @@ test('the quiz reset clears attempts with the flag on and keeps the legacy path 
   assert.ok(source.indexOf('clearQuizAttempts(prisma') < source.indexOf('prisma.$transaction'), 'the Academy path returns before the legacy one')
   assert.match(source, /data: quizResetUserData\(academyEnabled\)/)
 })
+
+test('with the flag on, the legacy progress route refuses, so an assigned module keeps its rule and signature', () => {
+  const source = read('app/api/onboarding/progress/route.ts')
+  const post = source.slice(source.indexOf('export async function POST'))
+  assert.match(post, /if \(isAcademyEnabled\(\)\) \{\s*return NextResponse\.json\(\{ error: [^}]+\}, \{ status: 409 \}\)/)
+  assert.ok(post.indexOf('isAcademyEnabled()') < post.indexOf('onboardingProgress.update'))
+})
+
+test('only a course row tells OA that payment setup is done', () => {
+  const source = read('app/api/onboarding/academy/modules/[slug]/complete/route.ts')
+  assert.match(source, /slug === BANK_MODULE_SLUG && data\.nextSlug/)
+})
