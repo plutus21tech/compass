@@ -253,18 +253,14 @@ export interface AssignableView {
 /** For HR's picker: the same people an assignment would reach. */
 export async function listAssignable(db: PrismaClient): Promise<AssignableView> {
   const modules = await listCourseModules(db)
-  // One query for everyone: inactive is the same test as isAccountInactive (a profile marked
-  // not active; no profile means active), done in the database instead of once per person.
-  const people = await db.user.findMany({
-    where: {
-      NOT: { payrollProfile: { is: { isPayrollActive: false } } },
-      OR: [{ onboardingCompleted: true }, { newHireRecord: { is: { academyReleasedAt: { not: null } } } }],
-    },
-    select: { id: true, name: true, department: true },
-    orderBy: { name: 'asc' },
-  })
+  // One inactive check per person (batched): a single query would need to read a column the
+  // payroll separation guard keeps out of onboarding (see tests/academy-payroll-separation.test.ts).
+  const users = await activeUsers(db, 'ALL_ACTIVE')
   return {
     modules: modules.map((module, index) => ({ id: module.id, number: index + 1, title: module.title })),
-    people: [...people].sort((a, b) => a.name.localeCompare(b.name)),
+    people: users
+      .filter((user) => user.onboardingCompleted || user.newHireRecord?.academyReleasedAt)
+      .map(({ id, name, department }) => ({ id, name, department }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
   }
 }
