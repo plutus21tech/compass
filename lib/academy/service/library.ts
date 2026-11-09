@@ -157,9 +157,7 @@ export async function updateAcademyConfig(db: PrismaClient, input: unknown): Pro
     ...(parsed.bankLetterTemplate !== undefined ? { bankLetterTemplate: parsed.bankLetterTemplate?.trim() || null } : {}),
     ...(parsed.blockersCallCt !== undefined ? { blockersCallCt: parsed.blockersCallCt } : {}),
     ...(parsed.retakeCooldownMinutes !== undefined ? { retakeCooldownMinutes: parsed.retakeCooldownMinutes } : {}),
-    ...(parsed.failAlertThreshold !== undefined ? { failAlertThreshold: parsed.failAlertThreshold } : {}),
-    ...(parsed.videos !== undefined ? { videos: parsed.videos as Prisma.InputJsonObject } : {}),
-  }
+    ...(parsed.failAlertThreshold !== undefined ? { failAlertThreshold: parsed.failAlertThreshold } : {}),  }
   await db.onboardingConfig.upsert({
     where: { id: CONFIG_ID },
     update: data,

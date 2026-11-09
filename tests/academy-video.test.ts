@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chapterStart, isVideoReady, parseDurationInput, readVideo, videoConfigSchema, videoConfigsSchema } from '../lib/academy/video'
-import { academyConfigInputSchema } from '../lib/academy/links'
+import type { PrismaClient } from '@prisma/client'
+import { AcademyError } from '../lib/academy/errors'
+import { getVideoSettings, saveVideo } from '../lib/academy/service/videos'
 import { withAcademyNav } from '../components/layout/sidebar-nav'
 import type { SidebarConfig } from '../components/layout/AppSidebar'
 
@@ -75,10 +77,80 @@ test('m:ss durations are converted', () => {
   for (const bad of ['', 'abc', '6:75', '6:', ':30', '-5', '1.5']) assert.equal(parseDurationInput(bad), null, bad)
 })
 
-test('the config input accepts videos', () => {
-  assert.ok(academyConfigInputSchema.safeParse({ videos: { VIDEO_1: valid } }).success)
-  assert.equal(academyConfigInputSchema.safeParse({ videos: { VIDEO_3: valid } }).success, false)
+interface Row { videos: unknown; updatedAt: Date }
+
+/** A one-row in-memory stand-in for the config table; `touch` simulates someone else saving. */
+function fakeDb(initial: Row | null) {
+  const state = { row: initial }
+  const db = {
+    onboardingConfig: {
+      findUnique: async () => state.row,
+      create: async ({ data }: { data: { videos: unknown } }) => {
+        if (state.row) throw new Error('unique')
+        state.row = { videos: data.videos, updatedAt: new Date(1000) }
+      },
+      updateMany: async ({ where, data }: { where: { updatedAt: Date }; data: { videos: unknown } }) => {
+        if (!state.row || state.row.updatedAt.getTime() !== where.updatedAt.getTime()) return { count: 0 }
+        state.row = { videos: data.videos, updatedAt: new Date(state.row.updatedAt.getTime() + 1000) }
+        return { count: 1 }
+      },
+    },
+  }
+  const touch = () => {
+    if (state.row) state.row = { ...state.row, updatedAt: new Date(state.row.updatedAt.getTime() + 500) }
+  }
+  return { db: db as unknown as PrismaClient, state, touch }
+}
+
+test('saveVideo replaces only the named key and keeps the other as stored', async () => {
+  const other = { ...valid, youtubeId: 'AAAAAAAAAAA' }
+  const { db, state } = fakeDb({ videos: { VIDEO_1: other, VIDEO_2: 'junk' }, updatedAt: new Date(1000) })
+  const view = await saveVideo(db, { key: 'VIDEO_1', video: valid, expectedUpdatedAt: new Date(1000).toISOString() })
+  assert.equal(view.videos.VIDEO_1?.youtubeId, 'dQw4w9WgXcQ')
+  assert.equal((state.row?.videos as Record<string, unknown>).VIDEO_2, 'junk')
+  assert.deepEqual(view.unreadable, ['VIDEO_2'])
 })
+
+test('saveVideo with null removes just that key', async () => {
+  const { db } = fakeDb({ videos: { VIDEO_1: valid, VIDEO_2: valid }, updatedAt: new Date(1000) })
+  const view = await saveVideo(db, { key: 'VIDEO_2', video: null, expectedUpdatedAt: new Date(1000).toISOString() })
+  assert.deepEqual(Object.keys(view.videos), ['VIDEO_1'])
+})
+
+test('saveVideo refuses a stale page with 409 and writes nothing', async () => {
+  const { db, state, touch } = fakeDb({ videos: { VIDEO_1: valid }, updatedAt: new Date(1000) })
+  const loadedAt = new Date(1000).toISOString()
+  touch()
+  const before = state.row
+  await assert.rejects(
+    saveVideo(db, { key: 'VIDEO_2', video: valid, expectedUpdatedAt: loadedAt }),
+    (e: unknown) => e instanceof AcademyError && e.status === 409 && e.message === 'Someone else changed the videos. Reload to see their changes.',
+  )
+  assert.equal(state.row, before)
+})
+
+test('saveVideo creates the row when none exists and refuses a stale null', async () => {
+  const empty = fakeDb(null)
+  const view = await saveVideo(empty.db, { key: 'VIDEO_1', video: valid, expectedUpdatedAt: null })
+  assert.ok(view.updatedAt)
+  const created = fakeDb({ videos: {}, updatedAt: new Date(1000) })
+  await assert.rejects(saveVideo(created.db, { key: 'VIDEO_1', video: valid, expectedUpdatedAt: null }), (e: unknown) => e instanceof AcademyError && e.status === 409)
+})
+
+test('saveVideo validates the video and the key', async () => {
+  const { db } = fakeDb(null)
+  await assert.rejects(saveVideo(db, { key: 'VIDEO_1', video: { ...valid, youtubeId: 'bad' }, expectedUpdatedAt: null }))
+  await assert.rejects(saveVideo(db, { key: 'VIDEO_3', video: valid, expectedUpdatedAt: null }))
+})
+
+test('getVideoSettings reports unreadable videos and updatedAt', async () => {
+  const { db } = fakeDb({ videos: { VIDEO_1: valid, VIDEO_2: { youtubeId: 'x' } }, updatedAt: new Date(1000) })
+  const view = await getVideoSettings(db)
+  assert.deepEqual(view.unreadable, ['VIDEO_2'])
+  assert.equal(view.updatedAt, new Date(1000).toISOString())
+  assert.deepEqual((await getVideoSettings(fakeDb(null).db)), { videos: {}, unreadable: [], updatedAt: null })
+})
+
 test('the admin nav links to the video settings', () => {
   const icon = (() => null) as unknown as SidebarConfig['items'][number]['icon']
   const config: SidebarConfig = {

@@ -2,26 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { academyErrorResponse, guardAcademyMutation } from '@/lib/academy/http'
 import { requireAcademyHr } from '@/lib/academy/hr-route'
-import { getAcademyConfig, updateAcademyConfig } from '@/lib/academy/service/library'
+import { getVideoSettings, saveVideo } from '@/lib/academy/service/videos'
 
-// HR only. Saving the videos never touches anyone's progress.
+// HR only. Saving one video never touches the other, or anyone's progress.
 export async function GET() {
   try {
     await requireAcademyHr()
-    const { videos } = await getAcademyConfig(prisma)
-    return NextResponse.json({ success: true, data: videos })
+    return NextResponse.json({ success: true, data: await getVideoSettings(prisma) })
   } catch (error) {
     return academyErrorResponse(error)
   }
 }
 
+/** Body: { key: 'VIDEO_1' | 'VIDEO_2', video: config | null, expectedUpdatedAt: string | null } */
 export async function PUT(request: NextRequest) {
   try {
     const user = await requireAcademyHr()
     await guardAcademyMutation(request, user.id)
     const body: unknown = await request.json()
-    const { videos } = await updateAcademyConfig(prisma, { videos: body })
-    return NextResponse.json({ success: true, data: videos })
+    return NextResponse.json({ success: true, data: await saveVideo(prisma, body) })
   } catch (error) {
     return academyErrorResponse(error)
   }
