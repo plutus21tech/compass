@@ -94,7 +94,16 @@ export function standardPromptData(slot: AskableSlot, variant: Variant, week: nu
   }
 }
 
-async function releaseForEvaluator(cycleId: string, week: number, evaluatorId: string, slotIds: string[], askedVariants: Map<string, string[]>, now: Date): Promise<number | null> {
+/** Thrown inside a top-up transaction when another run topped up first, so nothing of this one is kept. */
+class ToppedUpElsewhere extends Error {}
+
+/**
+ * Creates the chosen questions. The first release of the week claims the (cycle, week, evaluator) row; a later run in the
+ * same week (someone caught up) adds to that row, guarded on its count so two top-ups at once cannot both add.
+ * Null when another run got there first, or when a top-up has nothing to add.
+ */
+async function releaseForEvaluator(cycleId: string, week: number, evaluatorId: string, slotIds: string[], askedVariants: Map<string, string[]>, now: Date, existing: { id: string; promptCount: number } | null): Promise<number | null> {
+  if (existing && slotIds.length === 0) return null
   const slots = slotIds.length
     ? await prisma.weeklySlot.findMany({ where: { id: { in: slotIds } }, include: { competency: { include: { prompts: { where: { isActive: true }, orderBy: { variant: 'asc' } } } } } })
     : []
@@ -103,7 +112,12 @@ async function releaseForEvaluator(cycleId: string, week: number, evaluatorId: s
   try {
     return await prisma.$transaction(async (tx) => {
       // Claiming the (cycle, week, evaluator) row first makes a concurrent second release fail as a whole.
-      await tx.weeklyRelease.create({ data: { cycleId, weekIndex: week, evaluatorId, promptCount: slotIds.length } })
+      if (existing) {
+        const claimed = await tx.weeklyRelease.updateMany({ where: { id: existing.id, promptCount: existing.promptCount }, data: { promptCount: existing.promptCount + slotIds.length } })
+        if (claimed.count === 0) throw new ToppedUpElsewhere()
+      } else {
+        await tx.weeklyRelease.create({ data: { cycleId, weekIndex: week, evaluatorId, promptCount: slotIds.length } })
+      }
       let created = 0
       for (const slotId of slotIds) {
         const slot = byId.get(slotId)
@@ -116,7 +130,7 @@ async function releaseForEvaluator(cycleId: string, week: number, evaluatorId: s
       return created
     })
   } catch (error) {
-    if (isUniqueViolation(error)) return null
+    if (isUniqueViolation(error) || error instanceof ToppedUpElsewhere) return null
     throw error
   }
 }
@@ -161,11 +175,14 @@ export function planEvaluatorWeek(input: {
     (slotsByPair.get(key) ?? []).map((slot) => ({ id: slot.id, status: slot.status as SchedulableTopic['status'], asked: askedOnSlot.get(slot.id) ?? 0, snoozedUntilWeek: slot.snoozedUntilWeek, lastAskedWeek: lastOnSlot.get(slot.id) ?? null }))
   const pairs = [...slotsByPair.keys()].map((key) => {
     const mine = asked.filter((p) => pairKey(p) === key)
+    const open = (p: AskedPrompt) => p.status === 'OPEN' || p.status === 'DRAFT'
     return {
       key,
       asked: mine.length,
+      askedThisWeek: mine.filter((p) => p.weekIndex === input.week).length,
       lastAskedWeek: mine.length ? Math.max(...mine.map((p) => p.weekIndex)) : null,
-      hasOpenPrompt: mine.some((p) => p.status === 'OPEN' || p.status === 'DRAFT'),
+      hasOpenPrompt: mine.some(open),
+      openFromEarlier: mine.some((p) => p.weekIndex < input.week && open(p)),
       hasAskableTopic: pickTopic(topicsOf(key), input.week, seed) !== null,
       window: input.windows?.get(key),
     }
@@ -191,16 +208,49 @@ export async function releaseWeek(cycleId: string, week: number, now: Date, opti
   })
   const askedVariants = new Map<string, string[]>()
   for (const p of prompts) if (p.slotId && p.promptVariantId) askedVariants.set(p.slotId, [...(askedVariants.get(p.slotId) ?? []), p.promptVariantId])
+  const released = new Map(
+    (await prisma.weeklyRelease.findMany({ where: { cycleId, weekIndex: week, ...only }, select: { id: true, evaluatorId: true, promptCount: true } })).map((r) => [r.evaluatorId, r]),
+  )
   let evaluatorsReleased = 0
   let promptsCreated = 0
   for (const evaluatorId of new Set(slots.map((s) => s.evaluatorId))) {
     const chosen = planEvaluatorWeek({ cycleId, evaluatorId, week, totalWeeks: total, slots, prompts, windows })
-    const count = await releaseForEvaluator(cycleId, week, evaluatorId, chosen, askedVariants, now)
+    const existing = released.get(evaluatorId) ?? null
+    const count = await releaseForEvaluator(cycleId, week, evaluatorId, chosen, askedVariants, now, existing)
     if (count === null) continue
-    evaluatorsReleased += 1
+    // A top-up adds questions; only a first release counts as releasing the evaluator.
+    if (!existing) evaluatorsReleased += 1
     promptsCreated += count
   }
   const commentPairs = sync.pairs.filter((p) => !options.evaluatorId || p.evaluatorId === options.evaluatorId)
   const commentPrompts = isCatchUpWeek(week, total) ? await releaseComments(cycleId, week, commentPairs, now) : 0
   return { week, slotsCreated: sync.created, slotsCancelled: sync.cancelled, evaluatorsReleased, promptsCreated, commentPrompts }
+}
+
+/**
+ * Called after an answer. When it was to a question carried over from an earlier week and nothing from earlier weeks is
+ * still open, the evaluator gets this week's questions now rather than next Monday (the carried ones had taken the room).
+ * Returns how many new questions they got.
+ */
+export async function releaseIfCaughtUp(evaluatorId: string, promptId: string, now: Date): Promise<number> {
+  const prompt = await prisma.weeklyPrompt.findUnique({ where: { id: promptId }, select: { cycleId: true, evaluatorId: true, weekIndex: true } })
+  if (!prompt || prompt.evaluatorId !== evaluatorId) return 0
+  const cycle = await loadCycle(prompt.cycleId)
+  if (cycle.status !== 'RUNNING') return 0
+  const week = effectiveWeek(cycle.weekOneStartsOn, cycle.simulatedWeek, now)
+  if (week < 1 || week > cycleWeeks(cycle) || prompt.weekIndex >= week) return 0
+  const locked = (await prisma.evaluationPeriod.findUnique({ where: { id: cycle.periodId }, select: { isLocked: true } }))?.isLocked ?? false
+  if (locked) return 0
+  const stillCarried = await prisma.weeklyPrompt.count({ where: { cycleId: cycle.id, evaluatorId, kind: 'STANDARD', weekIndex: { lt: week }, status: { in: ['OPEN', 'DRAFT'] } } })
+  if (stillCarried > 0) return 0
+  return (await releaseWeek(cycle.id, week, now, { evaluatorId })).promptsCreated
+}
+
+/** For the answer routes: the answer is already saved, so a failed catch-up release is logged and the daily run retries it. */
+export async function releaseIfCaughtUpSafely(evaluatorId: string, promptId: string, now: Date): Promise<void> {
+  try {
+    await releaseIfCaughtUp(evaluatorId, promptId, now)
+  } catch (error) {
+    console.error('[weekly] catch-up release failed', { evaluatorId, promptId, error })
+  }
 }

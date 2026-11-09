@@ -26,6 +26,10 @@ export interface SchedulablePair {
   hasAskableTopic: boolean
   /** Added mid-quarter: the five questions are spread over these weeks instead of the whole quarter. */
   window?: PairWindow
+  /** Questions about this person already released this week: a later run in the same week only tops up. */
+  askedThisWeek?: number
+  /** A question about this person from an earlier week is still open; it counts toward this week's cap. Defaults to an open question not released this week. */
+  openFromEarlier?: boolean
 }
 
 export interface PairWindow { startWeek: number; weeks: number }
@@ -73,8 +77,13 @@ export function planWeek(input: WeekPlanInput): string[] {
   const waited = (p: SchedulablePair) => input.week - (p.lastAskedWeek ?? startOf(p) - 1)
   const overdue = candidates.filter((p) => waited(p) >= MAX_WEEKS_WITHOUT_ASKING).length
   // Questions still open from earlier weeks count toward the cap, so a missed week never doubles the next (section 8).
-  const carried = input.pairs.filter((p) => p.hasOpenPrompt).length
-  const room = Math.max(0, weeklyCap(input.pairs, input.week, input.totalWeeks) - carried)
+  // The week can be planned again after its first release: once someone answers what they carried, the room it took
+  // is theirs again that same week. The cap is worked out as at the start of the week, and this week's questions count.
+  // One question at a time per person, so an open question released this week is never also a carried one.
+  const carried = input.pairs.filter((p) => p.openFromEarlier ?? (p.hasOpenPrompt && !p.askedThisWeek)).length
+  const releasedThisWeek = input.pairs.reduce((sum, p) => sum + (p.askedThisWeek ?? 0), 0)
+  const atWeekStart = input.pairs.map((p) => ({ ...p, asked: p.asked - (p.askedThisWeek ?? 0) }))
+  const room = Math.max(0, weeklyCap(atWeekStart, input.week, input.totalWeeks) - carried - releasedThisWeek)
   const count = Math.min(candidates.length, Math.max(due, overdue), room)
   // Anyone at the three-week limit first, then whoever is furthest behind their own pace (someone added mid-quarter
   // has fewer weeks), then whoever has waited longest, then at random.
