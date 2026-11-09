@@ -5,7 +5,8 @@ import { escapeHtml } from '@/lib/sanitize'
 import { teamLabel, type TeamTag } from '@/lib/teams/catalog'
 import { loadTeamCatalog } from '@/lib/teams/load'
 import { groupHolidaysByTeam, holidayIdsFullyDelivered, monthRangeUtc } from '@/lib/holidays'
-import { calculateLeaveDuration, getExpectedReturnDate } from '@/lib/leave-utils'
+import { getExpectedReturnDate } from '@/lib/leave-utils'
+import { chargeableLeaveDays } from '@/lib/leave-holiday-store'
 import { safeRecordLeaveAuditEvent } from '@/lib/leave-audit'
 import { calculateWfhDays } from '@/lib/wfh-utils'
 import { normalizeCoverPersonIds } from '@/lib/leave-cover'
@@ -358,7 +359,8 @@ export async function sendLeaveRequestNotification(requestId: string) {
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const subject = `Leave Request: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
 
@@ -693,7 +695,8 @@ export async function sendLeaveApprovalNotification(
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   const isApproved = status === 'approved'
@@ -799,7 +802,8 @@ export async function sendLeaveCancellationNotification(
   const endDateValue = new Date(leaveRequest.endDate)
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const subject = `Leave Cancelled: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
 
@@ -939,7 +943,8 @@ export async function sendTransitionPlanReminderNotification(requestId: string) 
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const msPerDay = 1000 * 60 * 60 * 24
   const today = new Date()
@@ -1081,7 +1086,8 @@ async function sendTransitionPlanDeadlineMail(
   const endDateValue = new Date(leaveRequest.endDate)
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   // Spelled out with the weekday in UTC: a bare numeric date is the wrong thing to be

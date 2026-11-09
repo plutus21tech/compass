@@ -409,7 +409,8 @@ model User {
   mappingExclusionsAsEvaluator EvaluatorMappingExclusion[] @relation("MappingExclusionEvaluator")
   mappingExclusionsAsEvaluatee EvaluatorMappingExclusion[] @relation("MappingExclusionEvaluatee")
   subscriptionOwnerships SubscriptionOwner[]
-  evaluationEdits        EvaluationEdit[]   @relation("EvaluationEditor")
+  birthday               EmployeeBirthday?
+  evaluationEdits       EvaluationEdit[]   @relation("EvaluationEditor")
   clientAssignments      ClientAssignment[] @relation("ClientAssignee")
   rosterRequestsMade     ClientRosterRequest[] @relation("RosterRequester")
   rosterRequestsResolved ClientRosterRequest[] @relation("RosterResolver")
@@ -960,6 +961,32 @@ model LeaveBalance {
   
   @@unique([employeeId, year])
   @@index([employeeId])
+}
+
+// A holiday shown on the leave calendar and skipped when counting leave days.
+// Deliberately separate from PayrollPublicHoliday: HR maintains this for leave, and
+// payroll keeps its own list. Team tags are plain text (validated in
+// lib/leave-holidays.ts) so the list of teams can change without a migration.
+model LeaveHoliday {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  name      String
+  // The teams that observe it; never empty (enforced by the API).
+  teamTags  String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
+// Day and month only -- the year is never stored.
+model EmployeeBirthday {
+  userId    String   @id
+  month     Int      // 1-12
+  day       Int      // 1-31, valid for the month (Feb 29 allowed)
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model WfhRequest {

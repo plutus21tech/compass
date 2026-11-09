@@ -53,6 +53,12 @@ import { detectBrowserLeaveTimeZone } from '@/lib/leave-timezone'
 import { isThreeEDepartment } from '@/lib/company-branding'
 import { calculateWfhDays, hasWfhEnded } from '@/lib/wfh-utils'
 import { resolveLeaveRequestDeepLinkTarget } from '@/lib/leave-deep-links'
+import {
+  CalendarDayMarkers,
+  CalendarMarkerLegend,
+  type CalendarBirthday,
+  type CalendarHoliday,
+} from '@/components/leave/CalendarDayMarkers'
 
 interface LeaveBalance {
   casualDays: number
@@ -84,6 +90,8 @@ interface LeaveRequest {
   transitionPlanLeadStatus?: 'PENDING' | 'APPROVED' | 'DISAPPROVED'
   transitionPlanDisapprovalReason?: string | null
   status: string
+  // Holiday-aware day count from the API -- what the balance is charged.
+  leaveDays?: number
   coverPerson?: { id: string; name: string }
   coverPeople?: Array<{ id: string; name: string }>
   additionalNotifyIds?: string[]
@@ -246,6 +254,8 @@ export default function LeavePage() {
   const [wfhApprovalQueue, setWfhApprovalQueue] = useState<WfhRequest[]>([])
   const [wfhApprovalProcessingId, setWfhApprovalProcessingId] = useState<string | null>(null)
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [calendarHolidays, setCalendarHolidays] = useState<CalendarHoliday[]>([])
+  const [calendarBirthdays, setCalendarBirthdays] = useState<CalendarBirthday[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -410,6 +420,8 @@ export default function LeavePage() {
       const res = await fetch(`/api/leave/calendar?month=${currentMonth}&year=${currentYear}`)
       const data = await res.json()
       setCalendarEvents(data.events || [])
+      setCalendarHolidays(data.holidays || [])
+      setCalendarBirthdays(data.birthdays || [])
     } catch (error) {
       console.error('Failed to load calendar:', error)
     }
@@ -538,6 +550,23 @@ export default function LeavePage() {
       return ymd >= startYmd && ymd <= endYmd
     })
   }
+
+  // Holidays and birthdays are not leave, so the department filter does not apply to them.
+  const holidaysByDate = useMemo(() => {
+    const byDate = new Map<string, CalendarHoliday[]>()
+    for (const holiday of calendarHolidays) {
+      byDate.set(holiday.date, [...(byDate.get(holiday.date) ?? []), holiday])
+    }
+    return byDate
+  }, [calendarHolidays])
+
+  const birthdaysByDay = useMemo(() => {
+    const byDay = new Map<number, CalendarBirthday[]>()
+    for (const birthday of calendarBirthdays) {
+      byDay.set(birthday.day, [...(byDay.get(birthday.day) ?? []), birthday])
+    }
+    return byDay
+  }, [calendarBirthdays])
 
   const getReturnDateLabel = (startDate: string, endDate: string, isHalfDay = false) => {
     if (isHalfDay) {
@@ -922,11 +951,9 @@ export default function LeavePage() {
     }
   }
 
-  const getDaysCount = (start: string, end: string, isHalfDay = false) => {
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-    return calculateLeaveDuration(startDate, endDate, isHalfDay)
-  }
+  // Prefer the server's count: it leaves out holidays for the employee's team.
+  const getRequestDays = (request: LeaveRequest) =>
+    request.leaveDays ?? calculateLeaveDuration(new Date(request.startDate), new Date(request.endDate), request.isHalfDay)
 
   const handleWfhSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1196,6 +1223,14 @@ export default function LeavePage() {
                               {date.getDate()}
                             </span>
 
+                            {/* The calendar only loads the viewed month, so padding days show none. */}
+                            {isCurrentMonth && (
+                              <CalendarDayMarkers
+                                holidays={holidaysByDate.get(toYMD(date)) ?? []}
+                                birthdays={birthdaysByDay.get(date.getDate()) ?? []}
+                              />
+                            )}
+
                             {/* Event indicators */}
                             {events.length > 0 && (
                               <div className="mt-1 space-y-0.5 w-full">
@@ -1266,6 +1301,7 @@ export default function LeavePage() {
                         <div className="w-3 h-3 rounded bg-gray-300 dark:bg-gray-600" />
                         <span className="text-muted-foreground">Team member</span>
                       </div>
+                      <CalendarMarkerLegend />
                     </div>
                   </div>
                 </CardContent>
@@ -1307,7 +1343,7 @@ export default function LeavePage() {
                           const typeConfig = LEAVE_TYPE_CONFIG[request.leaveType]
                           const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
                           const TypeIcon = typeConfig.icon
-                          const days = getDaysCount(request.startDate, request.endDate, request.isHalfDay)
+                          const days = getRequestDays(request)
                           const canEdit = editableStatuses.has(request.status)
 
                           return (
@@ -1403,7 +1439,7 @@ export default function LeavePage() {
                         const typeConfig = LEAVE_TYPE_CONFIG[request.leaveType]
                         const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
                         const TypeIcon = typeConfig.icon
-                        const days = getDaysCount(request.startDate, request.endDate, request.isHalfDay)
+                        const days = getRequestDays(request)
                         const processing = approvalProcessingId === request.id
 
                         return (
@@ -2205,7 +2241,7 @@ export default function LeavePage() {
               <div>
                 <Label className="text-muted-foreground">Duration</Label>
                 <p className="text-sm font-medium text-foreground mt-1">
-                  {getDurationLabel(getDaysCount(selectedRequest.startDate, selectedRequest.endDate, selectedRequest.isHalfDay))}
+                  {getDurationLabel(getRequestDays(selectedRequest))}
                 </p>
               </div>
 
