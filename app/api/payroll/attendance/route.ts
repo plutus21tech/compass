@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManagePayroll } from '@/lib/permissions'
 import { companyWideHolidayDates, workingDaysByTeam } from '@/lib/payroll/attendance-calendar'
-import { ALL_TEAMS } from '@/lib/handbook/teams'
+import { loadTeamCatalog } from '@/lib/teams/load'
 
 const updateItemSchema = z.object({
   userId: z.string().trim().min(1),
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
     }
 
-    const [entries, holidays, users] = await Promise.all([
+    const [entries, holidays, users, teams] = await Promise.all([
       prisma.payrollAttendanceEntry.findMany({
         where: { periodId },
         orderBy: [{ attendanceDate: 'asc' }, { userId: 'asc' }],
@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
         orderBy: { holidayDate: 'asc' },
       }),
       prisma.user.findMany({ select: { id: true, teamTag: true } }),
+      loadTeamCatalog(),
     ])
 
     // Per team, never company-wide: a Moroccan holiday must not shorten the Pakistani
@@ -80,7 +81,7 @@ export async function GET(request: NextRequest) {
       periodStart: period.periodStart,
       periodEnd: period.periodEnd,
       holidays,
-      teams: ALL_TEAMS,
+      teams: teams.all,
     })
 
     // Days nobody works, so the grid can drop the column outright.

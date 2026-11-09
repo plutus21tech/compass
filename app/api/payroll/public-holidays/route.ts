@@ -3,10 +3,10 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManagePayroll } from '@/lib/permissions'
-import { ALL_TEAMS } from '@/lib/handbook/teams'
+import { unknownTeamTags } from '@/lib/handbook/teams'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { expandHolidayTeamTags } from '@/lib/holidays'
 import { syncHolidayCalendarEvent, removeHolidayCalendarEvent } from '@/lib/holiday-calendar'
-import type { TeamTag } from '@prisma/client'
 
 /**
  * Calendar work never fails an HR save.
@@ -31,8 +31,9 @@ async function syncHolidayCalendarQuietly(holidayId: string, operation: 'sync' |
 // holidays created before tagging existed, so allowing it here would let a
 // mis-saved form silently turn a national holiday company-wide -- and company-wide
 // holidays shorten every team's working days, which changes travel allowance.
+// Codes are checked against the HR-managed catalog after parsing (resolveHolidayTeamTags).
 const teamTagsSchema = z
-  .array(z.enum(ALL_TEAMS as unknown as [TeamTag, ...TeamTag[]]))
+  .array(z.string().trim().min(1))
   .min(1, 'Select at least one team')
 
 const createSchema = z.object({
@@ -46,6 +47,22 @@ const updateSchema = z.object({
   id: z.string().trim().min(1),
   teamTags: teamTagsSchema,
 })
+
+/**
+ * Country-widened tags in catalog order, or an error naming unknown codes.
+ * Archived tags are accepted: a holiday can still be retagged for people who
+ * carry one.
+ */
+async function resolveHolidayTeamTags(
+  requested: readonly string[]
+): Promise<{ ok: true; teamTags: string[] } | { ok: false; error: string }> {
+  const teams = await loadTeamCatalog()
+  const unknown = unknownTeamTags(teams, requested)
+  if (unknown.length) {
+    return { ok: false, error: `Unknown team tag(s): ${unknown.join(', ')}` }
+  }
+  return { ok: true, teamTags: expandHolidayTeamTags(requested, teams.all) }
+}
 
 function parseDate(value: string): Date | null {
   const date = new Date(value)
@@ -110,6 +127,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid holidayDate' }, { status: 400 })
     }
 
+    const tags = await resolveHolidayTeamTags(parsed.data.teamTags)
+    if (!tags.ok) {
+      return NextResponse.json({ error: tags.error }, { status: 400 })
+    }
+
     const holiday = await prisma.payrollPublicHoliday.create({
       data: {
         holidayDate,
@@ -117,7 +139,7 @@ export async function POST(request: NextRequest) {
         // Widened to whole countries: a Pakistani holiday reaches 3E Pakistan too.
         // Enforced here so stored tags match what every reader expects, rather than
         // depending on whoever filled the form remembering to tick both.
-        teamTags: expandHolidayTeamTags(parsed.data.teamTags),
+        teamTags: tags.teamTags,
         financialYearId: parsed.data.financialYearId || null,
       },
     })
@@ -155,9 +177,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload', details: parsed.error.issues }, { status: 400 })
     }
 
+    const tags = await resolveHolidayTeamTags(parsed.data.teamTags)
+    if (!tags.ok) {
+      return NextResponse.json({ error: tags.error }, { status: 400 })
+    }
+
     const holiday = await prisma.payrollPublicHoliday.update({
       where: { id: parsed.data.id },
-      data: { teamTags: expandHolidayTeamTags(parsed.data.teamTags) },
+      data: { teamTags: tags.teamTags },
     })
 
     // Retagging changes who observes the holiday, so the invite's attendee list has to

@@ -13,16 +13,8 @@ export type SafeUser = {
   role: 'EMPLOYEE' | 'HR' | 'SECURITY' | 'OA' | 'EXECUTION'
   onboardingCompleted: boolean
   benefitCategoryId: string | null
-  teamTag:
-    | 'PAKISTAN'
-    | 'MOROCCO'
-    | 'COLOMBIA'
-    | 'INDONESIA'
-    | 'ECUADOR'
-    | 'NOBLE'
-    | 'THREE_E_PAKISTAN'
-    | 'THREE_E_MOROCCO'
-    | null
+  /** A TeamTagDefinition code (HR-managed), e.g. 'PAKISTAN'. */
+  teamTag: string | null
   createdAt: Date
   updatedAt: Date
   chartX: number | null

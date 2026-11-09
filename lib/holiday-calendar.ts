@@ -1,6 +1,6 @@
-import type { TeamTag } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, type TeamCatalog, type TeamTag } from '@/lib/teams/catalog'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { isUntaggedHoliday, teamsObserving } from '@/lib/holidays'
 import {
   GOOGLE_CALENDAR_ENV_WARNING,
@@ -49,22 +49,27 @@ function warnHolidaySkip(operation: 'sync' | 'remove' | 'sweep', holidayId: stri
   console.warn('[holiday-calendar] skipped', { operation, holidayId, reason })
 }
 
-function observingTeamsLabel(holiday: Pick<HolidayForCalendar, 'teamTags'>): string {
-  // An untagged holiday applies to everyone; listing all seven teams by name would be
+function observingTeamsLabel(
+  holiday: Pick<HolidayForCalendar, 'teamTags'>,
+  teams: TeamCatalog
+): string {
+  // An untagged holiday applies to everyone; listing every team by name would be
   // technically correct and unreadable.
   if (isUntaggedHoliday(holiday)) return 'All teams'
 
-  return teamsObserving(holiday, ALL_TEAMS)
-    .map((team) => TEAM_LABELS[team])
+  return teamsObserving(holiday, teams.all)
+    .map((team) => teamLabel(teams, team))
     .join(', ')
 }
 
 export function buildHolidayEventPayload({
   holiday,
   attendeeEmails,
+  teams,
 }: {
   holiday: HolidayForCalendar
   attendeeEmails: string[]
+  teams: TeamCatalog
 }): GoogleCalendarEventPayload {
   const date = toUtcDateOnly(new Date(holiday.holidayDate))
 
@@ -72,7 +77,7 @@ export function buildHolidayEventPayload({
     summary: `Public Holiday — ${holiday.name}`,
     description: [
       `${holiday.name} is a public holiday.`,
-      `Observed by: ${observingTeamsLabel(holiday)}`,
+      `Observed by: ${observingTeamsLabel(holiday, teams)}`,
       '',
       'No work is expected on this day. Please plan deadlines and handovers around it.',
     ].join('\n'),
@@ -101,8 +106,11 @@ export function buildHolidayEventPayload({
  * and Execution addresses the digest email copies, so the invite and the mail reach
  * the same people.
  */
-export async function collectHolidayAttendeeEmails(holiday: HolidayForCalendar) {
-  const teams = teamsObserving(holiday, ALL_TEAMS)
+export async function collectHolidayAttendeeEmails(
+  holiday: HolidayForCalendar,
+  catalog: TeamCatalog
+) {
+  const teams = teamsObserving(holiday, catalog.all)
 
   const [teamMembers, partners, staff] = await Promise.all([
     prisma.user.findMany({
@@ -210,13 +218,14 @@ export async function syncHolidayCalendarEvent(holidayId: string): Promise<Holid
     await deleteEvents(config, accessToken, eventIds.slice(1))
   }
 
-  const attendeeEmails = await collectHolidayAttendeeEmails(holiday)
+  const teams = await loadTeamCatalog()
+  const attendeeEmails = await collectHolidayAttendeeEmails(holiday, teams)
 
   return upsertHolidayEvent({
     config,
     accessToken,
     primaryEventId: eventIds[0],
-    payload: buildHolidayEventPayload({ holiday, attendeeEmails }),
+    payload: buildHolidayEventPayload({ holiday, attendeeEmails, teams }),
   })
 }
 

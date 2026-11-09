@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { getPageBySlug } from '@/lib/handbook/queries'
 import { toDetailResponse } from '@/lib/handbook/audience'
 import { resolvePreviewTeam } from '@/lib/handbook/preview'
+import { loadTeamCatalog } from '@/lib/teams/load'
 
 export async function GET(
   request: NextRequest,
@@ -20,8 +21,9 @@ export async function GET(
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    const tag = resolvePreviewTeam(request.nextUrl.searchParams.get('previewTeam'), user)
-    const detail = toDetailResponse(page, tag)
+    const teams = await loadTeamCatalog()
+    const tag = resolvePreviewTeam(request.nextUrl.searchParams.get('previewTeam'), user, teams.all)
+    const detail = toDetailResponse(page, tag, teams.active)
     if (!detail) {
       // The page exists but nothing addresses this user's team, or it is
       // unpublished. A 404 is correct -- rendering an empty page would imply

@@ -2,10 +2,11 @@ import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/db'
 import { formatReportAsHTML, generateDetailedReport } from './reports'
 import { escapeHtml } from '@/lib/sanitize'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, type TeamTag } from '@/lib/teams/catalog'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { groupHolidaysByTeam, holidayIdsFullyDelivered, monthRangeUtc } from '@/lib/holidays'
-import type { TeamTag } from '@prisma/client'
-import { calculateLeaveDuration, getExpectedReturnDate } from '@/lib/leave-utils'
+import { getExpectedReturnDate } from '@/lib/leave-utils'
+import { chargeableLeaveDays } from '@/lib/leave-holiday-store'
 import { safeRecordLeaveAuditEvent } from '@/lib/leave-audit'
 import { calculateWfhDays } from '@/lib/wfh-utils'
 import { normalizeCoverPersonIds } from '@/lib/leave-cover'
@@ -358,7 +359,8 @@ export async function sendLeaveRequestNotification(requestId: string) {
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const subject = `Leave Request: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
 
@@ -693,7 +695,8 @@ export async function sendLeaveApprovalNotification(
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   const isApproved = status === 'approved'
@@ -799,7 +802,8 @@ export async function sendLeaveCancellationNotification(
   const endDateValue = new Date(leaveRequest.endDate)
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const subject = `Leave Cancelled: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
 
@@ -939,7 +943,8 @@ export async function sendTransitionPlanReminderNotification(requestId: string) 
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const msPerDay = 1000 * 60 * 60 * 24
   const today = new Date()
@@ -1081,7 +1086,8 @@ async function sendTransitionPlanDeadlineMail(
   const endDateValue = new Date(leaveRequest.endDate)
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   // Spelled out with the weekday in UTC: a bare numeric date is the wrong thing to be
@@ -1763,7 +1769,9 @@ async function deliverHolidayEmails({
   }
 
   const isNew = scope === 'new'
-  const byTeam = groupHolidaysByTeam(holidays, ALL_TEAMS)
+  const teams = await loadTeamCatalog()
+  const labelOf = (team: TeamTag) => teamLabel(teams, team)
+  const byTeam = groupHolidaysByTeam(holidays, teams.all)
   const ccEmails = await getHolidayCcEmails()
   const skipped: string[] = []
   const plan: HolidayPlanEntry[] = []
@@ -1791,13 +1799,13 @@ async function deliverHolidayEmails({
     const to = mergeRecipientEmails(recipients.map((r) => r.email))
 
     if (to.length === 0) {
-      skipped.push(`${TEAM_LABELS[team]}: nobody tagged`)
+      skipped.push(`${labelOf(team)}: nobody tagged`)
       continue
     }
 
     plan.push({
       team,
-      teamLabel: TEAM_LABELS[team],
+      teamLabel: labelOf(team),
       recipients: to.length,
       holidays: teamHolidays.map((holiday) => holiday.name),
     })
@@ -1827,11 +1835,11 @@ async function deliverHolidayEmails({
         : 'New Public Holidays'
       : `Public Holidays in ${label}`
     const subject = isNew
-      ? `${heading} — ${TEAM_LABELS[team]}`
-      : `Public Holidays in ${label} — ${TEAM_LABELS[team]}`
+      ? `${heading} — ${labelOf(team)}`
+      : `Public Holidays in ${label} — ${labelOf(team)}`
     const intro = isNew
-      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(TEAM_LABELS[team])}.`
-      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(TEAM_LABELS[team])} this month.`
+      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(labelOf(team))}.`
+      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(labelOf(team))} this month.`
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px;">
@@ -1860,15 +1868,15 @@ async function deliverHolidayEmails({
       })
       sent++
     } catch (error) {
-      console.error(`Failed to send holiday email to ${TEAM_LABELS[team]}:`, error)
-      skipped.push(`${TEAM_LABELS[team]}: send failed`)
+      console.error(`Failed to send holiday email to ${labelOf(team)}:`, error)
+      skipped.push(`${labelOf(team)}: send failed`)
       failedTeams.add(team)
     }
   }
 
   let announced = 0
   if (!dryRun) {
-    const deliveredIds = holidayIdsFullyDelivered(holidays, failedTeams, ALL_TEAMS)
+    const deliveredIds = holidayIdsFullyDelivered(holidays, failedTeams, teams.all)
     if (deliveredIds.length > 0) {
       // `notifiedAt: null` keeps the first announcement's timestamp rather than
       // overwriting it every time the monthly digest re-lists the same holiday.

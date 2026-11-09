@@ -1,8 +1,8 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import type { TeamTag } from '@prisma/client'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { pickerTeams, teamLabel, type TeamTag } from '@/lib/teams/catalog'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { expandHolidayTeamTags, holidayAppliesTo, teamsObserving } from '@/lib/holidays'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -53,11 +53,11 @@ const WEEKEND_DAYS = new Set<number>([0, 6]) // Sun + Sat
  *
  * No "All Morocco": 3E Morocco observes US public holidays, not Moroccan ones, so
  * pairing them would be wrong. Their holidays are tagged to 3E Morocco directly.
+ * "Everyone" is appended from the loaded catalog so it includes tags HR adds.
  */
 const COUNTRY_PRESETS: Array<{ label: string; teams: TeamTag[] }> = [
   { label: 'All Pakistan', teams: ['PAKISTAN', 'THREE_E_PAKISTAN'] },
   { label: 'US (3E Morocco)', teams: ['THREE_E_MOROCCO'] },
-  { label: 'Everyone', teams: [...ALL_TEAMS] },
 ]
 
 type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'PUBLIC_HOLIDAY'
@@ -114,6 +114,11 @@ export function PayrollAttendancePanel({ periods }: Props) {
     teamTags: TeamTag[]
   }>({ holidayDate: '', name: '', teamTags: [] })
   const [savingHoliday, setSavingHoliday] = useState(false)
+  const { catalog } = useTeamCatalog()
+  const holidayPresets = useMemo(
+    () => [...COUNTRY_PRESETS, { label: 'Everyone', teams: [...catalog.active] }],
+    [catalog]
+  )
 
   useEffect(() => {
     if (periods.length > 0 && !periodId) {
@@ -155,14 +160,14 @@ export function PayrollAttendancePanel({ periods }: Props) {
     const map = new Map<string, Set<string>>()
     for (const holiday of holidays) {
       const key = new Date(holiday.holidayDate).toISOString().slice(0, 10)
-      for (const team of teamsObserving(holiday, ALL_TEAMS)) {
+      for (const team of teamsObserving(holiday, catalog.all)) {
         const set = map.get(team) ?? new Set<string>()
         set.add(key)
         map.set(team, set)
       }
     }
     return map
-  }, [holidays])
+  }, [holidays, catalog])
 
   const holidayNameFor = (teamTag: TeamTag | null, dateKey: string) => {
     if (!teamTag) return null
@@ -181,10 +186,10 @@ export function PayrollAttendancePanel({ periods }: Props) {
     const present = new Set(
       Object.values(teamTagByUserId).filter((t): t is TeamTag => Boolean(t))
     )
-    return ALL_TEAMS.filter((team) => present.has(team)).map(
+    return catalog.all.filter((team) => present.has(team)).map(
       (team) => [team, workingDaysByTeam[team] ?? 0] as const
     )
-  }, [teamTagByUserId, workingDaysByTeam])
+  }, [teamTagByUserId, workingDaysByTeam, catalog])
 
   const statusMap = useMemo(() => {
     const map = new Map<string, AttendanceCellStatus>()
@@ -387,7 +392,7 @@ export function PayrollAttendancePanel({ periods }: Props) {
                 ) : (
                   teamsWithWorkingDays.map(([team, count]) => (
                     <span key={team} className="text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">{TEAM_LABELS[team]}</span> {count}
+                      <span className="font-medium text-foreground">{teamLabel(catalog, team)}</span> {count}
                     </span>
                   ))
                 )}
@@ -495,7 +500,7 @@ export function PayrollAttendancePanel({ periods }: Props) {
               <span className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
                 {teamsWithWorkingDays.map(([team, count]) => (
                   <span key={team}>
-                    {TEAM_LABELS[team]}:{' '}
+                    {teamLabel(catalog, team)}:{' '}
                     <span className="font-medium text-foreground">{count}</span>
                   </span>
                 ))}
@@ -554,7 +559,7 @@ export function PayrollAttendancePanel({ periods }: Props) {
             <div className="space-y-1.5">
               <Label>Observed by</Label>
               <div className="flex flex-wrap gap-1.5">
-                {COUNTRY_PRESETS.map((preset) => (
+                {holidayPresets.map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
@@ -568,7 +573,7 @@ export function PayrollAttendancePanel({ periods }: Props) {
                 ))}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {ALL_TEAMS.map((team) => {
+                {pickerTeams(catalog, holidayForm.teamTags).map((team) => {
                   const selected = holidayForm.teamTags.includes(team)
                   return (
                     <button
@@ -580,7 +585,8 @@ export function PayrollAttendancePanel({ periods }: Props) {
                           teamTags: expandHolidayTeamTags(
                             prev.teamTags.includes(team)
                               ? prev.teamTags.filter((t) => t !== team)
-                              : [...prev.teamTags, team]
+                              : [...prev.teamTags, team],
+                            catalog.all
                           ),
                         }))
                       }
@@ -591,7 +597,7 @@ export function PayrollAttendancePanel({ periods }: Props) {
                           : 'border-border hover:bg-muted'
                       )}
                     >
-                      {TEAM_LABELS[team]}
+                      {teamLabel(catalog, team)}
                     </button>
                   )
                 })}

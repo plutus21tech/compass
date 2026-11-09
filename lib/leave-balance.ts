@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { cancellableLeaveDays } from '@/lib/leave-utils'
+import { loadEmployeeLeaveHolidayKeys } from '@/lib/leave-holiday-store'
 
 type LeaveRequestLike = {
   employeeId: string
@@ -20,7 +21,9 @@ export async function restoreCancelledLeaveBalance(
   leaveRequest: LeaveRequestLike,
   now = new Date()
 ): Promise<number> {
-  const daysToRestore = cancellableLeaveDays(leaveRequest, now)
+  // Holidays were not charged, so they are not given back either.
+  const holidays = await loadEmployeeLeaveHolidayKeys(tx, leaveRequest.employeeId, leaveRequest.startDate, leaveRequest.endDate)
+  const daysToRestore = cancellableLeaveDays(leaveRequest, now, holidays)
   if (daysToRestore <= 0) return 0
 
   const start = new Date(leaveRequest.startDate)

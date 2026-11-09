@@ -1,6 +1,5 @@
-import type { TeamTag } from '@prisma/client'
 import { isAdminRole } from '@/lib/permissions'
-import { ALL_TEAMS } from './teams'
+import type { TeamTag } from '@/lib/teams/catalog'
 
 /** The pseudo-team HR selects to preview what a user with no team tag sees. */
 export const PREVIEW_UNTAGGED = 'UNTAGGED'
@@ -18,12 +17,11 @@ export const PREVIEW_UNTAGGED = 'UNTAGGED'
  */
 export function resolvePreviewTeam(
   requested: string | null,
-  user: { role: string; teamTag: TeamTag | null }
+  user: { role: string; teamTag: TeamTag | null },
+  knownTeams: readonly TeamTag[]
 ): TeamTag | null {
   if (!requested || !isAdminRole(user.role)) return user.teamTag
   if (requested === PREVIEW_UNTAGGED) return null
   // An unrecognised team is a typo or a probe, not a reason to show nothing.
-  return (ALL_TEAMS as readonly string[]).includes(requested)
-    ? (requested as TeamTag)
-    : user.teamTag
+  return knownTeams.includes(requested) ? requested : user.teamTag
 }

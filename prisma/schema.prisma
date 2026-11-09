@@ -18,17 +18,27 @@ enum UserRole {
   EXECUTION
 }
 
-/// Person-level team. Exactly one per user; drives Handbook visibility.
-/// "Everyone" and "Plutus21 Internal Team" are derived groups, never stored.
-enum TeamTag {
-  PAKISTAN
-  MOROCCO
-  COLOMBIA
-  INDONESIA
-  ECUADOR
-  NOBLE
-  THREE_E_PAKISTAN
-  THREE_E_MOROCCO
+/// Person-level team ("Pakistan Team", "Bosnia Team", ...). Exactly one per
+/// user; drives Handbook visibility, public holidays and working days.
+/// HR-managed rather than an enum so a new country needs no deploy. "Everyone"
+/// and "Plutus21 Internal Team" are derived groups, never stored.
+model TeamTagDefinition {
+  /// UPPER_SNAKE. Immutable once created: it is stored on users, holidays and
+  /// handbook audiences, so renaming happens on `label` instead.
+  code       String    @id
+  label      String
+  /// Compact form for dense grids ("3E PK"). Falls back to the label.
+  shortLabel String?
+  /// Whether the team belongs to the "Plutus21 Internal Team" audience group.
+  isInternal Boolean   @default(true)
+  sortOrder  Int       @default(0)
+  /// Archived tags cannot be newly assigned but keep working for the users and
+  /// records that already carry them.
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  users      User[]
 }
 
 enum HandbookCategory {
@@ -299,7 +309,8 @@ model User {
   role         UserRole @default(EMPLOYEE)
   onboardingCompleted Boolean @default(true)
   benefitCategoryId String?
-  teamTag           TeamTag?
+  teamTag           String?
+  teamTagDefinition TeamTagDefinition? @relation(fields: [teamTag], references: [code], onDelete: Restrict)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
@@ -398,7 +409,8 @@ model User {
   mappingExclusionsAsEvaluator EvaluatorMappingExclusion[] @relation("MappingExclusionEvaluator")
   mappingExclusionsAsEvaluatee EvaluatorMappingExclusion[] @relation("MappingExclusionEvaluatee")
   subscriptionOwnerships SubscriptionOwner[]
-  evaluationEdits        EvaluationEdit[]   @relation("EvaluationEditor")
+  birthday               EmployeeBirthday?
+  evaluationEdits       EvaluationEdit[]   @relation("EvaluationEditor")
   clientAssignments      ClientAssignment[] @relation("ClientAssignee")
   rosterRequestsMade     ClientRosterRequest[] @relation("RosterRequester")
   rosterRequestsResolved ClientRosterRequest[] @relation("RosterResolver")
@@ -951,6 +963,32 @@ model LeaveBalance {
   @@index([employeeId])
 }
 
+// A holiday shown on the leave calendar and skipped when counting leave days.
+// Deliberately separate from PayrollPublicHoliday: HR maintains this for leave, and
+// payroll keeps its own list. Team tags are plain text (validated in
+// lib/leave-holidays.ts) so the list of teams can change without a migration.
+model LeaveHoliday {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  name      String
+  // The teams that observe it; never empty (enforced by the API).
+  teamTags  String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+}
+
+// Day and month only -- the year is never stored.
+model EmployeeBirthday {
+  userId    String   @id
+  month     Int      // 1-12
+  day       Int      // 1-31, valid for the month (Feb 29 allowed)
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 model WfhRequest {
   id              String      @id @default(cuid())
   employeeId      String
@@ -1253,7 +1291,7 @@ model PayrollPublicHoliday {
   name             String
   // Which teams observe this holiday. Empty means every team, so holidays
   // created before tagging existed keep applying company-wide.
-  teamTags         TeamTag[]
+  teamTags         String[]
   // When this holiday was actually announced by email. Null means never announced,
   // which is what lets an ad-hoc send target only newly added holidays instead of
   // re-mailing a month that has already gone out. The monthly digest on the 1st
@@ -2049,7 +2087,7 @@ model HandbookPage {
   /// null and POLICY both render the policy treatment. Only LETTER differs.
   layout              HandbookLayout?
   /// Teams for which having no variant is a reviewed, deliberate decision.
-  intentionalGapTeams TeamTag[]
+  intentionalGapTeams String[]
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -2074,7 +2112,7 @@ model HandbookVariant {
 
 model HandbookAudience {
   variantId String
-  team      TeamTag
+  team      String
 
   variant   HandbookVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 

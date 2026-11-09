@@ -22,7 +22,25 @@ export function getExpectedReturnDate(endDate: Date): Date {
   return getNextBusinessDay(endDate)
 }
 
-export function calculateLeaveDays(startDate: Date, endDate: Date): number {
+/** A UTC calendar day as "YYYY-MM-DD" -- the key holiday sets are matched on. */
+export function leaveDateKey(date: Date): string {
+  return toUtcDateOnly(date).toISOString().slice(0, 10)
+}
+
+/**
+ * Days that are not charged as leave even though they fall Mon-Fri: the leave-calendar
+ * holidays that apply to the person (lib/leave-holidays.ts). Keys are leaveDateKey values.
+ * Optional everywhere so callers that do not deal in balances keep the weekday-only count.
+ */
+export type LeaveHolidayKeys = ReadonlySet<string>
+
+const NO_HOLIDAYS: LeaveHolidayKeys = new Set<string>()
+
+function isChargeableDay(date: Date, holidays: LeaveHolidayKeys): boolean {
+  return !isWeekendDate(date) && !holidays.has(leaveDateKey(date))
+}
+
+export function calculateLeaveDays(startDate: Date, endDate: Date, holidays: LeaveHolidayKeys = NO_HOLIDAYS): number {
   if (!isValidLeaveDateRange(startDate, endDate)) {
     return 0
   }
@@ -32,10 +50,7 @@ export function calculateLeaveDays(startDate: Date, endDate: Date): number {
   let count = 0
 
   while (current.getTime() <= last.getTime()) {
-    const dayOfWeek = current.getUTCDay()
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-
-    if (!isWeekend) {
+    if (isChargeableDay(current, holidays)) {
       count++
     }
 
@@ -52,18 +67,20 @@ export function isValidLeaveDateRange(startDate: Date, endDate: Date): boolean {
 export function calculateLeaveDuration(
   startDate: Date,
   endDate: Date,
-  isHalfDay: boolean
+  isHalfDay: boolean,
+  holidays: LeaveHolidayKeys = NO_HOLIDAYS
 ): number {
   if (isHalfDay) {
     if (!isValidLeaveDateRange(startDate, endDate)) return 0
     const start = toUtcDateOnly(startDate)
     const end = toUtcDateOnly(endDate)
     if (start.getTime() !== end.getTime()) return 0
-    if (isWeekendDate(start)) return 0
+    // A half day on a weekend or a holiday costs nothing: the person was off anyway.
+    if (!isChargeableDay(start, holidays)) return 0
     return 0.5
   }
 
-  return calculateLeaveDays(startDate, endDate)
+  return calculateLeaveDays(startDate, endDate, holidays)
 }
 
 export function leaveRequiresLeadApproval(
@@ -101,9 +118,13 @@ export function canCancelLeave(endDate: Date, now = new Date()): boolean {
  * The days a cancellation gives back: the working days from today (or the start, if later) to the end.
  * A leave starting today returns in full; one already underway returns today and the rest; none once it cannot be cancelled.
  */
-export function cancellableLeaveDays(leave: { startDate: Date; endDate: Date; isHalfDay: boolean }, now = new Date()): number {
+export function cancellableLeaveDays(
+  leave: { startDate: Date; endDate: Date; isHalfDay: boolean },
+  now = new Date(),
+  holidays: LeaveHolidayKeys = NO_HOLIDAYS
+): number {
   if (!canCancelLeave(leave.endDate, now)) return 0
   const today = toUtcDateOnly(now)
   const from = toUtcDateOnly(leave.startDate).getTime() > today.getTime() ? leave.startDate : today
-  return calculateLeaveDuration(from, leave.endDate, leave.isHalfDay)
+  return calculateLeaveDuration(from, leave.endDate, leave.isHalfDay, holidays)
 }
