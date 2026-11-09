@@ -2,6 +2,9 @@
 
 // The YouTube IFrame Player API, loaded once per page. Only the parts the Academy player uses are typed.
 
+// Privacy: the player itself embeds from youtube-nocookie.com, but YouTube serves the IFrame API
+// script only from www.youtube.com, so loading it contacts youtube.com. It loads only on a page with
+// a ready video (and in the videos editor, for a saved ID's length check), never elsewhere.
 export const YOUTUBE_API_SRC = 'https://www.youtube.com/iframe_api'
 export const YOUTUBE_HOST = 'https://www.youtube-nocookie.com'
 export const PLAYER_READY_TIMEOUT_MS = 10_000

@@ -28,6 +28,8 @@ export interface ControlBarProps {
   onCaptions: (on: boolean) => void
   onCaptionLanguage: (languageCode: string) => void
   onTranscript: () => void
+  /** The Transcript button, so the drawer can hand focus back to it. */
+  transcriptButton?: React.RefObject<HTMLButtonElement>
 }
 
 function CaptionLanguageMenu({ tracks, captionLanguage, onCaptionLanguage }: Pick<ControlBarProps, 'tracks' | 'captionLanguage' | 'onCaptionLanguage'>) {
@@ -65,7 +67,7 @@ function CaptionLanguageMenu({ tracks, captionLanguage, onCaptionLanguage }: Pic
 
 /** The player's own controls, below the picture: every one labelled and reachable by keyboard. */
 export function ControlBar(props: ControlBarProps) {
-  const { playing, position, duration, furthest, free, chapters, captionsOn, hasTranscript, onToggle, onSeek, onCaptions, onTranscript } = props
+  const { playing, position, duration, furthest, free, chapters, captionsOn, hasTranscript, onToggle, onSeek, onCaptions, onTranscript, transcriptButton } = props
   const chapter = chapterAt(chapters, position)
   const CaptionIcon = captionsOn ? Captions : CaptionsOff
   return (
@@ -98,7 +100,7 @@ export function ControlBar(props: ControlBarProps) {
         </button>
         {captionsOn ? <CaptionLanguageMenu {...props} /> : null}
         {hasTranscript ? (
-          <button type="button" onClick={onTranscript} aria-label="Transcript" className={cn(BAR_BUTTON_CLASS, 'gap-2 sm:px-3')}>
+          <button ref={transcriptButton} type="button" onClick={onTranscript} aria-label="Transcript" className={cn(BAR_BUTTON_CLASS, 'gap-2 sm:px-3')}>
             <FileText aria-hidden className="size-5" />
             <span className="hidden text-sm font-medium md:inline">Transcript</span>
           </button>

@@ -59,12 +59,41 @@ export interface PlaybackSample {
 
 /**
  * Continuous playback moves furthest on; a rewind or a jump doesn't. On a first viewing, a jump past
- * furthest + 2s (from anywhere but our own seek) is snapped back.
+ * furthest + 2s (from anywhere but our own seek) is snapped back. Playing from a point ahead of
+ * furthest (a seek inside the tolerance) moves it on by the time played only, so repeated clicks
+ * just ahead can't ratchet it forward.
  */
 export function followPlayback({ furthest, previous, position, elapsedSeconds, free }: PlaybackSample): { furthest: number; snapBack: boolean } {
   const natural = position >= previous && position <= previous + Math.max(0, elapsedSeconds) * PLAYBACK_SLACK + SEEK_TOLERANCE_SECONDS
-  if (natural) return { furthest: Math.max(furthest, position), snapBack: false }
+  if (natural) {
+    const next = previous > furthest ? furthest + (position - previous) : Math.max(furthest, position)
+    return { furthest: next, snapBack: false }
+  }
   return { furthest, snapBack: !free && position > furthest + SEEK_TOLERANCE_SECONDS }
+}
+
+/**
+ * Where playback really starts when YouTube says it is playing. A jump made while paused (YouTube's
+ * own keys or overlay) is caught here on a first viewing and sent back to furthest.
+ */
+export function playingFrom(current: number, furthest: number, free: boolean): { position: number; snapBack: boolean } {
+  if (!free && current > furthest + SEEK_TOLERANCE_SECONDS) return { position: Math.max(0, furthest), snapBack: true }
+  return { position: current, snapBack: false }
+}
+
+/** The report interval the session uses while playing. */
+export const REPORT_EVERY_MS = 10_000
+const MAX_REPORT_BACKOFF_MS = 60_000
+
+/** How long to hold reports after this many failures in a row: none, then doubling, at most a minute. */
+export function reportBackoffMs(failures: number): number {
+  if (failures <= 0) return 0
+  return Math.min(MAX_REPORT_BACKOFF_MS, REPORT_EVERY_MS * 2 ** (failures - 1))
+}
+
+/** The tab hiding, the page closing and leaving the page can all fire: one report per point is enough. */
+export function dedupeHideReport(lastSent: number | null, furthest: number): boolean {
+  return lastSent !== furthest
 }
 
 export interface StartInput {

@@ -103,6 +103,8 @@ test('a hire watches Module 1 to the end and moves on from the end screen', asyn
   // Nothing below the video: no complete button.
   await expect(page.getByRole('button', { name: 'Play video' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Mark complete and continue' })).toHaveCount(0)
+  // The footer still has a way back.
+  await expect(page.getByRole('link', { name: 'Back', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Captions' })).toHaveAttribute('aria-pressed', 'true')
 
   // A forward seek on the first viewing snaps back.
@@ -116,6 +118,8 @@ test('a hire watches Module 1 to the end and moves on from the end screen', asyn
 
   // Play to the end; the end screen waits for the server to count 95%.
   await page.getByRole('button', { name: 'Play' }).click()
+  // The fake plays at three times real speed, so the video ends before the server has counted 95%.
+  await expect(page.getByText('Saving your progress…')).toBeVisible({ timeout: 30_000 })
   const next = page.getByRole('link', { name: 'Next: Module 2' })
   await expect(next).toBeVisible({ timeout: 60_000 })
   await expect(next).toBeFocused()
@@ -129,6 +133,17 @@ test('a hire watches Module 1 to the end and moves on from the end screen', asyn
 
   await next.click()
   await page.waitForURL('**/onboarding/culture-values')
+})
+
+test('a ?chapter= link never starts a first viewing past what has been watched', async ({ page }) => {
+  await page.route(API, (route) => route.fulfill({ contentType: 'text/javascript', body: FAKE_YOUTUBE }))
+  await signIn(page)
+  await page.goto('/onboarding/welcome?chapter=middle')
+  await expect(page.getByRole('button', { name: 'Play video' })).toBeVisible()
+  await page.getByRole('button', { name: 'Play video' }).click()
+  await page.getByRole('button', { name: 'Pause' }).click()
+  // The middle chapter starts at 20s; nothing has been watched, so playback starts at the top.
+  expect(Number(await page.getByRole('slider', { name: 'Video position' }).getAttribute('aria-valuenow'))).toBeLessThan(10)
 })
 
 test('with the YouTube script blocked, the page says so and shows the transcript', async ({ page }) => {

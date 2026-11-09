@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import type { ModuleProgressView } from '@/lib/academy/view'
 import type { VideoConfig } from '@/lib/academy/video'
-import { followPlayback, snapSeek, startPosition } from '@/lib/academy/video-player'
+import {
+  REPORT_EVERY_MS, dedupeHideReport, followPlayback, playingFrom, reportBackoffMs, snapSeek, startPosition,
+} from '@/lib/academy/video-player'
 import type { CompleteResult } from '../useModuleProgress'
 import { PLAYER_READY_TIMEOUT_MS, PLAYER_STATE, YOUTUBE_HOST, captionTracks, loadYouTubeApi, type CaptionTrack, type YouTubePlayer } from './useYouTube'
 
-/** The server counts at most 30s of real time per report, so report well inside that. */
-const REPORT_EVERY_MS = 10_000
+// The server counts at most 30s of real time per report, so REPORT_EVERY_MS (10s) stays well inside that.
 /** After the end, until the server has counted 95%. */
 const END_REPORT_EVERY_MS = 4_000
 const POLL_EVERY_MS = 250
@@ -42,6 +43,8 @@ interface SessionInput {
   furthest: number
   completed: boolean
   controller: VideoController
+  /** `?chapter=` from the URL. A change while the page is open seeks there. */
+  chapterKey: string | null
 }
 
 function readCaptionsOff(): boolean {
@@ -61,17 +64,9 @@ function rememberCaptionsOff(off: boolean): void {
   }
 }
 
-function chapterFromUrl(): string | null {
-  try {
-    return new URLSearchParams(window.location.search).get('chapter')
-  } catch {
-    return null
-  }
-}
-
 /** Everything the player does with YouTube and the server. The component only draws it. */
 export function useVideoSession(input: SessionInput) {
-  const { host, title, youtubeId, duration, chapters, controller } = input
+  const { host, title, youtubeId, duration, chapters, controller, chapterKey } = input
   const player = useRef<YouTubePlayer | null>(null)
   const furthest = useRef(input.furthest)
   const free = useRef(input.completed || controller.moduleDone)
@@ -79,6 +74,9 @@ export function useVideoSession(input: SessionInput) {
   const ended = useRef(false)
   const finishing = useRef(false)
   const failures = useRef(0)
+  const reportInFlight = useRef(false)
+  const holdReportsUntil = useRef(0)
+  const lastHideReport = useRef<number | null>(null)
   const lastPoll = useRef({ position: 0, at: 0 })
   const reportTimer = useRef<number | null>(null)
   const pollTimer = useRef<number | null>(null)
@@ -102,6 +100,15 @@ export function useVideoSession(input: SessionInput) {
   const [tracks, setTracks] = useState<CaptionTrack[]>([])
   const [captionLanguage, setCaptionLanguage] = useState<string | null>(null)
 
+  const chapterRef = useRef(chapterKey)
+
+  /** A failed report or a refused complete: back off, and after a few in a row say so. */
+  const noteFailure = () => {
+    failures.current += 1
+    holdReportsUntil.current = performance.now() + reportBackoffMs(failures.current)
+    if (failures.current >= TROUBLE_AFTER) setTrouble(true)
+  }
+
   const stop = (timer: MutableRefObject<number | null>) => {
     if (timer.current !== null) window.clearInterval(timer.current)
     timer.current = null
@@ -117,8 +124,11 @@ export function useVideoSession(input: SessionInput) {
     finishing.current = true
     void controllerRef.current.complete().then((result) => {
       finishing.current = false
-      // Refused: playback carries on, and the next report tries again.
-      if (!result) return
+      // Refused: playback carries on, and the next report tries again. It counts toward the trouble line.
+      if (!result) {
+        noteFailure()
+        return
+      }
       done.current = true
       controllerRef.current.onCompleted(result)
       if (ended.current) showEnd()
@@ -128,11 +138,11 @@ export function useVideoSession(input: SessionInput) {
   const handleAnswer = useCallback(
     (answer: ModuleProgressView | null) => {
       if (!answer) {
-        failures.current += 1
-        if (failures.current >= TROUBLE_AFTER) setTrouble(true)
+        noteFailure()
         return
       }
       failures.current = 0
+      holdReportsUntil.current = 0
       setTrouble(false)
       if (answer.status !== 'COMPLETED' && !answer.completion.met) return
       free.current = true
@@ -142,10 +152,24 @@ export function useVideoSession(input: SessionInput) {
     [finish],
   )
 
+  /** One report at a time, and none while backing off after failures. */
   const report = useCallback(() => {
-    if (done.current) return
-    void controllerRef.current.report(furthest.current).then(handleAnswer)
+    if (done.current || reportInFlight.current || performance.now() < holdReportsUntil.current) return
+    reportInFlight.current = true
+    void controllerRef.current
+      .report(furthest.current)
+      .then(handleAnswer)
+      .finally(() => {
+        reportInFlight.current = false
+      })
   }, [handleAnswer])
+
+  /** The last report as the page goes away, once per point however many ways it goes. */
+  const reportOnHide = useCallback(() => {
+    if (done.current || !dedupeHideReport(lastHideReport.current, furthest.current)) return
+    lastHideReport.current = furthest.current
+    controllerRef.current.reportOnHide(furthest.current)
+  }, [])
 
   const poll = useCallback(() => {
     const yt = player.current
@@ -182,7 +206,13 @@ export function useVideoSession(input: SessionInput) {
         ended.current = false
         stop(endTimer)
         setPhase('watching')
-        lastPoll.current = { position: player.current?.getCurrentTime() ?? 0, at: performance.now() }
+        const from = playingFrom(yt?.getCurrentTime() ?? 0, furthest.current, free.current)
+        if (from.snapBack) {
+          yt?.seekTo(from.position, true)
+          setNotice(SKIP_NOTICE)
+        }
+        lastPoll.current = { position: from.position, at: performance.now() }
+        setPosition(from.position)
         stop(pollTimer)
         stop(reportTimer)
         pollTimer.current = window.setInterval(poll, POLL_EVERY_MS)
@@ -241,6 +271,10 @@ export function useVideoSession(input: SessionInput) {
     const fail = () => {
       if (cancelled) return
       cancelled = true
+      stop(pollTimer)
+      stop(reportTimer)
+      stop(endTimer)
+      setPlaying(false)
       setStatus('failed')
       try {
         yt?.destroy()
@@ -254,7 +288,7 @@ export function useVideoSession(input: SessionInput) {
       if (!ready) fail()
     }, PLAYER_READY_TIMEOUT_MS)
 
-    const start = startPosition({ chapters, chapterKey: chapterFromUrl(), furthest: furthest.current, completed: free.current, duration })
+    const start = startPosition({ chapters, chapterKey: chapterRef.current, furthest: furthest.current, completed: free.current, duration })
     void loadYouTubeApi(PLAYER_READY_TIMEOUT_MS).then((api) => {
       if (cancelled) return
       if (!api) return fail()
@@ -329,7 +363,7 @@ export function useVideoSession(input: SessionInput) {
       stop(reportTimer)
       stop(endTimer)
       // Leaving the page inside the app: send what was watched.
-      if (wasReady && !done.current) controllerRef.current.reportOnHide(furthest.current)
+      if (wasReady) reportOnHide()
       try {
         yt?.destroy()
       } catch {
@@ -344,7 +378,7 @@ export function useVideoSession(input: SessionInput) {
   // The last report as the tab hides or closes.
   useEffect(() => {
     const flush = () => {
-      if (player.current && !done.current) controllerRef.current.reportOnHide(furthest.current)
+      if (player.current) reportOnHide()
     }
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush()
@@ -355,7 +389,7 @@ export function useVideoSession(input: SessionInput) {
       window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [])
+  }, [reportOnHide])
 
   useEffect(() => {
     if (!notice) return
@@ -383,6 +417,16 @@ export function useVideoSession(input: SessionInput) {
       setPhase((p) => (p === 'end' ? 'watching' : p))
     }
   }, [duration, phase])
+
+  // A new ?chapter= on the page already open (a link from the transcript or the quiz) seeks there,
+  // never past furthest on a first viewing.
+  useEffect(() => {
+    if (chapterRef.current === chapterKey) return
+    chapterRef.current = chapterKey
+    if (!chapterKey || !player.current) return
+    const target = startPosition({ chapters, chapterKey, furthest: furthest.current, completed: free.current, duration })
+    if (chapters.some((chapter) => chapter.key === chapterKey)) seek(target)
+  }, [chapterKey, chapters, duration, seek])
 
   const setCaptions = useCallback(
     (on: boolean) => {

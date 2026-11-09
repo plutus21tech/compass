@@ -4,8 +4,11 @@ import {
   SEEK_TOLERANCE_SECONDS,
   chapterAt,
   endScreenLabel,
+  dedupeHideReport,
   followPlayback,
   formatClock,
+  playingFrom,
+  reportBackoffMs,
   scrubberValueText,
   snapSeek,
   startPosition,
@@ -121,6 +124,40 @@ test('followPlayback snaps back a jump past furthest on a first viewing, and all
   assert.deepEqual(followPlayback({ furthest: 100, previous: 100, position: 300, elapsedSeconds: 0.25, free: false }), { furthest: 100, snapBack: true })
   assert.deepEqual(followPlayback({ furthest: 100, previous: 50, position: 101.5, elapsedSeconds: 0.25, free: false }), { furthest: 100, snapBack: false })
   assert.deepEqual(followPlayback({ furthest: 100, previous: 100, position: 300, elapsedSeconds: 0.25, free: true }), { furthest: 100, snapBack: false })
+})
+
+test('followPlayback: a seek just ahead of furthest only counts what then plays, so clicks cannot ratchet', () => {
+  // Seeked to furthest + 2 and played a quarter second: furthest moves by the quarter second only.
+  assert.deepEqual(followPlayback({ furthest: 100, previous: 102, position: 102.25, elapsedSeconds: 0.25, free: false }), { furthest: 100.25, snapBack: false })
+  // Ten clicks to "furthest + 2", each followed by one poll, gain only the time played.
+  let furthest = 100
+  for (let i = 0; i < 10; i += 1) {
+    const target = snapSeek(furthest + SEEK_TOLERANCE_SECONDS, furthest, false)
+    furthest = followPlayback({ furthest, previous: target, position: target + 0.25, elapsedSeconds: 0.25, free: false }).furthest
+  }
+  assert.ok(Math.abs(furthest - 102.5) < 1e-9, String(furthest))
+})
+
+test('playingFrom: a jump made before playback starts is caught on a first viewing, not once free', () => {
+  assert.deepEqual(playingFrom(300, 100, false), { position: 100, snapBack: true })
+  assert.deepEqual(playingFrom(101.5, 100, false), { position: 101.5, snapBack: false })
+  assert.deepEqual(playingFrom(40, 100, false), { position: 40, snapBack: false })
+  assert.deepEqual(playingFrom(300, 100, true), { position: 300, snapBack: false })
+})
+
+test('reportBackoffMs: none after a success, then doubling from the report interval, capped at a minute', () => {
+  assert.equal(reportBackoffMs(0), 0)
+  assert.equal(reportBackoffMs(1), 10_000)
+  assert.equal(reportBackoffMs(2), 20_000)
+  assert.equal(reportBackoffMs(3), 40_000)
+  assert.equal(reportBackoffMs(4), 60_000)
+  assert.equal(reportBackoffMs(20), 60_000)
+})
+
+test('dedupeHideReport: the tab hiding and the page closing send one report for the same point', () => {
+  assert.equal(dedupeHideReport(null, 42), true)
+  assert.equal(dedupeHideReport(42, 42), false)
+  assert.equal(dedupeHideReport(42, 50), true)
 })
 
 // startPosition

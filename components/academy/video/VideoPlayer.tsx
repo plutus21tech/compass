@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, CheckCircle2, Loader2, Play, RotateCcw } from 'lucide-react'
 import type { ReadyVideoView } from '@/lib/academy/view'
@@ -98,12 +99,22 @@ function EndScreen({ moduleNumber, next }: { moduleNumber: number; next: NextSte
   )
 }
 
-function FailedCard({ summary, onRetry }: { summary: string; onRetry: () => void }) {
+function FailedCard({ summary, onRetry, focusOnShow }: { summary: string; onRetry: () => void; focusOnShow: boolean }) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  // After Try again fails too, focus lands on the message rather than on the page.
+  useEffect(() => {
+    if (focusOnShow) heading.current?.focus({ preventScroll: true })
+  }, [focusOnShow])
   return (
-    <section role="alert" className="overflow-hidden rounded-2xl bg-academy-navy text-white">
+    <section aria-labelledby="video-failed-heading" className="overflow-hidden rounded-2xl bg-academy-navy text-white">
       <div className="flex flex-col justify-center gap-4 px-6 py-10 sm:aspect-video sm:px-10">
-        <h2 className={`${academySerif.className} text-3xl italic sm:text-4xl`}>{FAILED_LEAD}</h2>
-        <p className="max-w-prose text-[17px] leading-7">{FAILED_NEXT}</p>
+        {/* Only the message is announced, not the summary and the button with it. */}
+        <div role="alert" className="space-y-4">
+          <h2 ref={heading} tabIndex={-1} id="video-failed-heading" className={`${academySerif.className} text-3xl italic outline-none sm:text-4xl`}>
+            {FAILED_LEAD}
+          </h2>
+          <p className="max-w-prose text-[17px] leading-7">{FAILED_NEXT}</p>
+        </div>
         <p className="max-w-prose leading-7 text-white/85">{summary}</p>
         <button
           type="button"
@@ -121,12 +132,16 @@ function FailedCard({ summary, onRetry }: { summary: string; onRetry: () => void
 /** The module's video with our own controls: chapters, captions, transcript, and no skipping ahead the first time. */
 export function VideoPlayer({ video, title, moduleNumber, next, controller }: VideoPlayerProps) {
   const host = useRef<HTMLDivElement>(null)
+  const chapterKey = useSearchParams()?.get('chapter') ?? null
   const session = useVideoSession({
     host, title, youtubeId: video.youtubeId, duration: video.durationSeconds,
-    chapters: video.chapters, furthest: video.furthest, completed: video.completed, controller,
+    chapters: video.chapters, furthest: video.furthest, completed: video.completed, controller, chapterKey,
   })
   const [transcriptOpen, setTranscriptOpen] = useState(false)
-  const transcriptOpener = useRef<HTMLElement | null>(null)
+  const transcriptButton = useRef<HTMLButtonElement>(null)
+  const playerSection = useRef<HTMLElement>(null)
+  // Set by Try again, so the next outcome (a player, or the message again) takes focus.
+  const [retried, setRetried] = useState(false)
   const [chosenLanguage, setChosenLanguage] = useState<VideoLanguage | null>(null)
   const languages = video.transcriptLanguages
   const transcriptLanguage = chosenLanguage ?? pickTranscriptLanguage(languages, session.captionLanguage)
@@ -134,13 +149,29 @@ export function VideoPlayer({ video, title, moduleNumber, next, controller }: Vi
   const failed = session.status === 'failed'
   const resumeAt = session.position
 
+  // A drawer left open when the player fails closes cleanly; the transcript then shows on the page.
+  useEffect(() => {
+    if (failed) setTranscriptOpen(false)
+  }, [failed])
+
+  useEffect(() => {
+    if (retried && session.status === 'ready') playerSection.current?.focus({ preventScroll: true })
+  }, [retried, session.status])
+
+  const retry = () => {
+    setRetried(true)
+    session.retry()
+  }
+
   return (
     <div className="space-y-6">
-      {failed ? <FailedCard summary={video.summary} onRetry={session.retry} /> : null}
+      {failed ? <FailedCard summary={video.summary} onRetry={retry} focusOnShow={retried} /> : null}
       <section
+        ref={playerSection}
+        tabIndex={-1}
         aria-label={`Video: ${title}`}
         hidden={failed}
-        className="overflow-hidden rounded-2xl bg-academy-navy shadow-[0_18px_40px_-24px_rgba(42,47,64,0.55)]"
+        className="overflow-hidden rounded-2xl outline-none bg-academy-navy shadow-[0_18px_40px_-24px_rgba(42,47,64,0.55)]"
       >
         <div className="relative aspect-video bg-academy-navy-deep">
           <div ref={host} className="absolute inset-0 [&>iframe]:size-full" />
@@ -182,10 +213,8 @@ export function VideoPlayer({ video, title, moduleNumber, next, controller }: Vi
             onSeek={session.seek}
             onCaptions={session.setCaptions}
             onCaptionLanguage={session.chooseCaptionLanguage}
-            onTranscript={() => {
-              transcriptOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-              setTranscriptOpen(true)
-            }}
+            transcriptButton={transcriptButton}
+            onTranscript={() => setTranscriptOpen(true)}
           />
         ) : null}
         <p aria-live="polite" className={`bg-academy-navy px-4 text-sm text-white/90 ${session.notice ? 'pb-3' : ''}`}>
@@ -195,11 +224,11 @@ export function VideoPlayer({ video, title, moduleNumber, next, controller }: Vi
       {failed && transcriptLanguage ? (
         <TranscriptPanel videoKey={video.videoKey} languages={languages} language={transcriptLanguage} onLanguage={setChosenLanguage} />
       ) : null}
-      {transcriptLanguage && !failed ? (
+      {transcriptLanguage ? (
         <TranscriptDrawer
-          open={transcriptOpen}
+          open={transcriptOpen && !failed}
           onOpenChange={setTranscriptOpen}
-          returnFocus={transcriptOpener}
+          returnFocus={transcriptButton}
           videoKey={video.videoKey}
           languages={languages}
           language={transcriptLanguage}

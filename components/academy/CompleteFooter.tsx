@@ -22,6 +22,8 @@ interface CompleteFooterProps {
   homeLabel: string
   /** Resolves true once the module is complete and the page is moving on. */
   onComplete: () => Promise<boolean>
+  /** The video finishes this module, so there is no button to press: only Back, and Next once done. */
+  watchOnly?: boolean
 }
 
 function Note({ state, completedOn }: Pick<CompleteFooterProps, 'state' | 'completedOn'>) {
@@ -58,7 +60,7 @@ function DoneCheck() {
   )
 }
 
-export function CompleteFooter({ state, backHref, nextHref, completedOn, isLastModule, homeLabel, onComplete }: CompleteFooterProps) {
+export function CompleteFooter({ state, backHref, nextHref, completedOn, isLastModule, homeLabel, onComplete, watchOnly = false }: CompleteFooterProps) {
   const [phase, setPhase] = useState<'idle' | 'saving' | 'done'>('idle')
   const blocked = state.kind === 'blocked'
 
@@ -77,8 +79,8 @@ export function CompleteFooter({ state, backHref, nextHref, completedOn, isLastM
             Back
           </Link>
         </Button>
-        <Note state={state} completedOn={completedOn} />
-        {state.kind === 'done' ? (
+        {watchOnly && state.kind !== 'done' ? <span /> : <Note state={state} completedOn={completedOn} />}
+        {watchOnly && state.kind !== 'done' ? null : state.kind === 'done' ? (
           <Button asChild className={ACTION_CLASS}>
             <Link href={nextHref} prefetch={false}>
               {isLastModule ? homeLabel : 'Next module'}

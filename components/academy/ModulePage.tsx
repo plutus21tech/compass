@@ -39,7 +39,8 @@ export function ModulePage({ view }: ModulePageProps) {
   const timeZone = view.callTimes.timeZone
   const { state, readOnly, setCheck, openLink, complete, reportVideo, reportVideoOnHide } = progress
   const homeLabel = view.plain ? 'Back to dashboard' : 'Back to Home'
-  // A module that completes by watching has nothing below the video: the player's end screen moves on.
+  // A module that completes by watching has no complete button: the player's end screen moves on, and
+  // the footer keeps only Back (and Next with the completed-on line once it is done).
   const watchToFinish = view.progress.effectiveRule === 'VIDEO_95' && view.blocks.some((b) => b.type === 'video' && b.ready)
 
   // The app shell scrolls <main>, not the window, and moving between modules should start at the top.
@@ -116,7 +117,8 @@ export function ModulePage({ view }: ModulePageProps) {
           ))}
           {watchToFinish ? null : <EndSentinel armed={!readOnly && !progress.scrollSaved} onSeen={progress.markScrolledEnd} />}
         </div>
-        {watchToFinish ? null : <CompleteFooter
+        <CompleteFooter
+          watchOnly={watchToFinish}
           state={progress.footer}
           backHref={moduleHref(previous, home)}
           nextHref={moduleHref(view.nextSlug, home)}
@@ -124,7 +126,7 @@ export function ModulePage({ view }: ModulePageProps) {
           isLastModule={view.nextSlug === null}
           homeLabel={homeLabel}
           onComplete={handleComplete}
-        />}
+        />
       </div>
     </div>
   )
