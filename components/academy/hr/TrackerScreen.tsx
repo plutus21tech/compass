@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TrackerFilters as Filters, TrackerRow } from '@/lib/academy/tracker'
 import { ErrorLine } from './Chip'
+import { MostMissedPanel } from './MostMissedPanel'
 import { TrackerDrawer } from './TrackerDrawer'
 import { TrackerFilters } from './TrackerFilters'
 import { TrackerTable } from './TrackerTable'
@@ -57,6 +58,7 @@ export function TrackerScreen() {
       <ErrorLine message={error} />
       {rows === null && !error && <p className="text-sm text-muted-foreground" role="status">Loading...</p>}
       {rows !== null && <TrackerTable rows={rows} filtered={filtered} onOpen={setOpenId} />}
+      <MostMissedPanel />
       <TrackerDrawer newHireId={openId} onClose={() => setOpenId(null)} onChanged={() => void load()} />
     </div>
   )

@@ -66,7 +66,7 @@ async function readPassPercent(db: Db): Promise<number> {
   return row?.quizPassPercent ?? DEFAULT_PASS_PERCENT
 }
 
-const storedAnswers = z.array(
+export const storedAnswers = z.array(
   z.object({ questionId: z.string(), chosen: z.string(), correct: z.boolean(), correctAnswer: z.string() }),
 )
 type StoredAnswer = z.infer<typeof storedAnswers>[number]
