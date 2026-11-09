@@ -8,9 +8,13 @@ import {
   moduleChip,
   paymentChip,
   paymentMethodLabel,
+  NO_CHECKLIST,
+  OVERDUE_COLUMN,
   progressText,
   trackerEmptyMessage,
+  trackerIntro,
 } from '../lib/academy/tracker-labels'
+import { FINISHED_WINDOW_DAYS } from '../lib/academy/tracker'
 
 const item = (over: Partial<ChecklistItemView>): ChecklistItemView => ({
   id: 'i', key: 'k', title: 'T', ownerRole: 'HR', autoTickEvent: null, dueAt: '2026-12-01T00:00:00Z',
@@ -68,4 +72,12 @@ test('paymentFieldLabel: known fields read plainly, unknown ones are spaced out'
   const { paymentFieldLabel } = await import('../lib/academy/tracker-labels')
   assert.equal(paymentFieldLabel('accountNumberOrIban'), 'Account number or IBAN')
   assert.equal(paymentFieldLabel('someNewField'), 'Some new field')
+})
+
+test('tracker labels: the finished window comes from its constant, and the empty checklist and overdue column read plainly', () => {
+  assert.equal(FINISHED_WINDOW_DAYS, 30)
+  assert.equal(trackerIntro(), 'Everyone currently onboarding, and anyone who finished in the last 30 days.')
+  assert.equal(trackerIntro(7), 'Everyone currently onboarding, and anyone who finished in the last 7 days.')
+  assert.equal(progressText(0, 0, NO_CHECKLIST), 'No checklist yet')
+  assert.equal(OVERDUE_COLUMN, 'Overdue modules')
 })

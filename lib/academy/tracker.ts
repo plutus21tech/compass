@@ -5,6 +5,9 @@ import type { ChecklistItemView } from './checklist'
 import { AcademyError } from './errors'
 import type { CardStatus } from './progress'
 
+/** A finished hire stays on the tracker this many days. */
+export const FINISHED_WINDOW_DAYS = 30
+
 const blankToUndefined = (value: unknown) => (typeof value === 'string' && value.trim() === '' ? undefined : value)
 const filterText = z.preprocess(blankToUndefined, z.string().trim().max(200).optional())
 

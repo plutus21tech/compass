@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TrackerFilters as Filters, TrackerRow } from '@/lib/academy/tracker'
+import { trackerIntro } from '@/lib/academy/tracker-labels'
 import { ErrorLine } from './Chip'
 import { MostMissedPanel } from './MostMissedPanel'
 import { TrackerDrawer } from './TrackerDrawer'
@@ -52,7 +53,7 @@ export function TrackerScreen() {
     <div className="mx-auto max-w-7xl space-y-6 p-6 sm:p-8">
       <div>
         <h1 className="text-2xl font-light tracking-tight sm:text-3xl">Onboarding tracker</h1>
-        <p className="mt-1 text-muted-foreground">Everyone currently onboarding, and anyone who finished in the last 30 days.</p>
+        <p className="mt-1 text-muted-foreground">{trackerIntro()}</p>
       </div>
       <TrackerFilters value={filters} locations={options.locations} departments={options.departments} onChange={setFilters} />
       <ErrorLine message={error} />

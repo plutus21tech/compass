@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { hireStatusLabel, progressText } from '@/lib/academy/tracker-labels'
+import { NO_CHECKLIST, hireStatusLabel, progressText } from '@/lib/academy/tracker-labels'
 import type { TrackerDrawer as DrawerData } from '@/lib/academy/tracker'
 import { AcknowledgementsPanel } from './AcknowledgementsPanel'
 import { ChecklistPanel } from './ChecklistPanel'
@@ -132,7 +132,7 @@ export function TrackerDrawer({ newHireId, onClose, onChanged }: Props) {
               <Section title="Quiz attempts">
                 <QuizPanel attempts={data.quizAttempts} busy={busy?.kind === 'quiz'} onClear={() => void act({ kind: 'quiz' }, () => post('clear-quiz'), 'Attempts cleared')} />
               </Section>
-              <Section title="HR checklist" note={progressText(checklistDone, data.checklist.length, 'None')}>
+              <Section title="HR checklist" note={progressText(checklistDone, data.checklist.length, NO_CHECKLIST)}>
                 <ChecklistPanel
                   items={data.checklist}
                   busyItemId={busy?.kind === 'item' ? (busy.id ?? null) : null}

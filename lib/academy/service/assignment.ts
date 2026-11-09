@@ -253,12 +253,18 @@ export interface AssignableView {
 /** For HR's picker: the same people an assignment would reach. */
 export async function listAssignable(db: PrismaClient): Promise<AssignableView> {
   const modules = await listCourseModules(db)
-  const users = await activeUsers(db, 'ALL_ACTIVE')
+  // One query for everyone: inactive is the same test as isAccountInactive (a profile marked
+  // not active; no profile means active), done in the database instead of once per person.
+  const people = await db.user.findMany({
+    where: {
+      NOT: { payrollProfile: { is: { isPayrollActive: false } } },
+      OR: [{ onboardingCompleted: true }, { newHireRecord: { is: { academyReleasedAt: { not: null } } } }],
+    },
+    select: { id: true, name: true, department: true },
+    orderBy: { name: 'asc' },
+  })
   return {
     modules: modules.map((module, index) => ({ id: module.id, number: index + 1, title: module.title })),
-    people: users
-      .filter((user) => user.onboardingCompleted || user.newHireRecord?.academyReleasedAt)
-      .map(({ id, name, department }) => ({ id, name, department }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    people: [...people].sort((a, b) => a.name.localeCompare(b.name)),
   }
 }

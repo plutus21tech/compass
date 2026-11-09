@@ -94,13 +94,14 @@ export async function tickChecklistItem(
 
 /**
  * The items this person owns on one hire, for the pages they already use. HR can tick anything but
- * work from the tracker, so only a hire they lead shows here. Someone with no items gets an empty list.
+ * work from the tracker, so only a hire they lead shows here. Someone with no items gets an empty
+ * list, and so does an unknown hire: the answer never says whether a hire exists.
  */
 export async function listMyChecklist(
   db: PrismaClient, viewer: TrackerViewer, newHireId: string, now: Date = new Date(),
 ): Promise<ChecklistItemView[]> {
   const hire = await db.newHire.findUnique({ where: { id: newHireId }, select: { teamLeadId: true } })
-  if (!hire) throw hireNotFound()
+  if (!hire) return []
   const isLead = hire.teamLeadId === viewer.id
   const items = await listChecklist(db, newHireId, now)
   return items.filter(

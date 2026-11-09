@@ -379,7 +379,8 @@ test('listMyChecklist gives each person their own items and nobody else any', AC
   assert.deepEqual(await owners(P.staff.id, 'EMPLOYEE'), [])
   assert.deepEqual(await owners(P.hr.id, 'HR'), []) // HR have the tracker
   assert.deepEqual(await owners(P.lead.id, 'HR'), ['TEAM_LEAD']) // an HR user who leads this hire still has those
-  await assert.rejects(() => listMyChecklist(prisma, { id: P.lead.id, role: 'EMPLOYEE' }, 'act-nobody'), /New hire not found/)
+  // An unknown hire answers like one with nothing for you: the endpoint never says whether a hire exists.
+  assert.deepEqual(await listMyChecklist(prisma, { id: P.lead.id, role: 'EMPLOYEE' }, 'act-nobody'), [])
 })
 
 test('an overdue item mails daily, a done or later item does not, and sync runs before the notices', ACADEMY_DB_TEST, async () => {

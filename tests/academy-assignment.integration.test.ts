@@ -207,6 +207,21 @@ test('the picker lists course modules and people who could take one', ACADEMY_DB
   assert.equal(ids.includes(HIRE_ID), false)
 })
 
+test('the picker reads all its people in one query, however many there are', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  await markInactive(P.buddy.id)
+  let peopleReads = 0
+  const counted = {
+    onboardingModule: prisma.onboardingModule,
+    user: { findMany: (args: Parameters<typeof prisma.user.findMany>[0]) => { peopleReads += 1; return prisma.user.findMany(args) } },
+    payrollEmployeeProfile: { findUnique: () => { throw new Error('one lookup per person') } },
+  } as unknown as typeof prisma
+  const { people } = await listAssignable(counted)
+  assert.equal(peopleReads, 1)
+  assert.equal(people.some((p) => p.id === P.buddy.id), false)
+  assert.ok(people.some((p) => p.id === STAFF))
+})
+
 test('re-read: a completed row moves to history with its version, and the live row shows the current one', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await assignModule(prisma, await moduleIdOf('welcome'), [STAFF], P.hr.id)

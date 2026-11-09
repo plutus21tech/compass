@@ -6,6 +6,7 @@ import { AcademyError } from '../errors'
 import { moduleCardState, parseProgressState } from '../progress'
 import { timeZoneFor } from '../time'
 import {
+  FINISHED_WINDOW_DAYS,
   quizScoreLabel,
   type DrawerAcknowledgement,
   type DrawerLinkedin,
@@ -28,7 +29,6 @@ import { listCourseModules, versionIdFor, type CourseModule } from './progress'
 import { readAcademyAttemptsFor, type AcademyAttempt } from './quiz'
 
 /** Finished hires stay on the list this long, so they stay visible even if a notice was lost. */
-const FINISHED_WINDOW_DAYS = 30
 const DAY_MS = 24 * 60 * 60 * 1000
 const VALUES_KIND = 'VALUES_CODE_OF_CONDUCT'
 const REMOVED_QUESTION = 'This question is no longer in the quiz.'

@@ -2,9 +2,16 @@
 import type { NewHireStatus, OnboardingPaymentMethod } from '@prisma/client'
 import type { ChecklistItemView, ItemState } from './checklist'
 import type { CardStatus } from './progress'
+import { FINISHED_WINDOW_DAYS } from './tracker'
 
 export type ChipTone = 'neutral' | 'success' | 'warning' | 'danger'
 export interface Chip { label: string; tone: ChipTone }
+
+export const NO_CHECKLIST = 'No checklist yet'
+export const OVERDUE_COLUMN = 'Overdue modules'
+
+export const trackerIntro = (days: number = FINISHED_WINDOW_DAYS): string =>
+  `Everyone currently onboarding, and anyone who finished in the last ${days} days.`
 
 /** "3 of 14". With nothing to count, `empty` stands in. */
 export function progressText(done: number, total: number, empty = 'Not released'): string {

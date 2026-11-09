@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import type { PayoutView } from '@/lib/academy/payout'
 import type { DrawerPayment, OaTrackerRow } from '@/lib/academy/tracker'
@@ -29,15 +29,22 @@ function HireRow({ row }: { row: OaTrackerRow }) {
   const [payment, setPayment] = useState<DrawerPayment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const userId = row.paymentStatus.userId as string
+  // Each opening gets a number; closing bumps it, so an answer for a closed row never lands.
+  const opening = useRef(0)
 
   const toggle = async () => {
-    if (open) { setOpen(false); setPayment(null); return }
+    opening.current += 1
+    setError(null)
+    setPayment(null)
+    if (open) { setOpen(false); return }
     setOpen(true)
+    const mine = opening.current
     try {
       const view = await trackerFetch<PayoutView | null>(`/api/admin/onboarding/payout/${encodeURIComponent(userId)}`)
+      if (opening.current !== mine) return
       if (view) setPayment(toPayment(view)); else setError(NONE_YET)
     } catch (e) {
-      setError(trackerErrorText(e))
+      if (opening.current === mine) setError(trackerErrorText(e))
     }
   }
 

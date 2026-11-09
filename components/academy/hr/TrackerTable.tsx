@@ -2,11 +2,11 @@
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatAcademyDate } from '@/lib/academy/view-labels'
-import { progressText, trackerEmptyMessage } from '@/lib/academy/tracker-labels'
+import { NO_CHECKLIST, OVERDUE_COLUMN, progressText, trackerEmptyMessage } from '@/lib/academy/tracker-labels'
 import type { TrackerRow } from '@/lib/academy/tracker'
 import { DATE_ZONE } from './tracker-api'
 
-function Bar({ done, total, label }: { done: number; total: number; label: string }) {
+function Bar({ done, total, label, empty }: { done: number; total: number; label: string; empty?: string }) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100)
   return (
     <div className="flex items-center gap-2">
@@ -20,7 +20,7 @@ function Bar({ done, total, label }: { done: number; total: number; label: strin
       >
         <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
       </div>
-      <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{progressText(done, total)}</span>
+      <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{progressText(done, total, empty)}</span>
     </div>
   )
 }
@@ -45,7 +45,7 @@ export function TrackerTable({ rows, filtered, onOpen }: Props) {
             <TableHead>Location</TableHead>
             <TableHead>Joining</TableHead>
             <TableHead>Modules done</TableHead>
-            <TableHead className="text-right">Overdue</TableHead>
+            <TableHead className="text-right">{OVERDUE_COLUMN}</TableHead>
             <TableHead>Quiz</TableHead>
             <TableHead>HR checklist</TableHead>
           </TableRow>
@@ -70,7 +70,7 @@ export function TrackerTable({ rows, filtered, onOpen }: Props) {
               <TableCell><Bar done={row.modulesDone} total={row.modulesTotal} label={`${row.name}: modules done`} /></TableCell>
               <TableCell className={`text-right tabular-nums ${row.overdueCount > 0 ? 'font-medium text-red-700 dark:text-red-300' : ''}`}>{row.overdueCount}</TableCell>
               <TableCell className="whitespace-nowrap">{row.quizScore ?? '-'}</TableCell>
-              <TableCell><Bar done={row.checklistDone} total={row.checklistTotal} label={`${row.name}: HR checklist`} /></TableCell>
+              <TableCell><Bar done={row.checklistDone} total={row.checklistTotal} label={`${row.name}: HR checklist`} empty={NO_CHECKLIST} /></TableCell>
             </TableRow>
           ))}
         </TableBody>
