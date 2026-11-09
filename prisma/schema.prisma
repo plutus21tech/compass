@@ -419,6 +419,7 @@ model User {
   onboardingKeyContacts         OnboardingKeyContact[]         @relation("OnboardingKeyContactUser")
   onboardingProgressAssigned    OnboardingProgress[]           @relation("OnboardingProgressAssignedBy")
   onboardingProgressUnlocked    OnboardingProgress[]           @relation("OnboardingProgressUnlockedEarlyBy")
+  onboardingProgressWatched     OnboardingProgress[]           @relation("OnboardingProgressMarkedWatchedBy")
   onboardingVersionsPublished   OnboardingModuleVersion[]      @relation("OnboardingModuleVersionPublisher")
   onboardingChecklistItemsDone  OnboardingChecklistItem[]      @relation("OnboardingChecklistItemDoneBy")
   onboardingPaymentDetails      OnboardingPaymentDetails?      @relation("OnboardingPaymentDetailsUser")
@@ -1717,6 +1718,12 @@ model OnboardingProgress {
 
   assignedBy         User? @relation("OnboardingProgressAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
   unlockedEarlyBy    User? @relation("OnboardingProgressUnlockedEarlyBy", fields: [unlockedEarlyById], references: [id], onDelete: SetNull)
+
+  // HR marked a ready video watched for a hire whose player wouldn't load (R5): who, when and why.
+  markedWatchedById   String?
+  markedWatchedAt     DateTime?
+  markedWatchedReason String?
+  markedWatchedBy     User? @relation("OnboardingProgressMarkedWatchedBy", fields: [markedWatchedById], references: [id], onDelete: SetNull)
 }
 
 model OnboardingQuizQuestion {

@@ -75,6 +75,10 @@ export interface DrawerModule {
   completedAt: string | null
   unlockedEarly: boolean
   unlockable: boolean
+  /** HR may mark the ready video watched: the row is open, unfinished and the hire is shown one. */
+  markWatchable: boolean
+  /** Set when HR marked the video watched for this hire. */
+  markedWatched: { at: string; reason: string; byName: string | null } | null
 }
 
 export interface DrawerWrongQuestion {

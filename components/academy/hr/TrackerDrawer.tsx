@@ -43,19 +43,24 @@ export function TrackerDrawer({ newHireId, onClose, onChanged }: Props) {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<BusyKey>(null)
 
-  // A slow answer for a hire already closed must not land on the next one.
+  // Each load gets a number; only the latest one may land, so a slow answer for a hire already
+  // closed, or an older reload of this one, never overwrites a newer one.
+  const latest = useRef(0)
   const wanted = useRef<string | null>(null)
   wanted.current = newHireId
   const load = useCallback(async (id: string) => {
+    if (wanted.current !== id) return
+    const request = ++latest.current
+    const current = () => latest.current === request && wanted.current === id
     try {
       const next = await trackerFetch<DrawerData>(`${BASE}/tracker/${encodeURIComponent(id)}`)
-      if (wanted.current !== id) return
+      if (!current()) return
       setData(next)
       setError(null)
     } catch (e) {
-      if (wanted.current === id) setError(trackerErrorText(e))
+      if (current()) setError(trackerErrorText(e))
     } finally {
-      if (wanted.current === id) setLoading(false)
+      if (current()) setLoading(false)
     }
   }, [])
 
@@ -67,9 +72,13 @@ export function TrackerDrawer({ newHireId, onClose, onChanged }: Props) {
     void load(newHireId)
   }, [newHireId, load])
 
+  // State updates land a render late, so a second click could start the same action twice.
+  const running = useRef(false)
+
   /** Runs one action, then reloads the drawer and the table. Returns whether it worked. */
   const act = async (key: NonNullable<BusyKey>, run: () => Promise<unknown>, success: string): Promise<boolean> => {
-    if (!newHireId) return false
+    if (!newHireId || running.current) return false
+    running.current = true
     setBusy(key)
     try {
       await run()
@@ -81,6 +90,7 @@ export function TrackerDrawer({ newHireId, onClose, onChanged }: Props) {
       toast.error(trackerErrorText(e))
       return false
     } finally {
+      running.current = false
       setBusy(null)
     }
   }
@@ -108,6 +118,9 @@ export function TrackerDrawer({ newHireId, onClose, onChanged }: Props) {
                   modules={data.modules}
                   busyModuleId={busy?.kind === 'module' ? (busy.id ?? null) : null}
                   onUnlock={(moduleId) => void act({ kind: 'module', id: moduleId }, () => post('unlock', { moduleId }), 'Module unlocked')}
+                  onMarkWatched={(moduleId, reason) =>
+                    act({ kind: 'module', id: moduleId }, () => post('mark-watched', { moduleId, reason }), 'Marked as watched')
+                  }
                 />
               </Section>
               <Section title="Acknowledgements">

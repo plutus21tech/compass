@@ -22,6 +22,7 @@ import { locationLabel, toModuleCard } from '../view'
 import { formatCertificateDate } from '../view-labels'
 import { countChecklists, listChecklist, syncChecklists } from './checklist'
 import { LINKEDIN_MODULE_SLUG } from './fields'
+import { watchableVideo } from './mark-watched'
 import { readPayout } from './payout'
 import { listCourseModules, versionIdFor, type CourseModule } from './progress'
 import { readAcademyAttemptsFor, type AcademyAttempt } from './quiz'
@@ -225,8 +226,24 @@ async function versionNumbers(db: PrismaClient, ids: readonly string[]): Promise
   return new Map(rows.map((row) => [row.id, row.version]))
 }
 
+async function markerNames(db: PrismaClient, rows: readonly OnboardingProgress[]): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.flatMap((row) => (row.markedWatchedById ? [row.markedWatchedById] : [])))]
+  if (ids.length === 0) return new Map()
+  const users = await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+  return new Map(users.map((user) => [user.id, user.name]))
+}
+
+function markedWatchedOf(row: OnboardingProgress | undefined, names: Map<string, string>): DrawerModule['markedWatched'] {
+  if (!row?.markedWatchedAt || !row.markedWatchedReason) return null
+  return {
+    at: row.markedWatchedAt.toISOString(),
+    reason: row.markedWatchedReason,
+    byName: row.markedWatchedById ? (names.get(row.markedWatchedById) ?? null) : null,
+  }
+}
+
 async function drawerModules(
-  db: PrismaClient, modules: readonly CourseModule[], rows: readonly OnboardingProgress[], now: Date,
+  db: PrismaClient, userId: string, modules: readonly CourseModule[], rows: readonly OnboardingProgress[], now: Date,
 ): Promise<DrawerModule[]> {
   const rowOf = (module: CourseModule) => rows.find((row) => row.moduleId === module.id)
   const versionId = (module: CourseModule) => {
@@ -234,6 +251,13 @@ async function drawerModules(
     return row ? versionIdFor(row, module) : module.currentVersionId
   }
   const versions = await versionNumbers(db, modules.map(versionId))
+  const names = await markerNames(db, rows)
+  // Only VIDEO_95 rows read facts and blocks, so this is at most Modules 1 and 2.
+  const watchable = new Set<string>()
+  for (const module of modules) {
+    const row = rowOf(module)
+    if (row && (await watchableVideo(db, userId, row, module))) watchable.add(module.id)
+  }
   return modules.map((module, index) => {
     const row = rowOf(module)
     const card = toModuleCard(module, index + 1, row, now)
@@ -250,6 +274,8 @@ async function drawerModules(
       completedAt: card.completedAt,
       unlockedEarly: Boolean(row?.unlockedEarlyById),
       unlockable: card.status === 'LOCKED' && row !== undefined,
+      markWatchable: watchable.has(module.id),
+      markedWatched: markedWatchedOf(row, names),
     }
   })
 }
@@ -349,7 +375,7 @@ export async function loadDrawer(db: PrismaClient, viewer: TrackerViewer, newHir
   return {
     ...base,
     finishedAt: finishedAtOf(hire.status, signatures.get(userId)),
-    modules: hire.academyReleasedAt ? await drawerModules(db, modules, rows, now) : [],
+    modules: hire.academyReleasedAt ? await drawerModules(db, userId, modules, rows, now) : [],
     quizAttempts: await drawerAttempts(db, await readAcademyAttemptsFor(db, [userId])),
     acknowledgements: await drawerAcknowledgements(db, userId),
     linkedin: drawerLinkedin(hire, rows.find((row) => row.moduleId === linkedinModule?.id)?.state),

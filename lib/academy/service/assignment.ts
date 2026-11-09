@@ -78,6 +78,10 @@ const clearedProgress = (actorId: string) => ({
   versionId: null,
   dueAt: null,
   assignedById: actorId,
+  // The mark explained the completion being cleared, so it goes with it.
+  markedWatchedById: null,
+  markedWatchedAt: null,
+  markedWatchedReason: null,
 })
 
 type ClearedProgress = ReturnType<typeof clearedProgress> & { source?: OnboardingProgressSource }

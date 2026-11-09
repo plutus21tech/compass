@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
 import type { ChecklistItemView } from '@/lib/academy/checklist'
 import { formatAcademyDate } from '@/lib/academy/view-labels'
 import { checklistChip, checklistNeedsReason } from '@/lib/academy/tracker-labels'
 import { Chip } from './Chip'
+import { ReasonForm } from './ReasonForm'
 import { DATE_ZONE } from './tracker-api'
 
 const OWNER_LABELS: Record<ChecklistItemView['ownerRole'], string> = {
@@ -15,8 +15,6 @@ const OWNER_LABELS: Record<ChecklistItemView['ownerRole'], string> = {
   OA: 'O&A',
   TEAM_LEAD: 'Team lead',
 }
-
-const REASON_MAX = 500
 
 interface Props {
   items: readonly ChecklistItemView[]
@@ -32,25 +30,11 @@ interface RowProps {
   onTick: Props['onTick']
 }
 
-function ReasonField({ item, busy, onCancel, onSave }: { item: ChecklistItemView; busy: boolean; onCancel: () => void; onSave: (reason: string) => void }) {
-  const [reason, setReason] = useState('')
-  const id = `reason-${item.id}`
-  return (
-    <div className="mt-2 space-y-2">
-      <label htmlFor={id} className="block text-xs text-muted-foreground">Reason for missing this date</label>
-      <Textarea id={id} value={reason} maxLength={REASON_MAX} rows={2} onChange={(e) => setReason(e.target.value)} />
-      <div className="flex gap-2">
-        <Button type="button" size="sm" disabled={busy || reason.trim() === ''} onClick={() => onSave(reason.trim())}>Save</Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
-      </div>
-    </div>
-  )
-}
-
 function ChecklistRow({ item, busy, asking, onAsk, onTick }: RowProps) {
   const done = item.doneAt !== null
   const locked = done && item.autoTicked
   const checkId = `check-${item.id}`
+  const checkbox = useRef<HTMLInputElement>(null)
 
   const toggle = async (next: boolean) => {
     if (next && checklistNeedsReason(item)) return onAsk(true)
@@ -64,6 +48,7 @@ function ChecklistRow({ item, busy, asking, onAsk, onTick }: RowProps) {
     <li className="px-3 py-2 text-sm">
       <div className="flex items-start gap-3">
         <input
+          ref={checkbox}
           id={checkId}
           type="checkbox"
           className="mt-1 h-4 w-4 shrink-0 accent-[hsl(var(--primary))]"
@@ -83,7 +68,17 @@ function ChecklistRow({ item, busy, asking, onAsk, onTick }: RowProps) {
           {item.state === 'DONE_LATE_NEEDS_REASON' && !asking && (
             <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => onAsk(true)}>Add reason</Button>
           )}
-          {asking && <ReasonField item={item} busy={busy} onCancel={() => onAsk(false)} onSave={save} />}
+          {asking && (
+            <ReasonForm
+              id={`reason-${item.id}`}
+              label="Reason for missing this date"
+              saveLabel="Save"
+              busy={busy}
+              onCancel={() => onAsk(false)}
+              onSave={(reason) => void save(reason)}
+              fallbackFocus={() => checkbox.current}
+            />
+          )}
         </div>
       </div>
     </li>

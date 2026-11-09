@@ -75,6 +75,9 @@ export async function releaseCourse(db: PrismaClient, newHireId: string, actorId
         source: 'COURSE' as const,
         assignedById: null,
         unlockedEarlyById: null,
+        markedWatchedById: null,
+        markedWatchedAt: null,
+        markedWatchedReason: null,
       }
       await tx.onboardingProgress.upsert({
         where: { userId_moduleId: { userId, moduleId: module.id } },
