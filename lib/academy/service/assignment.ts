@@ -122,6 +122,10 @@ async function archive(tx: Tx, rows: readonly OnboardingProgress[]): Promise<voi
       moduleId: row.moduleId,
       versionId: row.versionId,
       completedAt: row.completedAt ?? row.updatedAt,
+      // The live row's mark is cleared on reopen, so its record moves here with the completion.
+      markedWatchedById: row.markedWatchedById,
+      markedWatchedAt: row.markedWatchedAt,
+      markedWatchedReason: row.markedWatchedReason,
     })),
   })
 }

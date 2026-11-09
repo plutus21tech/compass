@@ -9,7 +9,9 @@ import { readCourseProgress } from '../lib/academy/service/progress'
 import { loadDrawer } from '../lib/academy/service/tracker'
 import type { VideoConfig } from '../lib/academy/video'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
-import { HIRE_ID, NEW_HIRE_ID, SLUGS, cleanCourse, createReleasedHire, progressRow, scrollAndComplete } from './helpers/academy-course-fixtures'
+import { HIRE_ID, NEW_HIRE_ID, SLUGS, cleanCourse, createReadyHire, createReleasedHire, progressRow, scrollAndComplete } from './helpers/academy-course-fixtures'
+import { assignModule } from '../lib/academy/service/assignment'
+import { releaseCourse } from '../lib/academy/service/course'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
 
 const fails = (status: number) => (error: unknown) => {
@@ -126,4 +128,39 @@ test('marking both videos watched leaves the quiz waiting for all 14 modules', A
   assert.equal((await progressRow(SLUGS[1])).status, 'COMPLETED')
   assert.equal((await progressRow(SLUGS[2])).status, 'IN_PROGRESS')
   assert.equal((await readCourseProgress(prisma, HIRE_ID)).modulesDone, false)
+})
+
+const cleared = (row: { markedWatchedById: string | null; markedWatchedAt: Date | null; markedWatchedReason: string | null }) =>
+  [row.markedWatchedById, row.markedWatchedAt, row.markedWatchedReason]
+
+test('a reopen clears the mark on the live row and history keeps it', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await setVideos({ VIDEO_1: VIDEO })
+  const id = await moduleId(SLUGS[0])
+  await markWatched(prisma, HR, NEW_HIRE_ID, id, REASON)
+  const marked = await progressRow(SLUGS[0])
+
+  await assignModule(prisma, id, [HIRE_ID], P.hr.id)
+  const live = await progressRow(SLUGS[0])
+  assert.equal(live.status, 'IN_PROGRESS')
+  assert.deepEqual(cleared(live), [null, null, null])
+  const history = await prisma.onboardingProgressHistory.findMany({ where: { userId: HIRE_ID, moduleId: id } })
+  assert.equal(history.length, 1)
+  assert.deepEqual(cleared(history[0]), [P.hr.id, marked.markedWatchedAt, REASON])
+  assert.deepEqual(history[0].completedAt, marked.completedAt)
+})
+
+test('release clears a mark left on a row from before', ACADEMY_DB_TEST, async () => {
+  await createReadyHire()
+  const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: SLUGS[0] } })
+  await prisma.onboardingProgress.create({
+    data: {
+      userId: HIRE_ID, moduleId: module.id, status: 'COMPLETED', completedAt: new Date(),
+      markedWatchedById: P.hr.id, markedWatchedAt: new Date(), markedWatchedReason: REASON,
+    },
+  })
+  await releaseCourse(prisma, NEW_HIRE_ID, P.hr.id)
+  const row = await progressRow(SLUGS[0])
+  assert.equal(row.status, 'IN_PROGRESS')
+  assert.deepEqual(cleared(row), [null, null, null])
 })

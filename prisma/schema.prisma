@@ -3279,6 +3279,12 @@ model OnboardingProgressHistory {
   completedAt DateTime
   createdAt   DateTime @default(now())
 
+  // A Mark watched (R5) carried over from the live row when it is reopened. A plain id, not a relation,
+  // so the record outlives the HR account.
+  markedWatchedById   String?
+  markedWatchedAt     DateTime?
+  markedWatchedReason String?
+
   user        User     @relation("OnboardingProgressHistoryUser", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, moduleId])
