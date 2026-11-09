@@ -36,7 +36,7 @@ export async function watchableVideo(
   if (row.status === 'LOCKED' && !row.unlockedEarlyById) return null
   const facts = await loadRowFacts(db, userId, row)
   if (!facts) return null
-  const blocks = await moduleBlocks(db, module.currentVersionId, facts, true)
+  const blocks = await moduleBlocks(db, module.currentVersionId, facts, 'all')
   return moduleVideo(blocks, (await getAcademyConfig(db)).videos)?.video ?? null
 }
 

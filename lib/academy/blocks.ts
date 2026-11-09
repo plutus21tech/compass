@@ -123,6 +123,19 @@ export function readingBlocks(blocks: readonly Block[]): Block[] {
   return blocks.filter((b) => !(b.type === 'inputField' && COLLECTING_TARGETS.includes(b.target)))
 }
 
+/** What a row may collect: the course takes everything, a Module 11 re-read only payout, the rest nothing. */
+export type Collects = 'all' | 'payout' | 'none'
+
+/**
+ * The blocks a row shows for what it collects. A re-read of Module 11 keeps the payout form, which a
+ * contractor may update, and drops the bank form, which only the course row can save.
+ */
+export function collectingBlocks(blocks: readonly Block[], collects: Collects): Block[] {
+  if (collects === 'all') return [...blocks]
+  if (collects === 'none') return readingBlocks(blocks)
+  return blocks.filter((b) => !(b.type === 'inputField' && COLLECTING_TARGETS.includes(b.target) && b.target !== 'payout'))
+}
+
 /** Removes conditional blocks whose rule fails and flattens the ones that pass, at any depth. */
 export function filterBlocks(blocks: Block[], facts: ConditionFacts): Block[] {
   return blocks.flatMap((block): Block[] => {

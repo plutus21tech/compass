@@ -15,7 +15,7 @@ import {
   listCourseModules,
   lockPaymentRow,
   lockProgressRow,
-  collectsData,
+  collectionFor,
   moduleBlocks,
   versionIdFor,
 } from './progress'
@@ -129,7 +129,7 @@ export async function signAcknowledgement(
     const context = await buildAcademyContext(tx, userId, row)
     if (!context) throw new AcademyError('Module not found', 404)
     const versionId = versionIdFor(row, module)
-    const blocks = renderBlocks(await moduleBlocks(tx, versionId, context, await collectsData(tx, row)), context.placeholders)
+    const blocks = renderBlocks(await moduleBlocks(tx, versionId, context, await collectionFor(tx, row)), context.placeholders)
     const block = blocks.find((b) => b.type === 'acknowledgement' && b.kind === input.kind)
     if (!block || block.type !== 'acknowledgement') throw new AcademyError("That isn't part of this module.", 400)
 

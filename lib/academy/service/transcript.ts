@@ -4,7 +4,7 @@ import { AcademyError } from '../errors'
 import { VIDEO_KEYS, VIDEO_LANGUAGES, isVideoReady, type VideoKey, type VideoLanguage } from '../video'
 import { loadRowFacts } from './context'
 import { getAcademyConfig } from './library'
-import { collectsData, listCourseModules, moduleBlocks, versionIdFor } from './progress'
+import { collectionFor, listCourseModules, moduleBlocks, versionIdFor } from './progress'
 
 type Db = PrismaClient | Prisma.TransactionClient
 type Viewer = Pick<SafeUser, 'id' | 'role'>
@@ -27,7 +27,7 @@ async function canOpenVideo(db: Db, userId: string, key: VideoKey): Promise<bool
     if (!module || (row.status === 'LOCKED' && !row.unlockedEarlyById)) continue
     const facts = await loadRowFacts(db, userId, row)
     if (!facts) continue
-    const blocks = await moduleBlocks(db, versionIdFor(row, module), facts, await collectsData(db, row))
+    const blocks = await moduleBlocks(db, versionIdFor(row, module), facts, await collectionFor(db, row))
     if (blocks.some((b) => b.type === 'video' && b.videoKey === key)) return true
   }
   return false

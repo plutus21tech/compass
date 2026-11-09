@@ -146,7 +146,7 @@ async function chapterLinks(db: Db, userId: string, facts: Pick<LearnerFacts, 'c
     if (!module) return NO_CHAPTER_LINKS
     const row = await db.onboardingProgress.findUnique({ where: { userId_moduleId: { userId, moduleId: module.id } } })
     if (!row || (row.status === 'LOCKED' && !row.unlockedEarlyById)) return NO_CHAPTER_LINKS
-    const blocks = await moduleBlocks(db, versionIdFor(row, module), facts, true)
+    const blocks = await moduleBlocks(db, versionIdFor(row, module), facts, 'all')
     const found = moduleVideo(blocks, (await getAcademyConfig(db)).videos)
     if (!found) return NO_CHAPTER_LINKS
     return (key) => (key !== null && chapterStart(found.video, key) !== null ? chapterHref(key) : null)

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { filterBlocks, parseBlocks, readingBlocks, type Block, type ConditionFacts } from '../lib/academy/blocks'
+import { collectingBlocks, filterBlocks, parseBlocks, readingBlocks, type Block, type ConditionFacts } from '../lib/academy/blocks'
 
 const attrs = { officeLocation: 'KARACHI', remoteCountry: null, workMode: 'OFFICE', contractType: null, employmentStatus: null } as const
 const facts = (over: Partial<ConditionFacts> = {}): ConditionFacts => ({
@@ -82,4 +82,14 @@ test('readingBlocks drops what a re-read must not collect, and keeps the Discord
   const text: Block = { type: 'richText', markdown: 'Read me' }
   const kept = readingBlocks([text, field('linkedinUrl'), field('bank'), field('payout'), field('discordUsername')])
   assert.deepEqual(kept, [text, field('discordUsername')])
+})
+
+test('collectingBlocks: a course row keeps every field; a re-read of Module 11 keeps payout only', () => {
+  const field = (target: 'discordUsername' | 'linkedinUrl' | 'bank' | 'payout'): Block => ({ type: 'inputField', target, label: target })
+  const text: Block = { type: 'richText', markdown: 'Read me' }
+  const all = [text, field('linkedinUrl'), field('bank'), field('payout'), field('discordUsername')]
+  assert.deepEqual(collectingBlocks(all, 'all'), all)
+  // A PK employee re-reading Module 11 can't change bank details, so the form isn't shown.
+  assert.deepEqual(collectingBlocks(all, 'payout'), [text, field('payout'), field('discordUsername')])
+  assert.deepEqual(collectingBlocks(all, 'none'), readingBlocks(all))
 })

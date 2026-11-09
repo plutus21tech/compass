@@ -158,3 +158,17 @@ test('staff assigned Module 11 fresh have no history and still get 403', ACADEMY
   await assert.rejects(savePayout(prisma, P.hire.id, wise), (e: unknown) => e instanceof AcademyError && e.status === 403)
   assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: P.hire.id } }), 0)
 })
+
+test('a Module 11 re-read shows a PK employee no bank form, and a contractor the payout form', ACADEMY_DB_TEST, async () => {
+  const { loadModule } = await import('../lib/academy/service/course')
+  const paymentModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'getting-paid' } })
+  await prisma.onboardingProgress.create({
+    data: { userId: P.staff.id, moduleId: paymentModule.id, status: 'COMPLETED', source: 'REREAD', completedAt: new Date() },
+  })
+  await prisma.onboardingProgressHistory.create({ data: { userId: P.staff.id, moduleId: paymentModule.id, completedAt: new Date() } })
+  await rereadPaymentRow(true)
+  const targets = async (userId: string) =>
+    (await loadModule(prisma, userId, 'getting-paid')).blocks.flatMap((b) => (b.type === 'inputField' ? [b.target] : []))
+  assert.deepEqual(await targets(P.staff.id), [])
+  assert.deepEqual(await targets(P.hire.id), ['payout'])
+})

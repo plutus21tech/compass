@@ -1,6 +1,6 @@
 import type { OnboardingModule, OnboardingPhase, OnboardingCompletionRule, OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
 import type { PersonAttributes } from '../attributes'
-import { filterBlocks, parseBlocks, readingBlocks, type Block } from '../blocks'
+import { collectingBlocks, filterBlocks, parseBlocks, type Block, type Collects } from '../blocks'
 import { effectiveRule, evaluateCompletion, type PaymentFacts } from '../completion'
 import { AcademyError } from '../errors'
 import { resolveAcademyLink } from '../links'
@@ -111,15 +111,22 @@ export function assertCollectsData(row: Pick<OnboardingProgress, 'source'>): voi
 }
 
 /**
- * Whether this row takes saved data: it came through the course, or the person went through the module
- * in it before (archive() writes history on every reopen). Fresh assignments have none, so they only read.
+ * What this row takes in: the course row everything. Module 11 read again by someone who went through
+ * it before (archive() writes history on every reopen) takes payout only, since bank details are set
+ * once. Fresh assignments and every other module only read.
  */
-export async function collectsData(db: Db, row: Pick<OnboardingProgress, 'source' | 'userId' | 'moduleId'>): Promise<boolean> {
-  if (row.source === 'COURSE') return true
+export async function collectionFor(db: Db, row: Pick<OnboardingProgress, 'source' | 'userId' | 'moduleId'>): Promise<Collects> {
+  if (row.source === 'COURSE') return 'all'
   // Only Module 11 collects after a re-read: LinkedIn and the rest stay reading-only.
   const paymentModule = (await listCourseModules(db)).find((m) => m.slug === BANK_MODULE_SLUG)
-  if (paymentModule?.id !== row.moduleId) return false
-  return (await db.onboardingProgressHistory.count({ where: { userId: row.userId, moduleId: row.moduleId } })) > 0
+  if (paymentModule?.id !== row.moduleId) return 'none'
+  const before = await db.onboardingProgressHistory.count({ where: { userId: row.userId, moduleId: row.moduleId } })
+  return before > 0 ? 'payout' : 'none'
+}
+
+/** Whether this row takes any saved data at all. */
+export async function collectsData(db: Db, row: Pick<OnboardingProgress, 'source' | 'userId' | 'moduleId'>): Promise<boolean> {
+  return (await collectionFor(db, row)) !== 'none'
 }
 
 /** The payout path's refusal: a contractor who went through Module 11 may still update after a re-read. */
@@ -155,13 +162,13 @@ export function versionIdFor(row: Pick<OnboardingProgress, 'status' | 'versionId
 
 /** The version's blocks with this person's conditions applied, less what a reading row doesn't collect. */
 export async function moduleBlocks(
-  db: Db, versionId: string, facts: Pick<LearnerFacts, 'conditions'>, collects: boolean,
+  db: Db, versionId: string, facts: Pick<LearnerFacts, 'conditions'>, collects: Collects,
 ): Promise<Block[]> {
   const version = await db.onboardingModuleVersion.findUnique({ where: { id: versionId }, select: { blocks: true } })
   if (!version) throw notFound()
   try {
     const shown = filterBlocks(parseBlocks(version.blocks), facts.conditions)
-    return collects ? shown : readingBlocks(shown)
+    return collectingBlocks(shown, collects)
   } catch (error) {
     console.error('[academy] stored module content failed validation', { versionId, error })
     throw new AcademyError("This module's content couldn't be loaded. Tell HR.", 500)
@@ -251,7 +258,7 @@ export async function recordEvent(
     const facts = await requireRowFacts(tx, userId, row)
     assertModuleOpen(row, index)
     const versionId = versionIdFor(row, module)
-    const blocks = await moduleBlocks(tx, versionId, facts, await collectsData(tx, row))
+    const blocks = await moduleBlocks(tx, versionId, facts, await collectionFor(tx, row))
     assertKnownEventKey(event, blocks, facts)
 
     const current = parseProgressState(row.state)
@@ -282,7 +289,7 @@ export async function completeModule(
     if (row.status === 'COMPLETED') return { nextSlug, alreadyCompleted: true }
     assertModuleOpen(row, index)
 
-    const blocks = await moduleBlocks(tx, module.currentVersionId, facts, await collectsData(tx, row))
+    const blocks = await moduleBlocks(tx, module.currentVersionId, facts, await collectionFor(tx, row))
     const state = parseProgressState(row.state)
     const { completion } = await evaluateModule(tx, userId, facts, module, blocks, state, module.currentVersionId)
     if (!completion.met) throw new AcademyError(completion.reason, 409)
