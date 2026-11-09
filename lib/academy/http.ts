@@ -17,6 +17,20 @@ export async function requireAcademySession(): Promise<SafeUser> {
   return user
 }
 
+const TOO_LARGE_MESSAGE = 'That request is too large.'
+
+/**
+ * Reads a JSON body of at most `maxChars`, refusing a larger one with 413 before parsing it. A
+ * declared length over the cap is refused without reading. Bad JSON throws a SyntaxError (a 400).
+ */
+export async function readBoundedJson(request: Request, maxChars: number): Promise<unknown> {
+  const declared = Number(request.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > maxChars) throw new AcademyError(TOO_LARGE_MESSAGE, 413)
+  const text = await request.text()
+  if (text.length > maxChars) throw new AcademyError(TOO_LARGE_MESSAGE, 413)
+  return JSON.parse(text) as unknown
+}
+
 /** Same-origin and rate-limit guard for Academy writes. */
 export async function guardAcademyMutation(
   request: NextRequest, userId: string, bucket: MutationBucket = 'default',

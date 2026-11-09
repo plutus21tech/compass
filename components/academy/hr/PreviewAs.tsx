@@ -40,11 +40,12 @@ interface ChoiceProps<T extends string> {
   value: T
   labelFor: (value: T) => string
   onChange: (value: T) => void
+  className?: string
 }
 
-function Choice<T extends string>({ id, label, options, value, labelFor, onChange }: ChoiceProps<T>) {
+function Choice<T extends string>({ id, label, options, value, labelFor, onChange, className }: ChoiceProps<T>) {
   return (
-    <div className="space-y-1">
+    <div className={cn('min-w-0 space-y-1', className)}>
       <Label htmlFor={id} className="text-xs">{label}</Label>
       <Select value={value} onValueChange={(next) => onChange(next as T)}>
         <SelectTrigger id={id} className="h-9"><SelectValue /></SelectTrigger>
@@ -87,8 +88,9 @@ function FactsForm({ facts, source, country, onFacts, onSource, onCountry }: Fac
       ) : null}
       <Choice id="preview-mode" label={ATTRIBUTE_LABELS.workMode} options={WORK_MODES} value={facts.workMode}
         labelFor={attributeValueLabel} onChange={(v) => set('workMode', v)} />
+      {/* "Pakistan employment contract" needs two columns to show in full. */}
       <Choice id="preview-contract" label={ATTRIBUTE_LABELS.contractType} options={CONTRACT_TYPES} value={facts.contractType}
-        labelFor={attributeValueLabel} onChange={(v) => set('contractType', v)} />
+        labelFor={attributeValueLabel} onChange={(v) => set('contractType', v)} className="col-span-2" />
       <Choice id="preview-status" label={ATTRIBUTE_LABELS.employmentStatus} options={EMPLOYMENT_STATUSES} value={facts.employmentStatus}
         labelFor={attributeValueLabel} onChange={(v) => set('employmentStatus', v)} />
       <Choice id="preview-wing" label="Wing" options={COMPANY_WINGS} value={facts.companyWing}
@@ -145,17 +147,18 @@ export function PreviewAs({ moduleId, dirty }: PreviewAsProps) {
     if (typed === '' || COUNTRY_CODE.test(typed)) setFacts((current) => ({ ...current, remoteCountry: typed || null }))
   }
 
-  // Only the latest answer lands: a slow one for facts HR has already changed is dropped.
+  // Only the latest answer lands: a request for facts HR has already changed is aborted.
   useEffect(() => {
     if (!open) return
-    let current = true
+    const request = new AbortController()
+    const current = () => !request.signal.aborted
     setLoading(true)
     setError(null)
-    academyFetch<PreviewView>(`/api/admin/onboarding/content/${moduleId}/preview`, { method: 'POST', body: { source, facts } })
-      .then((next) => { if (current) setPreview(next) })
-      .catch((e) => { if (current) setError(e instanceof Error ? e.message : 'Could not load the preview') })
-      .finally(() => { if (current) setLoading(false) })
-    return () => { current = false }
+    academyFetch<PreviewView>(`/api/admin/onboarding/content/${moduleId}/preview`, { method: 'POST', body: { source, facts }, signal: request.signal })
+      .then((next) => { if (current()) setPreview(next) })
+      .catch((e) => { if (current()) setError(e instanceof Error ? e.message : 'Could not load the preview') })
+      .finally(() => { if (current()) setLoading(false) })
+    return () => request.abort()
   }, [facts, moduleId, open, source])
 
   return (

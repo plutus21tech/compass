@@ -34,6 +34,9 @@ export const previewRequestSchema = z
 
 export type PreviewRequest = z.infer<typeof previewRequestSchema>
 
+/** A real preview body is a few hundred characters: enums, a country code and a yes or no. */
+export const PREVIEW_BODY_MAX_CHARS = 2_000
+
 export const DEFAULT_PREVIEW_FACTS: PreviewFacts = previewFactsSchema.parse({})
 
 /** Stands in for an account name when the preview says the hire has one. */

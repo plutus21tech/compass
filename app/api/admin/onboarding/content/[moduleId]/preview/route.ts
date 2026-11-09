@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAcademyHr } from '@/lib/academy/hr-route'
-import { academyErrorResponse, guardAcademyMutation } from '@/lib/academy/http'
+import { academyErrorResponse, guardAcademyMutation, readBoundedJson } from '@/lib/academy/http'
+import { PREVIEW_BODY_MAX_CHARS } from '@/lib/academy/preview'
 import { previewModule } from '@/lib/academy/service/preview'
 
 export const runtime = 'nodejs'
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const user = await requireAcademyHr()
     await guardAcademyMutation(request, user.id, 'preview')
     const { moduleId } = await context.params
-    const data = await previewModule(prisma, user, moduleId, await request.json())
+    const data = await previewModule(prisma, user, moduleId, await readBoundedJson(request, PREVIEW_BODY_MAX_CHARS))
     return NextResponse.json({ success: true, data }, { headers: { 'Cache-Control': NO_STORE } })
   } catch (error) {
     const response = academyErrorResponse(error)
