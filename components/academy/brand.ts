@@ -14,6 +14,9 @@ export const ACADEMY_COLOURS = {
   'danger-tint': '#FDEEED',
   success: '#17693F',
   'success-on-navy': '#8FE3B4',
+  // Plutus Blue lifted for marks on navy, where #3463EC is under 3:1.
+  'blue-on-navy': '#93ADFF',
+  'navy-deep': '#1E2230',
 } as const
 
 /** Used only as fills and strips, with navy text. Stage 2 has no value cards yet. */

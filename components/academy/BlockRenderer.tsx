@@ -1,4 +1,5 @@
 import type { Block } from '@/lib/academy/blocks'
+import type { ModuleBlockView } from '@/lib/academy/view'
 import type { BlockContext } from './types'
 import { AcknowledgementBlock } from './blocks/AcknowledgementBlock'
 import { CallTimesBlock } from './blocks/CallTimesBlock'
@@ -19,7 +20,8 @@ import { VideoBlock } from './blocks/VideoBlock'
 import { WarningBoxBlock } from './blocks/WarningBoxBlock'
 
 interface BlockRendererProps {
-  block: Block
+  /** A top-level block carries its video details; a conditional's children are plain blocks. */
+  block: Block | ModuleBlockView
   context: BlockContext
 }
 
@@ -27,7 +29,7 @@ interface BlockRendererProps {
 export function BlockRenderer({ block, context }: BlockRendererProps) {
   switch (block.type) {
     case 'video':
-      return <VideoBlock block={block} />
+      return <VideoBlock block={block} context={context} />
     case 'richText':
       return <RichTextBlock block={block} />
     case 'peopleCards':

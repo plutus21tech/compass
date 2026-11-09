@@ -7,6 +7,8 @@ import type { ModuleProgressView } from '@/lib/academy/view'
 import { displayedState, footerState, type FooterState } from '@/lib/academy/view-labels'
 import { academyRequest, errorMessage } from './api'
 
+const videoEvent = (seconds: number): ProgressEvent => ({ type: 'VIDEO_PROGRESS', seconds: Math.max(0, Math.round(seconds * 10) / 10) })
+
 export interface CompleteResult { nextSlug: string | null; alreadyCompleted: boolean }
 
 export interface ModuleProgress {
@@ -18,7 +20,12 @@ export interface ModuleProgress {
   setCheck: (key: string, checked: boolean) => void
   openLink: (key: string) => void
   markScrolledEnd: () => void
-  complete: () => Promise<CompleteResult | null>
+  /** `quiet` skips the error toast: the video player retries on its next report instead. */
+  complete: (options?: { quiet?: boolean }) => Promise<CompleteResult | null>
+  /** A video report, in turn with the other writes. Null when it failed; it never toasts, the next report retries. */
+  reportVideo: (seconds: number) => Promise<ModuleProgressView | null>
+  /** The last report as the page goes away: survives the unload, and nothing waits for it. */
+  reportVideoOnHide: (seconds: number) => void
 }
 
 /**
@@ -92,16 +99,47 @@ export function useModuleProgress(slug: string, initial: ModuleProgressView): Mo
   }, [readOnly, send])
 
   const complete = useCallback(
-    () =>
+    (options?: { quiet?: boolean }) =>
       inTurn(async () => {
         try {
           return await academyRequest<CompleteResult>(`${base}/complete`, 'POST')
         } catch (error) {
-          toast.error(errorMessage(error))
+          if (!options?.quiet) toast.error(errorMessage(error))
           return null
         }
       }),
     [base, inTurn],
+  )
+
+  // Video reports skip `pending`: they change nothing the hire sees until the server answers.
+  const reportVideo = useCallback(
+    (seconds: number) =>
+      inTurn(async () => {
+        try {
+          const next = await academyRequest<ModuleProgressView>(`${base}/events`, 'POST', videoEvent(seconds))
+          if (unsaved.current === 0) setConfirmed(next)
+          return next
+        } catch {
+          return null
+        }
+      }),
+    [base, inTurn],
+  )
+
+  const reportVideoOnHide = useCallback(
+    (seconds: number) => {
+      try {
+        void fetch(`${base}/events`, {
+          method: 'POST',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(videoEvent(seconds)),
+        }).catch(() => undefined)
+      } catch {
+        // The page is going away; the next visit resumes from the last saved report.
+      }
+    },
+    [base],
   )
 
   return {
@@ -113,5 +151,7 @@ export function useModuleProgress(slug: string, initial: ModuleProgressView): Mo
     openLink,
     markScrolledEnd,
     complete,
+    reportVideo,
+    reportVideoOnHide,
   }
 }
