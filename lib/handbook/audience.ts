@@ -1,5 +1,5 @@
-import type { HandbookCategory, HandbookLayout, TeamTag } from '@prisma/client'
-import { ALL_TEAMS } from './teams'
+import type { HandbookCategory, HandbookLayout } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 
 export type VariantInput = {
   id: string
@@ -53,21 +53,32 @@ export type DetailResponse = {
 /**
  * The one variant addressed to `tag`.
  *
- * For an untagged user the rule is deliberately "a single variant covering all
- * seven teams", not "seven teams covered across variants". A page like Leave
- * Policy reaches every team, but only by saying something different to each --
- * with no tag there is no right answer, so we withhold rather than guess.
+ * For an untagged user the rule is deliberately "a single variant covering every
+ * team", not "every team covered across variants". A page like Leave Policy
+ * reaches every team, but only by saying something different to each -- with no
+ * tag there is no right answer, so we withhold rather than guess.
+ *
+ * `everyTeam` is the catalog's active tags (TeamCatalog.active): an archived tag
+ * dropped from an "Everyone" variant must not hide it from untagged people.
  */
-export function selectVariant(page: PageInput, tag: TeamTag | null): VariantInput | null {
+export function selectVariant(
+  page: PageInput,
+  tag: TeamTag | null,
+  everyTeam: readonly TeamTag[]
+): VariantInput | null {
   if (tag === null) {
-    return page.variants.find((v) => ALL_TEAMS.every((t) => v.audiences.includes(t))) ?? null
+    return page.variants.find((v) => everyTeam.every((t) => v.audiences.includes(t))) ?? null
   }
   return page.variants.find((v) => v.audiences.includes(tag)) ?? null
 }
 
-export function toHubResponse(pages: PageInput[], tag: TeamTag | null): HubResponse {
+export function toHubResponse(
+  pages: PageInput[],
+  tag: TeamTag | null,
+  everyTeam: readonly TeamTag[]
+): HubResponse {
   const visible = pages
-    .filter((p) => p.isPublished && selectVariant(p, tag) !== null)
+    .filter((p) => p.isPublished && selectVariant(p, tag, everyTeam) !== null)
     .sort((a, b) => a.orderIndex - b.orderIndex)
     .map(
       (p): HubPage => ({
@@ -85,10 +96,14 @@ export function toHubResponse(pages: PageInput[], tag: TeamTag | null): HubRespo
   return { pages: visible, untagged: tag === null }
 }
 
-export function toDetailResponse(page: PageInput, tag: TeamTag | null): DetailResponse | null {
+export function toDetailResponse(
+  page: PageInput,
+  tag: TeamTag | null,
+  everyTeam: readonly TeamTag[]
+): DetailResponse | null {
   if (!page.isPublished) return null
 
-  const variant = selectVariant(page, tag)
+  const variant = selectVariant(page, tag, everyTeam)
   if (!variant) return null
 
   return {

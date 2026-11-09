@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { TeamTag } from '@prisma/client'
+import type { TeamTag } from '../lib/teams/catalog'
 import {
   companyWideHolidayDates,
   workingDaysByTeam,

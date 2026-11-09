@@ -2,9 +2,9 @@ import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/db'
 import { formatReportAsHTML, generateDetailedReport } from './reports'
 import { escapeHtml } from '@/lib/sanitize'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, type TeamTag } from '@/lib/teams/catalog'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { groupHolidaysByTeam, holidayIdsFullyDelivered, monthRangeUtc } from '@/lib/holidays'
-import type { TeamTag } from '@prisma/client'
 import { calculateLeaveDuration, getExpectedReturnDate } from '@/lib/leave-utils'
 import { safeRecordLeaveAuditEvent } from '@/lib/leave-audit'
 import { calculateWfhDays } from '@/lib/wfh-utils'
@@ -1763,7 +1763,9 @@ async function deliverHolidayEmails({
   }
 
   const isNew = scope === 'new'
-  const byTeam = groupHolidaysByTeam(holidays, ALL_TEAMS)
+  const teams = await loadTeamCatalog()
+  const labelOf = (team: TeamTag) => teamLabel(teams, team)
+  const byTeam = groupHolidaysByTeam(holidays, teams.all)
   const ccEmails = await getHolidayCcEmails()
   const skipped: string[] = []
   const plan: HolidayPlanEntry[] = []
@@ -1791,13 +1793,13 @@ async function deliverHolidayEmails({
     const to = mergeRecipientEmails(recipients.map((r) => r.email))
 
     if (to.length === 0) {
-      skipped.push(`${TEAM_LABELS[team]}: nobody tagged`)
+      skipped.push(`${labelOf(team)}: nobody tagged`)
       continue
     }
 
     plan.push({
       team,
-      teamLabel: TEAM_LABELS[team],
+      teamLabel: labelOf(team),
       recipients: to.length,
       holidays: teamHolidays.map((holiday) => holiday.name),
     })
@@ -1827,11 +1829,11 @@ async function deliverHolidayEmails({
         : 'New Public Holidays'
       : `Public Holidays in ${label}`
     const subject = isNew
-      ? `${heading} — ${TEAM_LABELS[team]}`
-      : `Public Holidays in ${label} — ${TEAM_LABELS[team]}`
+      ? `${heading} — ${labelOf(team)}`
+      : `Public Holidays in ${label} — ${labelOf(team)}`
     const intro = isNew
-      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(TEAM_LABELS[team])}.`
-      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(TEAM_LABELS[team])} this month.`
+      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(labelOf(team))}.`
+      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(labelOf(team))} this month.`
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px;">
@@ -1860,15 +1862,15 @@ async function deliverHolidayEmails({
       })
       sent++
     } catch (error) {
-      console.error(`Failed to send holiday email to ${TEAM_LABELS[team]}:`, error)
-      skipped.push(`${TEAM_LABELS[team]}: send failed`)
+      console.error(`Failed to send holiday email to ${labelOf(team)}:`, error)
+      skipped.push(`${labelOf(team)}: send failed`)
       failedTeams.add(team)
     }
   }
 
   let announced = 0
   if (!dryRun) {
-    const deliveredIds = holidayIdsFullyDelivered(holidays, failedTeams, ALL_TEAMS)
+    const deliveredIds = holidayIdsFullyDelivered(holidays, failedTeams, teams.all)
     if (deliveredIds.length > 0) {
       // `notifiedAt: null` keeps the first announcement's timestamp rather than
       // overwriting it every time the monthly digest re-lists the same holiday.

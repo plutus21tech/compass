@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { getAllPages } from '@/lib/handbook/queries'
 import { toHubResponse } from '@/lib/handbook/audience'
 import { resolvePreviewTeam } from '@/lib/handbook/preview'
+import { loadTeamCatalog } from '@/lib/teams/load'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,9 +16,9 @@ export async function GET(request: NextRequest) {
     // user's own, unless they are HR previewing another team. Never return
     // every variant for the client to filter: teams differ on compensation
     // terms, so that would leak other teams' terms via devtools.
-    const tag = resolvePreviewTeam(request.nextUrl.searchParams.get('previewTeam'), user)
-    const pages = await getAllPages()
-    return NextResponse.json(toHubResponse(pages, tag))
+    const [pages, teams] = await Promise.all([getAllPages(), loadTeamCatalog()])
+    const tag = resolvePreviewTeam(request.nextUrl.searchParams.get('previewTeam'), user, teams.all)
+    return NextResponse.json(toHubResponse(pages, tag, teams.active))
   } catch (error) {
     console.error('Failed to fetch handbook hub:', error)
     return NextResponse.json({ error: 'Failed to fetch handbook' }, { status: 500 })

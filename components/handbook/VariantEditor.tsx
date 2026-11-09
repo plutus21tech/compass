@@ -9,7 +9,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Trash2, Eye, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { ALL_TEAMS, TEAM_LABELS, expandGroup } from '@/lib/handbook/teams'
+import {
+  expandGroup,
+  pickerTeams,
+  teamLabel,
+  type AudienceGroup,
+  type TeamCatalog,
+} from '@/lib/handbook/teams'
 import { matchGroup } from '@/lib/handbook/coverage'
 import { HandbookMarkdown } from '@/components/handbook/HandbookMarkdown'
 
@@ -21,10 +27,12 @@ export type EditableVariant = {
 
 export function VariantEditor({
   variant,
+  catalog,
   onSaved,
   onDeleted,
 }: {
   variant: EditableVariant
+  catalog: TeamCatalog
   onSaved: () => void
   onDeleted: () => void
 }) {
@@ -33,7 +41,16 @@ export function VariantEditor({
   const [preview, setPreview] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const group = matchGroup(audiences)
+  const group = matchGroup(audiences, catalog)
+
+  // Archived teams the variant already reaches are kept, so picking a group does not
+  // quietly cut off people who still carry an archived tag.
+  const applyGroup = (target: AudienceGroup) => {
+    setAudiences((prev) => [
+      ...expandGroup(target, catalog),
+      ...prev.filter((t) => !catalog.active.includes(t)),
+    ])
+  }
 
   const toggleTeam = (team: string) => {
     setAudiences((prev) => (prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team]))
@@ -106,20 +123,16 @@ export function VariantEditor({
 
         {/* Group expansions write the underlying teams -- the groups are never stored. */}
         <div className="flex flex-wrap gap-2 mb-3">
-          <Button variant="outline" size="sm" onClick={() => setAudiences(expandGroup('EVERYONE'))}>
+          <Button variant="outline" size="sm" onClick={() => applyGroup('EVERYONE')}>
             Everyone
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setAudiences(expandGroup('PLUTUS21_INTERNAL'))}
-          >
+          <Button variant="outline" size="sm" onClick={() => applyGroup('PLUTUS21_INTERNAL')}>
             Plutus21 Internal
           </Button>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-5">
-          {ALL_TEAMS.map((team) => {
+          {pickerTeams(catalog, audiences).map((team) => {
             const on = audiences.includes(team)
             return (
               <button
@@ -133,7 +146,8 @@ export function VariantEditor({
                     : 'border-border text-muted-foreground hover:bg-muted'
                 )}
               >
-                {TEAM_LABELS[team]}
+                {teamLabel(catalog, team)}
+                {!catalog.active.includes(team) && ' (archived)'}
               </button>
             )
           })}
