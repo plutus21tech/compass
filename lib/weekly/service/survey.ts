@@ -1,5 +1,5 @@
-// UX spec, section 11: the weekly company sentiment question. HR keeps a bank per quarter; each week of the round
-// everyone gets the next question, and the last week repeats the eNPS question for a start-and-end comparison. It never
+// UX spec, section 11: the company sentiment (pulse) survey. HR keeps a bank per quarter; once a month (every four
+// weeks) everyone gets the next batch, and the last batch repeats the eNPS question for a start-and-end comparison. It never
 // counts toward a score. Each answer can be anonymous: stored with no user, and with the department only when at least
 // five from that department answered that question anonymously that week.
 import type { SurveyQuestionKind } from '@prisma/client'
@@ -55,14 +55,23 @@ async function activeBank(periodId: string) {
   return prisma.surveyQuestion.findMany({ where: { periodId, removedAt: null }, orderBy: { orderIndex: 'asc' } })
 }
 
+/** The pulse survey goes out once a month: a batch of questions every this many weeks, from week 1. */
+export const SURVEY_INTERVAL_WEEKS = 4
+
+/** The weeks a batch goes out: week 1, then every four weeks while the round lasts. */
+export function surveyBatchWeeks(totalWeeks: number): number[] {
+  const count = Math.floor((Math.max(1, totalWeeks) - 1) / SURVEY_INTERVAL_WEEKS) + 1
+  return Array.from({ length: count }, (_, i) => 1 + i * SURVEY_INTERVAL_WEEKS)
+}
+
 /**
- * One question a week across the round's weeks; the eNPS repeat goes in the last week when there is a week to spare. A
- * shorter round drops the repeat first, then asks more than one a week.
+ * The bank split evenly, in order, over the monthly batches. The eNPS repeat goes in the last batch, for a start-and-end
+ * comparison; a round with a single batch has no repeat.
  */
 export function surveyDueWeeks(bankSize: number, totalWeeks: number): { weeks: number[]; repeatWeek: number | null } {
-  const weeks = Math.max(1, totalWeeks)
-  const perWeek = Math.max(1, Math.ceil(bankSize / weeks))
-  return { weeks: Array.from({ length: bankSize }, (_, i) => Math.floor(i / perWeek) + 1), repeatWeek: bankSize < weeks ? weeks : null }
+  const batches = surveyBatchWeeks(totalWeeks)
+  const perBatch = Math.max(1, Math.ceil(bankSize / batches.length))
+  return { weeks: Array.from({ length: bankSize }, (_, i) => batches[Math.floor(i / perBatch)]), repeatWeek: batches.length > 1 ? batches[batches.length - 1] : null }
 }
 
 async function surveyWeek(now: Date) {
@@ -154,7 +163,7 @@ async function periodWeeks(periodId: string, now: Date): Promise<{ totalWeeks: n
   return { totalWeeks, week: Math.min(totalWeeks, Math.max(1, effectiveWeek(cycle.weekOneStartsOn, cycle.simulatedWeek, now))) }
 }
 
-/** Loads the standard bank: one question a week, and the eNPS repeat in the last week when the round has room. */
+/** Loads the standard bank in monthly batches, with the eNPS repeat in the last batch. */
 export async function loadDefaultSurvey(actor: WeeklyActor, periodId: string, now: Date = new Date()): Promise<void> {
   assertHr(actor)
   const { totalWeeks } = await periodWeeks(periodId, now)

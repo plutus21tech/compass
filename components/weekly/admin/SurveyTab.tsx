@@ -120,7 +120,7 @@ export function SurveyTab() {
   return (
     <div className="space-y-4">
       <CyclePicker cycles={cycles} cycleId={cycleId} onChange={setCycleId} />
-      <p className="text-sm text-muted-foreground">Everyone gets one question a week; the last week repeats the eNPS question. Answers are confidential to HR and never part of a score. Named answers show who answered what. Anonymous ones carry no name, and show a department only when at least five from it answered that week.</p>
+      <p className="text-sm text-muted-foreground">Questions go out once a month, a batch every four weeks from week 1; the last batch repeats the eNPS question. Answers are confidential to HR and never part of a score. Named answers show who answered what. Anonymous ones carry no name, and show a department only when at least five from it answered that week.</p>
       {bank && bank.length === 0 && (
         <Button onClick={() => void act({ action: 'load-default', periodId }, 'The standard 12 questions are loaded')}>Load the standard 12 questions</Button>
       )}
