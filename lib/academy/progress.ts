@@ -70,12 +70,15 @@ export const VIDEO_SPEED_ALLOWANCE = 1.1
 /** Seconds a report may run ahead of the time passed. Spent once, and refilled only by watching. */
 export const VIDEO_TOLERANCE_SECONDS = 15
 export const VIDEO_COMPLETE_SHARE = 0.95
+/** The most real time one report can count, so a gap (a tab left open, a late first report) isn't watching. */
+export const VIDEO_MAX_ELAPSED_SECONDS = 30
 
 const secondsBetween = (from: Date, to: Date): number => (to.getTime() - from.getTime()) / 1000
 
 /**
  * The server's count of how far someone has watched. The new furthest is
- * min(seconds, previous + elapsed x 1.1 + 15, duration), and it never drops. A count made against
+ * min(seconds, previous + elapsed x 1.1 + 15, duration), and it never drops. Elapsed is capped at 30
+ * seconds per report, so a long gap counts as 30 seconds of watching. A count made against
  * another duration restarts from 0 with no elapsed time. With no count yet, elapsed runs from the
  * row's start, or is 0 when there is none.
  */
@@ -91,7 +94,8 @@ export function applyVideoProgress(
   const previous = sameVideo ? stored.furthest : 0
   const clock = sameVideo ? new Date(stored.reportedAt) : stored === undefined && startedAt ? startedAt : now
   // A clock moved ahead by spent tolerance makes elapsed negative: the spent part comes back off.
-  const budget = previous + secondsBetween(clock, now) * VIDEO_SPEED_ALLOWANCE + VIDEO_TOLERANCE_SECONDS
+  const elapsed = Math.min(secondsBetween(clock, now), VIDEO_MAX_ELAPSED_SECONDS)
+  const budget = previous + elapsed * VIDEO_SPEED_ALLOWANCE + VIDEO_TOLERANCE_SECONDS
   const furthest = Math.max(previous, Math.min(seconds, budget, durationSeconds))
   // What is left of the budget carries over as tolerance, never above the full 15.
   const tolerance = Math.min(VIDEO_TOLERANCE_SECONDS, Math.max(0, budget - furthest))

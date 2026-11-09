@@ -76,6 +76,14 @@ test('a ready video makes the rule VIDEO_95 and shows the player details', ACADE
   assert.equal('transcripts' in block, false)
 })
 
+test('a first report an hour after the start gains at most 48', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await setVideos({ VIDEO_1: VIDEO })
+  await loadModule(prisma, HIRE_ID, 'welcome', T0)
+  await report(VIDEO.durationSeconds, at(3600))
+  assert.ok((await furthest())! <= 48)
+})
+
 test('posting 600 seconds right after the start gives at most 15', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await setVideos({ VIDEO_1: VIDEO })
@@ -112,7 +120,7 @@ test('furthest never drops', ACADEMY_DB_TEST, async () => {
   await createReleasedHire()
   await setVideos({ VIDEO_1: VIDEO })
   await loadModule(prisma, HIRE_ID, 'welcome', T0)
-  await report(80, at(80))
+  for (let t = 10; t <= 80; t += 10) await report(t, at(t))
   await report(20, at(90))
   assert.equal(await furthest(), 80)
 })

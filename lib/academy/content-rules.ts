@@ -51,7 +51,7 @@ export const blockTypeLabel = (type: BlockType): string => BLOCK_LABELS[type]
 
 /** How a hire finishes each module, for the editor's header. */
 export const COMPLETION_RULE_LABELS: Record<OnboardingCompletionRule, string> = {
-  VIDEO_95: 'Hires finish this module by scrolling to the end of the page.',
+  VIDEO_95: "Hires finish this module by watching the video to the end, or by reading to the end while the video isn't ready.",
   SCROLL_END: 'Hires finish this module by reading to the end.',
   ALL_LINKS_OPENED: 'Hires finish this module by opening every tutorial.',
   LINK_OPENED: 'Hires finish this module by opening the Company Dashboard.',

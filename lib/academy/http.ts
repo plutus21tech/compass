@@ -4,6 +4,7 @@ import { getSession, type SafeUser } from '@/lib/auth'
 import { formatZodIssues } from './profile-input'
 import { isAcademyEnabled } from './flag'
 import { AcademyError } from './errors'
+import { mutationLimitFor, type MutationBucket } from './rate-limits'
 import { checkRateLimit, RateLimitUnavailableError } from '@/lib/rate-limit'
 import { assertSameOrigin, SameOriginError } from '@/lib/security/same-origin'
 
@@ -16,13 +17,14 @@ export async function requireAcademySession(): Promise<SafeUser> {
   return user
 }
 
-const MUTATIONS_PER_WINDOW = 120
-
 /** Same-origin and rate-limit guard for Academy writes. */
-export async function guardAcademyMutation(request: NextRequest, userId: string): Promise<void> {
+export async function guardAcademyMutation(
+  request: NextRequest, userId: string, bucket: MutationBucket = 'default',
+): Promise<void> {
   assertSameOrigin(request.headers, request.url)
   try {
-    const limit = await checkRateLimit(`academy:${userId}`, MUTATIONS_PER_WINDOW)
+    const { key, max } = mutationLimitFor(userId, bucket)
+    const limit = await checkRateLimit(key, max)
     if (!limit.allowed) throw new AcademyError('Too many changes in a short time. Wait a few minutes and try again.', 429)
   } catch (error) {
     if (error instanceof RateLimitUnavailableError) {
