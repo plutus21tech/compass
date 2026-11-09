@@ -78,8 +78,9 @@ export function QuizFlow({ view, name, timeZone }: QuizFlowProps) {
     }
   }
 
-  /** The result is already on screen: this only learns how long the wait is. */
+  /** The result is already on screen: this only learns how long the wait is, or that it is over. */
   const checkWait = async () => {
+    setScreen((current) => (current.kind === 'results' ? { ...current, wait: { kind: 'checking' } } : current))
     try {
       setScreen(screenFor(await readView()))
     } catch (error) {
@@ -89,7 +90,11 @@ export function QuizFlow({ view, name, timeZone }: QuizFlowProps) {
     }
   }
 
+  // A second press lands before the screen's own state does, so the guard is a ref.
+  const submitting = useRef(false)
   const submit = async (answers: SubmittedAnswer[]) => {
+    if (submitting.current) return
+    submitting.current = true
     setNotice(null)
     try {
       const result = await academyRequest<QuizResultView>(QUIZ_URL, 'POST', { answers })
@@ -98,6 +103,8 @@ export function QuizFlow({ view, name, timeZone }: QuizFlowProps) {
     } catch (error) {
       if (isStalePaper(error)) await restart(errorMessage(error))
       else setNotice(errorMessage(error))
+    } finally {
+      submitting.current = false
     }
   }
 
@@ -132,6 +139,7 @@ export function QuizFlow({ view, name, timeZone }: QuizFlowProps) {
           timeZone={timeZone}
           retaking={retaking}
           onRetake={retake}
+          onWaitOver={() => void checkWait()}
           onSign={() => goTo({ kind: 'acknowledgement' })}
         />
       ) : null}

@@ -9,6 +9,11 @@ const COLOURS = [...Object.values(VALUE_COLOURS), '#FFFFFF']
 const REDUCED_MOTION = '(prefers-reduced-motion: reduce)'
 const STORAGE_PREFIX = 'academy-confetti:'
 
+const MAX_DELAY_S = 0.6
+const MAX_DURATION_S = 3.6
+/** The last piece has landed by then; the spans go so they don't sit in the page for good. */
+const CLEAR_AFTER_MS = (MAX_DELAY_S + MAX_DURATION_S) * 1000 + 250
+
 const between = (low: number, high: number) => low + Math.random() * (high - low)
 
 function Pieces() {
@@ -20,8 +25,8 @@ function Pieces() {
         width: between(6, 11),
         drift: between(-90, 90),
         spin: between(-540, 540),
-        delay: between(0, 0.6),
-        duration: between(2.4, 3.6),
+        delay: between(0, MAX_DELAY_S),
+        duration: between(2.4, MAX_DURATION_S),
         colour: COLOURS[index % COLOURS.length],
       })),
     [],
@@ -62,6 +67,12 @@ export function Confetti({ userId }: { userId: string }) {
     if (window.matchMedia(REDUCED_MOTION).matches) return
     if (claimFirstPlay(`${STORAGE_PREFIX}${userId}`)) setPlaying(true)
   }, [userId])
+
+  useEffect(() => {
+    if (!playing) return
+    const timer = window.setTimeout(() => setPlaying(false), CLEAR_AFTER_MS)
+    return () => window.clearTimeout(timer)
+  }, [playing])
 
   if (!playing) return null
   return (

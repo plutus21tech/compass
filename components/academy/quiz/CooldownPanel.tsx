@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Clock, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RetakeWait } from '@/lib/academy/quiz-flow'
@@ -11,11 +11,10 @@ const TICK_MS = 1000
 const RETAKE_OPEN_ANNOUNCEMENT = 'You can retake the quiz now.'
 
 /** Null until mounted, so the server and the browser render the same thing. Re-read from the clock each tick. */
-function useRemainingMs(at: string | null): number | null {
+function useRemainingMs(end: number | null): number | null {
   const [remaining, setRemaining] = useState<number | null>(null)
   useEffect(() => {
-    if (!at) return
-    const end = new Date(at).getTime()
+    if (end === null) return
     let timer: ReturnType<typeof setInterval> | undefined
     const tick = () => {
       const left = end - Date.now()
@@ -25,8 +24,8 @@ function useRemainingMs(at: string | null): number | null {
     tick()
     timer = setInterval(tick, TICK_MS)
     return () => clearInterval(timer)
-  }, [at])
-  return at ? remaining : null
+  }, [end])
+  return end === null ? null : remaining
 }
 
 interface CooldownPanelProps {
@@ -34,6 +33,8 @@ interface CooldownPanelProps {
   timeZone: string | null
   retaking: boolean
   onRetake: () => void
+  /** The countdown reached zero: ask the server before offering the retake. */
+  onWaitOver: () => void
 }
 
 function RetakeButton({ busy, onRetake }: { busy: boolean; onRetake: () => void }) {
@@ -56,11 +57,18 @@ function Countdown({ remainingMs }: { remainingMs: number | null }) {
 }
 
 /** The footer for a failed attempt. The clock only decides what shows: the server still has the last word on a retake. */
-export function CooldownPanel({ wait, timeZone, retaking, onRetake }: CooldownPanelProps) {
+export function CooldownPanel({ wait, timeZone, retaking, onRetake, onWaitOver }: CooldownPanelProps) {
   const at = wait.kind === 'until' ? wait.at : null
-  const remainingMs = useRemainingMs(at)
+  const remainingMs = useRemainingMs(wait.kind === 'until' ? wait.opensAtMs : null)
   const waiting = at !== null && (remainingMs === null || remainingMs > 0)
-  const open = !waiting && wait.kind !== 'checking'
+  // Only the server's answer opens the retake: the browser's clock can be wrong.
+  const open = wait.kind === 'open'
+  const overAt = wait.kind === 'until' && remainingMs !== null && remainingMs <= 0 ? wait.opensAtMs : null
+  const waitOver = useRef(onWaitOver)
+  waitOver.current = onWaitOver
+  useEffect(() => {
+    if (overAt !== null) waitOver.current()
+  }, [overAt])
 
   return (
     <QuizFooter

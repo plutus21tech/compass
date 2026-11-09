@@ -19,6 +19,7 @@ interface ResultsScreenProps {
   timeZone: string | null
   retaking: boolean
   onRetake: () => void
+  onWaitOver: () => void
   onSign: () => void
 }
 
@@ -69,7 +70,7 @@ function ReviewItem({ item }: { item: QuizResultView['review'][number] }) {
 }
 
 /** The review stays on screen behind a sticky action, so the next step never scrolls away. */
-export function ResultsScreen({ result, wait, notice, timeZone, retaking, onRetake, onSign }: ResultsScreenProps) {
+export function ResultsScreen({ result, wait, notice, timeZone, retaking, onRetake, onWaitOver, onSign }: ResultsScreenProps) {
   return (
     <>
       <QuizHeader lead={result.passed ? 'YOU' : 'NOT THERE'} accent={result.passed ? 'Passed' : 'Yet'}>
@@ -98,7 +99,7 @@ export function ResultsScreen({ result, wait, notice, timeZone, retaking, onReta
           }
         />
       ) : (
-        <CooldownPanel wait={wait} timeZone={timeZone} retaking={retaking} onRetake={onRetake} />
+        <CooldownPanel wait={wait} timeZone={timeZone} retaking={retaking} onRetake={onRetake} onWaitOver={onWaitOver} />
       )}
     </>
   )

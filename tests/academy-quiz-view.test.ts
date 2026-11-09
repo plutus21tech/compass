@@ -71,8 +71,12 @@ const failed: QuizResultView = { score: 6, total: 12, passed: false, passPercent
 const passed: QuizResultView = { ...failed, score: 11, passed: true }
 const paper = { questions: [{ id: 'q1', text: 'One?', options: ['a', 'b'] }] }
 
+// The server's clock reads one minute before the retake opens.
+const SERVER_NOW = new Date(new Date(RETAKE_AT).getTime() - 60_000).toISOString()
+const RECEIVED = Date.UTC(2030, 0, 1)
+
 function view(status: QuizStatus, over: Partial<QuizView> = {}): QuizView {
-  return { status, dueAt: null, paper: null, lastResult: null, retakeAt: null, failedCount: 0, ...over }
+  return { status, dueAt: null, paper: null, lastResult: null, retakeAt: null, failedCount: 0, serverNow: SERVER_NOW, ...over }
 }
 
 test('screenFor: a first attempt goes straight to the questions', () => {
@@ -81,7 +85,17 @@ test('screenFor: a first attempt goes straight to the questions', () => {
 
 test('screenFor: a cooldown keeps the results readable and counts down', () => {
   const quiz = view('COOLDOWN', { lastResult: failed, retakeAt: RETAKE_AT, failedCount: 1 })
-  assert.deepEqual(screenFor(quiz), { kind: 'results', result: failed, wait: { kind: 'until', at: RETAKE_AT } })
+  assert.deepEqual(screenFor(quiz, { receivedAtMs: RECEIVED }), {
+    kind: 'results', result: failed, wait: { kind: 'until', at: RETAKE_AT, opensAtMs: RECEIVED + 60_000 },
+  })
+})
+
+test('screenFor: the countdown runs on the server time, whatever the browser clock says', () => {
+  const quiz = view('COOLDOWN', { lastResult: failed, retakeAt: RETAKE_AT, failedCount: 1 })
+  // A browser clock years ahead of the server still waits the server's minute.
+  const screen = screenFor(quiz, { receivedAtMs: RECEIVED })
+  assert.ok(screen.kind === 'results' && screen.wait.kind === 'until')
+  assert.equal(screen.wait.opensAtMs - RECEIVED, 60_000)
 })
 
 test('screenFor: once the wait is over the results stay, with the retake open', () => {

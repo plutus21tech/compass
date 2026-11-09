@@ -216,6 +216,8 @@ export interface QuizView {
   lastResult: QuizResultView | null
   retakeAt: string | null
   failedCount: number
+  /** The server's clock when this was read, so a countdown runs on server time, not the browser's. */
+  serverNow: string
 }
 
 export type HomeQuizView = Pick<QuizView, 'status' | 'dueAt' | 'retakeAt' | 'failedCount'> & { overdue: boolean }

@@ -192,7 +192,8 @@ async function toLastResult(db: Db, attempt: AcademyAttempt, linkFor: ChapterHre
 export async function loadQuiz(db: Db, userId: string): Promise<QuizView> {
   const context = await buildAcademyContext(db, userId)
   if (!context) throw notFound()
-  const state = await readQuizState(db, userId, context.config.retakeCooldownMinutes, new Date())
+  const now = new Date()
+  const state = await readQuizState(db, userId, context.config.retakeCooldownMinutes, now)
   return {
     status: state.status,
     dueAt: state.dueAt,
@@ -200,6 +201,7 @@ export async function loadQuiz(db: Db, userId: string): Promise<QuizView> {
     lastResult: state.latest ? await toLastResult(db, state.latest, await chapterLinks(db, userId, context)) : null,
     retakeAt: state.retakeAt?.toISOString() ?? null,
     failedCount: state.failedCount,
+    serverNow: now.toISOString(),
   }
 }
 
