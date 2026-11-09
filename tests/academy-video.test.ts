@@ -160,3 +160,14 @@ test('the admin nav links to the video settings', () => {
   const hrefs = withAcademyNav(config, true, { library: icon, contacts: icon, links: icon }).groups[0].items.map((i) => i.href)
   assert.ok(hrefs.includes('/admin/onboarding/academy/videos'))
 })
+
+test('lengthMismatch warns only past 2 seconds, in m:ss, and never for an unreadable length', async () => {
+  const { lengthMismatch } = await import('../lib/academy/video')
+  assert.equal(lengthMismatch(390, 390), null)
+  assert.equal(lengthMismatch(392, 390), null)
+  assert.equal(lengthMismatch(388.4, 390), null)
+  assert.equal(lengthMismatch(393, 390), 'This video is 6:33 long, but the length here says 6:30.')
+  assert.equal(lengthMismatch(370.6, 390), 'This video is 6:11 long, but the length here says 6:30.')
+  assert.equal(lengthMismatch(390, null), null)
+  assert.equal(lengthMismatch(0, 390), null)
+})

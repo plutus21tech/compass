@@ -61,6 +61,7 @@ function fromDraft(draft: VideoDraft): { video: VideoConfig | null; error?: stri
 export default function AcademyVideosPage() {
   const [drafts, setDrafts] = useState<Drafts>({ VIDEO_1: EMPTY_VIDEO_DRAFT, VIDEO_2: EMPTY_VIDEO_DRAFT })
   const [unreadable, setUnreadable] = useState<VideoKey[]>([])
+  const [savedIds, setSavedIds] = useState<Record<VideoKey, string | null>>({ VIDEO_1: null, VIDEO_2: null })
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -73,6 +74,7 @@ export default function AcademyVideosPage() {
     academyFetch<VideoSettingsView>('/api/admin/onboarding/videos')
       .then((view) => {
         setDrafts({ VIDEO_1: toDraft(view.videos.VIDEO_1), VIDEO_2: toDraft(view.videos.VIDEO_2) })
+        setSavedIds({ VIDEO_1: view.videos.VIDEO_1?.youtubeId ?? null, VIDEO_2: view.videos.VIDEO_2?.youtubeId ?? null })
         setUnreadable(view.unreadable)
         setUpdatedAt(view.updatedAt)
         setLoaded(true)
@@ -98,6 +100,7 @@ export default function AcademyVideosPage() {
       })
       // Only the saved video's form is refreshed; the other form keeps whatever is being typed.
       setDrafts((current) => ({ ...current, [key]: toDraft(view.videos[key]) }))
+      setSavedIds((current) => ({ ...current, [key]: view.videos[key]?.youtubeId ?? null }))
       setUnreadable((current) => current.filter((k) => k !== key))
       setUpdatedAt(view.updatedAt)
       toast.success(`${TITLES[key]} saved`)
@@ -133,7 +136,7 @@ export default function AcademyVideosPage() {
       {VIDEO_KEYS.map((key) => (
         <div key={key} className="space-y-3">
           {unreadable.includes(key) && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">{UNREADABLE_NOTICE}</p>}
-          <VideoConfigForm id={key.toLowerCase()} title={TITLES[key]} value={drafts[key]} onChange={(next) => setDrafts((c) => ({ ...c, [key]: next }))} />
+          <VideoConfigForm id={key.toLowerCase()} title={TITLES[key]} value={drafts[key]} savedYoutubeId={savedIds[key]} onChange={(next) => setDrafts((c) => ({ ...c, [key]: next }))} />
           <div className="flex justify-end">
             <Button type="button" onClick={() => save(key)} disabled={saving !== null}>
               <Save className="h-4 w-4" /> {saving === key ? 'Saving...' : `Save ${TITLES[key].toLowerCase()}`}

@@ -85,3 +85,17 @@ export function formatDuration(seconds: number): string {
   const s = seconds % 60
   return `${m}:${String(s).padStart(2, '0')}`
 }
+
+/** How far the player's real length may stray from HR's before the editor says so (R6). */
+export const LENGTH_TOLERANCE_SECONDS = 2
+
+/**
+ * The editor's warning when YouTube's real length and the typed one differ by more than 2 seconds.
+ * A wrong length strands hires on "Saving your progress". Null when they agree or either is unknown.
+ */
+export function lengthMismatch(realSeconds: number, typedSeconds: number | null): string | null {
+  if (typedSeconds === null || !(realSeconds > 0)) return null
+  const real = Math.round(realSeconds)
+  if (Math.abs(realSeconds - typedSeconds) <= LENGTH_TOLERANCE_SECONDS) return null
+  return `This video is ${formatDuration(real)} long, but the length here says ${formatDuration(typedSeconds)}.`
+}

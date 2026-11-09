@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { MAX_TRANSCRIPT_CHARS, VIDEO_LANGUAGES, type VideoLanguage } from '@/lib/academy/video'
+import { MAX_TRANSCRIPT_CHARS, VIDEO_LANGUAGES, lengthMismatch, parseDurationInput, type VideoLanguage } from '@/lib/academy/video'
+import { useYouTubeDuration } from '@/components/academy/video/useYouTubeDuration'
 
 export interface ChapterDraft {
   key: string
@@ -35,10 +36,20 @@ interface VideoConfigFormProps {
   id: string
   title: string
   value: VideoDraft
+  /** The ID last saved, whose real length the player reads. */
+  savedYoutubeId: string | null
   onChange: (next: VideoDraft) => void
 }
 
-export function VideoConfigForm({ id, title, value, onChange }: VideoConfigFormProps) {
+/** Checks the typed length against the saved video's real one. A warning only: saving still works. */
+function useLengthWarning(savedYoutubeId: string | null, value: VideoDraft): string | null {
+  const measured = useYouTubeDuration(savedYoutubeId)
+  if (measured.status !== 'known' || value.youtubeId !== savedYoutubeId) return null
+  return lengthMismatch(measured.seconds, parseDurationInput(value.duration))
+}
+
+export function VideoConfigForm({ id, title, value, savedYoutubeId, onChange }: VideoConfigFormProps) {
+  const lengthWarning = useLengthWarning(savedYoutubeId, value)
   const setChapter = (index: number, patch: Partial<ChapterDraft>) =>
     onChange({ ...value, chapters: value.chapters.map((c, i) => (i === index ? { ...c, ...patch } : c)) })
 
@@ -64,10 +75,13 @@ export function VideoConfigForm({ id, title, value, onChange }: VideoConfigFormP
             id={`${id}-duration`}
             value={value.duration}
             placeholder="6:30"
-            aria-describedby={`${id}-duration-hint`}
+            aria-describedby={`${id}-duration-hint ${id}-duration-check`}
             onChange={(e) => onChange({ ...value, duration: e.target.value })}
           />
           <p id={`${id}-duration-hint`} className="mt-1 text-xs text-muted-foreground">Total length, for example 6:30</p>
+          <p id={`${id}-duration-check`} role="status" className="mt-1 text-xs text-amber-800 empty:hidden dark:text-amber-300">
+            {lengthWarning}
+          </p>
         </div>
       </div>
 
