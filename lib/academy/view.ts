@@ -203,6 +203,8 @@ export interface QuizResultView {
     correct: boolean
     explanation: string
     valueKey: string | null
+    /** Module 2 at this question's chapter: only for a viewer who can open it, with a ready video that has the chapter. */
+    chapterHref: string | null
   }>
 }
 

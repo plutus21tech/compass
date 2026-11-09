@@ -23,6 +23,7 @@ import { BlockList } from './editor/BlockList'
 import { TextField } from './editor/fields'
 import { PlaceholderList } from './editor/PlaceholderList'
 import { PublishPanel, type Busy } from './editor/PublishPanel'
+import { PreviewAs } from './PreviewAs'
 
 const LIST_HREF = '/admin/onboarding/academy/modules'
 
@@ -238,7 +239,10 @@ export function ModuleEditor({ moduleId }: { moduleId: string }) {
         All modules
       </Link>
       <div className="mt-3">
-        <h1 className="text-2xl font-semibold text-foreground">{`Module ${view.number}: ${view.details.title}`}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-2xl font-semibold text-foreground">{`Module ${view.number}: ${view.details.title}`}</h1>
+          <PreviewAs moduleId={view.id} dirty={dirty} />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">{COMPLETION_RULE_LABELS[view.rule]}</p>
         <p className="mt-1 text-sm text-muted-foreground">
           {`Live: version ${view.version}, published ${formatAcademyDate(view.publishedAt, null)}.`}

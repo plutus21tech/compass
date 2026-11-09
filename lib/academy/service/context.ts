@@ -245,11 +245,22 @@ export async function buildAcademyContext(
   db: Db, userId: string, row?: Pick<OnboardingProgress, 'source'>,
 ): Promise<AcademyContext | null> {
   const facts = row ? await loadRowFacts(db, userId, row) : await loadHireFacts(db, userId)
-  if (!facts) return null
-  const now = new Date()
+  return facts ? contextFromFacts(db, facts, new Date()) : null
+}
+
+/**
+ * The shared lists and config around a set of facts. Preview passes sample facts, and `overrides` for
+ * the placeholders a sample can't fill; a real person's page passes none.
+ */
+export async function contextFromFacts(
+  db: Db, facts: LearnerFacts, now: Date, overrides: Partial<Record<PlaceholderKey, string>> = {},
+): Promise<AcademyContext> {
   const config = await getAcademyConfig(db)
   const keyContacts = groupContacts(await listKeyContacts(db))
-  const placeholders = buildPlaceholderValues({ ...facts, blockersCallCt: config.blockersCallCt, keyContacts }, now)
+  const placeholders = {
+    ...buildPlaceholderValues({ ...facts, blockersCallCt: config.blockersCallCt, keyContacts }, now),
+    ...overrides,
+  }
   const cardViews = async (kind: 'BENEFIT' | 'REIMBURSEMENT') =>
     (await eligibleCards(db, kind, facts.attributes)).map((card) => toLibraryCardView(card, config.links, placeholders))
   return {

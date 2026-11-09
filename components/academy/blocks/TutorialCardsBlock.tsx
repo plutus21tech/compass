@@ -9,7 +9,7 @@ interface TutorialCardsBlockProps {
 }
 
 export function TutorialCardsBlock({ block, context }: TutorialCardsBlockProps) {
-  const { view, state, openLink } = context
+  const { view, state, openLink, preview } = context
   if (view.tutorials.length === 0) return null
   const opened = view.tutorials.filter((tutorial) => state.linksOpenedAt[tutorial.key]).length
   return (
@@ -19,7 +19,7 @@ export function TutorialCardsBlock({ block, context }: TutorialCardsBlockProps) 
         {view.tutorials.map((tutorial) => (
           <LinkRow
             key={tutorial.key}
-            href={tutorial.url}
+            href={preview ? undefined : tutorial.url}
             opened={Boolean(state.linksOpenedAt[tutorial.key])}
             onOpen={() => openLink(tutorial.key)}
           >

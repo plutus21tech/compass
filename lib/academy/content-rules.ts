@@ -177,10 +177,15 @@ function duplicateKeys(blocks: readonly Block[]): string[] {
   return [...new Set(keys.filter((key, index) => keys.indexOf(key) !== index))]
 }
 
+/** {Names} anywhere in the blocks, in every branch, that aren't placeholders. Each listed once. */
+export function unknownPlaceholdersIn(blocks: readonly Block[]): string[] {
+  return findUnknownPlaceholders(stringsIn(blocks).join('\n'))
+}
+
 /** Why this content can't go live: an empty list means it can. Walks every branch of every conditional. */
 export function publishProblems(rule: OnboardingCompletionRule, blocks: Block[]): string[] {
   const all = flatten(blocks)
-  const unknown = findUnknownPlaceholders(stringsIn(blocks).join('\n'))
+  const unknown = unknownPlaceholdersIn(blocks)
   const blank = all.filter((block) => requiredTexts(block).some((text) => !text.trim()))
   return [
     ...new Set([

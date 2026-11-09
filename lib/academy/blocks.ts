@@ -3,8 +3,8 @@ import { z } from 'zod'
 import { CONTRACT_TYPES, OFFICE_LOCATIONS, type PersonAttributes } from './attributes'
 import { ACADEMY_LINK_KEYS, type AcademyLinkKey } from './links'
 
-const COMPANY_WINGS = ['CAPITAL', 'PARTNERS'] as const
-type CompanyWing = (typeof COMPANY_WINGS)[number]
+export const COMPANY_WINGS = ['CAPITAL', 'PARTNERS'] as const
+export type CompanyWing = (typeof COMPANY_WINGS)[number]
 
 const text = z.string()
 const linkKey = z.enum(ACADEMY_LINK_KEYS)

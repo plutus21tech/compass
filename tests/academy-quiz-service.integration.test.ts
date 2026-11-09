@@ -495,3 +495,65 @@ test('the fail alert goes out with the user and count; an email that throws or f
   const undelivered = await quietly(() => notifyQuizFailAlert('user-1', 3, async () => ({ success: false })))
   assert.equal(undelivered.length, 1)
 })
+
+const VALUES_VIDEO = {
+  youtubeId: 'abcdefghijk',
+  durationSeconds: 400,
+  chapters: [{ key: 'innovation', label: 'Innovation', start: 0 }, { key: 'integrity', label: 'Integrity', start: 90 }],
+  transcripts: {},
+}
+
+const setVideos = (videos: Record<string, unknown>) =>
+  prisma.onboardingConfig.upsert({
+    where: { id: 'singleton' },
+    update: { videos: videos as object },
+    create: { id: 'singleton', videos: videos as object },
+  })
+
+/** Each review row's chapter link, keyed by the question's chapter. */
+async function linksByChapter(review: Array<{ question: string; chapterHref: string | null }>): Promise<Map<string | null, Set<string | null>>> {
+  const rows = await prisma.onboardingQuizQuestion.findMany({ select: { questionText: true, videoChapterKey: true } })
+  const chapterOf = new Map(rows.map((r) => [r.questionText, r.videoChapterKey]))
+  const links = new Map<string | null, Set<string | null>>()
+  for (const item of review) {
+    const key = chapterOf.get(item.question) ?? null
+    links.set(key, new Set([...(links.get(key) ?? []), item.chapterHref]))
+  }
+  return links
+}
+
+test('no ready Module 2 video: no review item has a chapter link', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  await setVideos({ VIDEO_1: VALUES_VIDEO })
+  const { result } = await submitQuiz(prisma, HIRE_ID, await answers(0))
+  assert.ok(result.review.length > 0)
+  assert.ok(result.review.every((item) => item.chapterHref === null))
+  assert.ok((await loadQuiz(prisma, HIRE_ID)).lastResult?.review.every((item) => item.chapterHref === null))
+})
+
+test('a ready Module 2 video links only the questions whose chapter it has', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  await setVideos({ VIDEO_2: VALUES_VIDEO })
+  const { result } = await submitQuiz(prisma, HIRE_ID, await answers(3))
+  const links = await linksByChapter(result.review)
+  assert.deepEqual([...(links.get('innovation') ?? [])], ['/onboarding/culture-values?chapter=innovation'])
+  assert.deepEqual([...(links.get('integrity') ?? [])], ['/onboarding/culture-values?chapter=integrity'])
+  for (const [key, hrefs] of links) {
+    if (key !== 'innovation' && key !== 'integrity') assert.deepEqual([...hrefs], [null], String(key))
+  }
+  const again = await loadQuiz(prisma, HIRE_ID)
+  assert.deepEqual(await linksByChapter(again.lastResult?.review ?? []), links)
+})
+
+test('no chapter link when the hire cannot open Module 2', ACADEMY_DB_TEST, async () => {
+  await readyHire()
+  await setVideos({ VIDEO_2: VALUES_VIDEO })
+  await submitQuiz(prisma, HIRE_ID, await answers(0))
+  await prisma.onboardingProgress.updateMany({
+    where: { userId: HIRE_ID, module: { slug: 'culture-values' } },
+    data: { status: 'LOCKED', completedAt: null },
+  })
+  const view = await loadQuiz(prisma, HIRE_ID)
+  assert.ok(view.lastResult && view.lastResult.review.length > 0)
+  assert.ok(view.lastResult.review.every((item) => item.chapterHref === null))
+})

@@ -1,4 +1,6 @@
-import { ArrowRight, CheckCircle2, XCircle } from 'lucide-react'
+import { useId } from 'react'
+import Link from 'next/link'
+import { ArrowRight, CheckCircle2, PlayCircle, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { RetakeWait } from '@/lib/academy/quiz-flow'
 import type { QuizResultView } from '@/lib/academy/view'
@@ -31,12 +33,13 @@ function Verdict({ correct }: { correct: boolean }) {
 }
 
 function ReviewItem({ item }: { item: QuizResultView['review'][number] }) {
+  const questionId = useId()
   return (
     <li className="flex overflow-hidden rounded-2xl border border-academy-line bg-white">
       <span aria-hidden className="w-2 shrink-0" style={{ backgroundColor: valueStripColour(item.valueKey) }} />
       <div className="min-w-0 flex-1 space-y-3 p-5">
         <Verdict correct={item.correct} />
-        <h2 className="text-balance text-[17px] font-semibold leading-snug">{item.question}</h2>
+        <h2 id={questionId} className="text-balance text-[17px] font-semibold leading-snug">{item.question}</h2>
         <dl className="space-y-2 text-[15px] leading-6">
           {item.correct ? null : (
             <div>
@@ -50,6 +53,16 @@ function ReviewItem({ item }: { item: QuizResultView['review'][number] }) {
           </div>
         </dl>
         <p className="text-[15px] leading-6">{item.explanation}</p>
+        {item.chapterHref ? (
+          <Link
+            href={item.chapterHref}
+            aria-describedby={questionId}
+            className="inline-flex min-h-11 items-center gap-1.5 text-[15px] font-semibold text-academy-blue underline underline-offset-2 hover:text-academy-blue-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-academy-blue"
+          >
+            <PlayCircle aria-hidden className="size-4" />
+            Watch this part
+          </Link>
+        ) : null}
       </div>
     </li>
   )

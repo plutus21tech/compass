@@ -102,6 +102,41 @@ export async function loadContent(db: PrismaClient, moduleId: string): Promise<C
   }
 }
 
+export interface PreviewSourceView {
+  module: CourseModule
+  number: number
+  total: number
+  showing: 'draft' | 'live'
+  details: ModuleDetails
+  /** Unfiltered and unrendered: every branch, placeholders as {…}. */
+  blocks: Block[]
+  version: number
+}
+
+/** The saved draft or the live version, for Preview as. Asking for a draft when there is none gives the live one. */
+export async function loadPreviewSource(db: PrismaClient, moduleId: string, source: 'draft' | 'live'): Promise<PreviewSourceView> {
+  const modules = await listCourseModules(db)
+  const index = modules.findIndex((m) => m.id === moduleId)
+  if (index < 0) throw notFound()
+  const module = modules[index]
+  const current = await db.onboardingModuleVersion.findUniqueOrThrow({ where: { id: module.currentVersionId } })
+  const showing = source === 'draft' && module.draftBlocks !== null ? 'draft' : 'live'
+  try {
+    return {
+      module,
+      number: index + 1,
+      total: modules.length,
+      showing,
+      details: showing === 'draft' && module.draftDetails !== null ? moduleDetailsSchema.parse(module.draftDetails) : liveDetails(module),
+      blocks: parseBlocks(showing === 'draft' ? module.draftBlocks : current.blocks),
+      version: current.version,
+    }
+  } catch (error) {
+    console.error('[academy] preview content failed validation', { moduleId, showing, error: error instanceof Error ? error.name : 'unknown' })
+    throw new AcademyError("This module's content couldn't be loaded for a preview.", 500)
+  }
+}
+
 /** Holds the module until the transaction ends, so two people's writes queue and the check can't be crossed. */
 async function lockCourseModule(tx: Tx, moduleId: string, { expectedUpdatedAt }: FreshnessCheck): Promise<CourseModule> {
   await tx.$queryRaw`SELECT id FROM "OnboardingModule" WHERE id = ${moduleId} FOR NO KEY UPDATE`

@@ -13,11 +13,12 @@ import {
   type StoredQuestion,
 } from '../quiz'
 import { timeZoneFor } from '../time'
-import type { QuizResultView, QuizView } from '../view'
+import { chapterStart } from '../video'
+import { moduleVideo, type QuizResultView, type QuizView } from '../view'
 import { QUIZ_UNAVAILABLE_MESSAGE, callTimeLabel } from '../view-labels'
-import { buildAcademyContext, loadHireFacts } from './context'
+import { buildAcademyContext, loadHireFacts, type LearnerFacts } from './context'
 import { getAcademyConfig } from './library'
-import { COURSE_TX_OPTIONS, readCourseProgress } from './progress'
+import { COURSE_TX_OPTIONS, listCourseModules, moduleBlocks, readCourseProgress, versionIdFor } from './progress'
 
 export type { QuizResultView, QuizView } from '../view'
 
@@ -126,8 +127,39 @@ export async function readQuizState(db: Db, userId: string, cooldownMinutes: num
   }
 }
 
+/** Module 2, where the values video is: its chapters are what the review links to. */
+export const VALUES_MODULE_SLUG = 'culture-values'
+
+/** A question's chapter key to its link in Module 2, or null. */
+type ChapterHref = (chapterKey: string | null) => string | null
+const NO_CHAPTER_LINKS: ChapterHref = () => null
+
+const chapterHref = (key: string) => `/onboarding/${VALUES_MODULE_SLUG}?chapter=${encodeURIComponent(key)}`
+
+/**
+ * Links only to what this person can watch: their Module 2 row is open (finished, in progress or
+ * unlocked early), its video is ready, and the video has the chapter. A failed lookup only drops the links.
+ */
+async function chapterLinks(db: Db, userId: string, facts: Pick<LearnerFacts, 'conditions'>): Promise<ChapterHref> {
+  try {
+    const module = (await listCourseModules(db)).find((m) => m.slug === VALUES_MODULE_SLUG)
+    if (!module) return NO_CHAPTER_LINKS
+    const row = await db.onboardingProgress.findUnique({ where: { userId_moduleId: { userId, moduleId: module.id } } })
+    if (!row || (row.status === 'LOCKED' && !row.unlockedEarlyById)) return NO_CHAPTER_LINKS
+    const blocks = await moduleBlocks(db, versionIdFor(row, module), facts, true)
+    const found = moduleVideo(blocks, (await getAcademyConfig(db)).videos)
+    if (!found) return NO_CHAPTER_LINKS
+    return (key) => (key !== null && chapterStart(found.video, key) !== null ? chapterHref(key) : null)
+  } catch (error) {
+    console.error('[academy] quiz chapter links unavailable', { userId, error: error instanceof Error ? error.name : 'unknown' })
+    return NO_CHAPTER_LINKS
+  }
+}
+
 /** The correct answer comes from the attempt, so a later edit to the question can't contradict `correct`. */
-function toReview(answers: readonly StoredAnswer[], questions: readonly StoredQuestion[]): QuizResultView['review'] {
+function toReview(
+  answers: readonly StoredAnswer[], questions: readonly StoredQuestion[], linkFor: ChapterHref,
+): QuizResultView['review'] {
   const byId = new Map(questions.map((q) => [q.id, q]))
   return answers.flatMap((answer) => {
     const question = byId.get(answer.questionId)
@@ -139,12 +171,13 @@ function toReview(answers: readonly StoredAnswer[], questions: readonly StoredQu
       correct: answer.correct,
       explanation: question.explanation,
       valueKey: question.valueKey,
+      chapterHref: linkFor(question.videoChapterKey),
     }]
   })
 }
 
 /** Resolved through the attempt's own question ids, so a retired question still shows. */
-async function toLastResult(db: Db, attempt: AcademyAttempt): Promise<QuizResultView> {
+async function toLastResult(db: Db, attempt: AcademyAttempt, linkFor: ChapterHref): Promise<QuizResultView> {
   const { answers } = attempt
   const rows = await db.onboardingQuizQuestion.findMany({ where: { id: { in: answers.map((a) => a.questionId) } } })
   return {
@@ -152,7 +185,7 @@ async function toLastResult(db: Db, attempt: AcademyAttempt): Promise<QuizResult
     total: attempt.totalQuestions,
     passed: attempt.passed,
     passPercent: await readPassPercent(db),
-    review: toReview(answers, rows.map(toStoredQuestion)),
+    review: toReview(answers, rows.map(toStoredQuestion), linkFor),
   }
 }
 
@@ -164,7 +197,7 @@ export async function loadQuiz(db: Db, userId: string): Promise<QuizView> {
     status: state.status,
     dueAt: state.dueAt,
     paper: state.status === 'READY' ? toPaper(state.questions) : null,
-    lastResult: state.latest ? await toLastResult(db, state.latest) : null,
+    lastResult: state.latest ? await toLastResult(db, state.latest, await chapterLinks(db, userId, context)) : null,
     retakeAt: state.retakeAt?.toISOString() ?? null,
     failedCount: state.failedCount,
   }
@@ -221,7 +254,7 @@ export async function submitQuiz(db: PrismaClient, userId: string, input: unknow
         total: graded.total,
         passed: graded.passed,
         passPercent,
-        review: toReview(graded.answersJson, questions),
+        review: toReview(graded.answersJson, questions, await chapterLinks(tx, userId, facts)),
       },
       failAlertDue: !graded.passed && crossesFailThreshold(failedCount, config.failAlertThreshold),
       failedCount,

@@ -27,7 +27,7 @@ function InvoiceTemplateLink({ href }: { href: string }) {
 }
 
 export function ChecklistBlock({ block, context }: ChecklistBlockProps) {
-  const { state, readOnly, setCheck, view } = context
+  const { state, readOnly, preview, setCheck, view } = context
   const done = block.items.filter((item) => state.checks[item.key] === true).length
   const showCount = block.items.length > 1
   return (
@@ -46,7 +46,7 @@ export function ChecklistBlock({ block, context }: ChecklistBlockProps) {
                   id={id}
                   className="mt-0.5 size-5 rounded-md border-academy-slate disabled:opacity-100"
                   checked={state.checks[item.key] === true}
-                  disabled={readOnly}
+                  disabled={readOnly || preview}
                   onCheckedChange={(checked) => setCheck(item.key, checked === true)}
                 />
                 <span className="min-w-0 leading-6 text-academy-navy">{item.label}</span>

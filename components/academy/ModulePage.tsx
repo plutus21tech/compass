@@ -79,7 +79,7 @@ export function ModulePage({ view }: ModulePageProps) {
   )
 
   const context = useMemo<BlockContext>(
-    () => ({ view, state, readOnly, setCheck, openLink, onSaved, video: { controller: videoController, next: videoNext } }),
+    () => ({ view, state, readOnly, preview: false, setCheck, openLink, onSaved, video: { controller: videoController, next: videoNext } }),
     [view, state, readOnly, setCheck, openLink, onSaved, videoController, videoNext],
   )
 

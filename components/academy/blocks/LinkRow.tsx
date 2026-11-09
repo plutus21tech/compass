@@ -2,7 +2,8 @@ import type { ReactNode } from 'react'
 import { CheckCircle2, ExternalLink } from 'lucide-react'
 
 interface LinkRowProps {
-  href: string
+  /** Left out in a preview, where the row is a sample: it shows as a plain row, not a link. */
+  href?: string
   children: ReactNode
   opened?: boolean
   onOpen?: () => void
@@ -13,6 +14,14 @@ interface LinkRowProps {
  * click, which opens the link just the same.
  */
 export function LinkRow({ href, children, opened = false, onOpen }: LinkRowProps) {
+  if (href === undefined) {
+    return (
+      <li className="flex min-h-14 items-center gap-3 px-4 py-3 text-academy-navy">
+        <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">{children}</span>
+        <ExternalLink aria-hidden className="size-4 shrink-0 text-academy-slate" />
+      </li>
+    )
+  }
   return (
     <li>
       <a
