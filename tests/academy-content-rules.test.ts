@@ -130,7 +130,7 @@ test('blank text that a hire would see is refused', () => {
     { type: 'copyText', label: 'Label', text: '' },
     { type: 'timeline', items: [{ label: '', markdown: 'Body' }] },
     { type: 'linkCards', links: [{ label: '', linkKey: 'LEAVE_POLICY' }] },
-    { type: 'dataTable', headers: [''], rows: [] },
+    { type: 'dataTable', headers: ['', ' '], rows: [] },
     { type: 'toolTiles', tools: [{ name: '', purpose: 'Body' }], includeTeamTools: false },
     { type: 'inputField', target: 'bank', label: '' },
     { type: 'dashboardLink', label: '' },
@@ -141,6 +141,11 @@ test('blank text that a hire would see is refused', () => {
     assert.equal(problems.length, 1, block.type)
     assert.ok(problems[0].includes(blockLabel(block)), problems[0])
   }
+})
+
+test('a table may leave some headers blank, as long as one has text', () => {
+  assert.deepEqual(publishProblems('SCROLL_END', [{ type: 'dataTable', headers: ['Rate', ''], rows: [['10', 'per km']] }]), [])
+  assert.deepEqual(publishProblems('SCROLL_END', [{ type: 'dataTable', headers: ['', 'Amount'], rows: [['Car', '10']] }]), [])
 })
 
 test('every seeded module can be published', () => {
@@ -250,4 +255,13 @@ test('the publish route mails a re-read after the commit and has time to', () =>
   const source = readFileSync(join(__dirname, '..', 'app/api/admin/onboarding/content/[moduleId]/publish/route.ts'), 'utf8')
   assert.match(source, /export const maxDuration = 300/)
   assert.match(source, /after\(\(\) => notifyAssigned\(prisma, notice\)\)/)
+})
+
+test('a refusal that only repeats the problems already listed is not shown again', async () => {
+  const { repeatsProblems } = await import('../lib/academy/content-rules')
+  const problems = ['Rich text is missing some text. Fill it in or delete it.']
+  assert.equal(repeatsProblems(`This can't be published yet. ${problems[0]}`, problems), true)
+  assert.equal(repeatsProblems('Someone else saved this module. Reload to see their changes.', problems), false)
+  assert.equal(repeatsProblems(`This can't be published yet. ${problems[0]}`, []), false)
+  assert.equal(repeatsProblems(null, problems), false)
 })

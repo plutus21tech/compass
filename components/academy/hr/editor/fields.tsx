@@ -40,7 +40,9 @@ export function TextField({ label, value, onChange, hint }: FieldProps) {
   )
 }
 
-const FORMATTING_HINT = 'Start a line with ### for a heading or - for a list. Put ** on both sides of a word for bold.'
+// Said in words, since the symbols alone mean little to someone who hasn't met them.
+const FORMATTING_HINT =
+  'For a heading, start the line with three hash signs. For a list, start each line with a dash. For bold, put two asterisks before and after the words.'
 
 interface AreaProps extends FieldProps {
   /** Text that hires see as formatted copy, so the formatting hint applies. */

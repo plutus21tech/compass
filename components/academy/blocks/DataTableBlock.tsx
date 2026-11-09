@@ -10,11 +10,16 @@ export function DataTableBlock({ headers, rows }: DataTableBlockProps) {
       <table role="table" className="w-full text-left text-[15px] leading-6 text-academy-navy max-sm:block">
         <thead className="max-sm:sr-only">
           <tr className="bg-academy-blue-tint">
-            {headers.map((header) => (
-              <th key={header} scope="col" className="px-4 py-3 font-semibold">
-                {header}
-              </th>
-            ))}
+            {headers.map((header, index) =>
+              // A blank heading is a plain cell: an empty <th> would announce a nameless column.
+              header.trim() ? (
+                <th key={index} scope="col" className="px-4 py-3 font-semibold">
+                  {header}
+                </th>
+              ) : (
+                <td key={index} className="px-4 py-3" />
+              ),
+            )}
           </tr>
         </thead>
         <tbody role="rowgroup" className="divide-y divide-academy-line max-sm:block">
@@ -26,7 +31,9 @@ export function DataTableBlock({ headers, rows }: DataTableBlockProps) {
                   role="cell"
                   className={`px-4 py-3 align-top [overflow-wrap:anywhere] max-sm:block max-sm:px-0 max-sm:py-0.5 ${cell ? '' : 'max-sm:hidden'}`}
                 >
-                  <span className="block text-sm font-medium text-academy-slate sm:hidden">{headers[cellIndex]}</span>
+                  {headers[cellIndex]?.trim() ? (
+                    <span className="block text-sm font-medium text-academy-slate sm:hidden">{headers[cellIndex]}</span>
+                  ) : null}
                   {cell}
                 </td>
               ))}

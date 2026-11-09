@@ -145,7 +145,8 @@ function requiredTexts(block: Block): string[] {
     case 'checklist':
       return block.items.map((item) => item.label)
     case 'dataTable':
-      return block.headers
+      // A column may go without a heading (a label column, say), but the header row needs one.
+      return [block.headers.join('')]
     case 'warningBox':
       return [block.heading, block.markdown]
     case 'inputField':
@@ -195,6 +196,15 @@ export function publishProblems(rule: OnboardingCompletionRule, blocks: Block[])
       ...duplicateKeys(all).map(() => 'Two checklist items are the same behind the scenes. Delete one and add it again.'),
     ]),
   ]
+}
+
+/**
+ * Whether a server refusal says nothing the "Before you can publish" list doesn't already say, so the
+ * editor shows that text once, in the list, and not again above it.
+ */
+export function repeatsProblems(error: string | null, problems: readonly string[]): boolean {
+  return error !== null && problems.length > 0 && error.startsWith("This can't be published yet.") &&
+    problems.every((problem) => error.includes(problem))
 }
 
 /** What makes a block fixed: its identity, never its words. Null for a block HR is free to change. */

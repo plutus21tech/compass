@@ -15,6 +15,7 @@ import {
   checklistKeys,
   moduleDetailsSchema,
   publishProblems,
+  repeatsProblems,
   type ModuleDetails,
 } from '@/lib/academy/content-rules'
 import type { ContentView } from '@/lib/academy/service/content'
@@ -260,7 +261,7 @@ export function ModuleEditor({ moduleId }: { moduleId: string }) {
         </div>
 
         <aside className="space-y-6 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:self-start lg:overflow-y-auto lg:pr-1">
-          {error ? (
+          {error && !repeatsProblems(error, problems) ? (
             <div className="space-y-2">
               <ErrorNotice message={error} />
               {error === STALE_CONTENT_MESSAGE ? (
