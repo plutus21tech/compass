@@ -39,7 +39,8 @@ export function lowEvidenceWeek(total: number): number {
 }
 
 /**
- * The week is released on every run, not only on its first day: releaseWeek is idempotent per evaluator, so a failed
+ * The week is released on every run, not only on its first day: releaseWeek never repeats a question and only tops up
+ * someone who has since answered what they carried over (they usually get it the moment they answer), so a failed
  * run or a cycle started mid-week is caught up the next day, and leavers are cancelled within a day.
  * Emails follow the spec's week (section 13): the questions on the week's first day (Monday, or the day HR chose for
  * week 1; in the final week, how many are left instead), and "due today" on Friday. Nothing in between, apart from
