@@ -184,6 +184,8 @@ export function unknownPlaceholdersIn(blocks: readonly Block[]): string[] {
 }
 
 /** Why this content can't go live: an empty list means it can. Walks every branch of every conditional. */
+const ONE_VIDEO = 'A module can show one video. Delete the extra one.'
+
 export function publishProblems(rule: OnboardingCompletionRule, blocks: Block[]): string[] {
   const all = flatten(blocks)
   const unknown = unknownPlaceholdersIn(blocks)
@@ -194,6 +196,8 @@ export function publishProblems(rule: OnboardingCompletionRule, blocks: Block[])
       ...unknown.map((name) => `{${name}} isn't a placeholder we recognise. Check the spelling or take it out.`),
       ...blank.map((block) => `${blockLabel(block)} is missing some text. Fill it in or delete it.`),
       ...duplicateKeys(all).map(() => 'Two checklist items are the same behind the scenes. Delete one and add it again.'),
+      // Only the first video is counted and played, so a second would be a video nobody can finish.
+      ...(all.filter((block) => block.type === 'video').length > 1 ? [ONE_VIDEO] : []),
     ]),
   ]
 }

@@ -187,3 +187,16 @@ test('a missing or empty transcript language is 404, as is an unknown video', AC
   await assert.rejects(readTranscript(prisma, hire, 'VIDEO_9', 'en'), fails(404))
   await assert.rejects(readTranscript(prisma, { id: P.hr.id, role: 'HR' }, 'VIDEO_2', 'en'), fails(404))
 })
+
+test('a late report on a completed row is accepted and changes nothing, even after the video went unready', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await setVideos({ VIDEO_1: VIDEO })
+  await loadModule(prisma, HIRE_ID, 'welcome', T0)
+  for (let t = 10; t <= 160; t += 10) await report(VIDEO.durationSeconds, at(t))
+  await completeModule(prisma, HIRE_ID, 'welcome')
+  const before = await progressRow('welcome')
+  await setVideos({})
+  const view = await report(VIDEO.durationSeconds, at(170))
+  assert.equal(view.status, 'COMPLETED')
+  assert.deepEqual(await progressRow('welcome'), before)
+})

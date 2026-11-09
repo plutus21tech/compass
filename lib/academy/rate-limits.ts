@@ -28,3 +28,12 @@ const PREVIEWS_MESSAGE = 'Too many previews in a short time. Wait a moment and t
 export function rateLimitMessage(bucket: MutationBucket): string {
   return bucket === 'preview' ? PREVIEWS_MESSAGE : CHANGES_MESSAGE
 }
+
+/**
+ * Which bucket an events body counts against, read before validation so a bad body is still counted.
+ * Only something shaped like a video report goes to the video bucket.
+ */
+export function eventBucket(body: unknown): MutationBucket {
+  const type = typeof body === 'object' && body !== null && !Array.isArray(body) ? (body as { type?: unknown }).type : undefined
+  return type === 'VIDEO_PROGRESS' ? 'video' : 'default'
+}

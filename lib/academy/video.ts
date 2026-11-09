@@ -99,3 +99,13 @@ export function lengthMismatch(realSeconds: number, typedSeconds: number | null)
   if (Math.abs(realSeconds - typedSeconds) <= LENGTH_TOLERANCE_SECONDS) return null
   return `This video is ${formatDuration(real)} long, but the length here says ${formatDuration(typedSeconds)}.`
 }
+
+/** A transcript goes out as plain text that is never cached or sniffed as anything else. */
+export const TRANSCRIPT_HEADERS = {
+  'Content-Type': 'text/plain; charset=utf-8',
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+} as const
+
+/** An error about a transcript isn't cached either: access can change. */
+export const TRANSCRIPT_ERROR_HEADERS = { 'Cache-Control': 'no-store' } as const

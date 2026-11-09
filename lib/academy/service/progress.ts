@@ -262,9 +262,9 @@ export async function recordEvent(
     assertKnownEventKey(event, blocks, facts)
 
     const current = parseProgressState(row.state)
-    const apply = await applyReport(tx, event, blocks, row, now)
     const finished = row.status === 'COMPLETED'
-    const state = finished ? current : apply(current)
+    // A finished row takes nothing, so a late report is fine even if its video has since gone unready.
+    const state = finished ? current : (await applyReport(tx, event, blocks, row, now))(current)
     const saved = finished
       ? row
       : await tx.onboardingProgress.update({ where: { id: row.id }, data: { state: state as unknown as Prisma.InputJsonObject } })

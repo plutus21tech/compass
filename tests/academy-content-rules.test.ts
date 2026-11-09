@@ -265,3 +265,15 @@ test('a refusal that only repeats the problems already listed is not shown again
   assert.equal(repeatsProblems(`This can't be published yet. ${problems[0]}`, []), false)
   assert.equal(repeatsProblems(null, problems), false)
 })
+
+test('a module may hold one video only, wherever the second one sits', () => {
+  const video = (videoKey: 'VIDEO_1' | 'VIDEO_2'): Block => ({ type: 'video', videoKey, summary: 'Watch this.' })
+  assert.deepEqual(publishProblems('VIDEO_95', [video('VIDEO_1')]), [])
+  const twice = publishProblems('VIDEO_95', [video('VIDEO_1'), video('VIDEO_2')])
+  assert.deepEqual(twice, ['A module can show one video. Delete the extra one.'])
+  const nested = publishProblems('VIDEO_95', [
+    video('VIDEO_1'),
+    { type: 'conditional', when: { clientAccountSet: true }, children: [video('VIDEO_1')] } as Block,
+  ])
+  assert.deepEqual(nested, ['A module can show one video. Delete the extra one.'])
+})
