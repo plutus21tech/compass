@@ -7,6 +7,7 @@ import {
   resolveLinkHrefs,
   toHomeQuizView,
   toModuleCard,
+  withVideoDetails,
   type HomeQuizView,
   type HomeView,
   type ModuleCardView,
@@ -113,7 +114,8 @@ function invoiceTemplateHref(context: AcademyContext): string | null {
   return config.invoiceTemplates[department]
 }
 
-export async function loadModule(db: PrismaClient, userId: string, slug: string): Promise<ModuleView> {
+/** `now` is injectable for tests; routes and pages use the server's clock. */
+export async function loadModule(db: PrismaClient, userId: string, slug: string, now: Date = new Date()): Promise<ModuleView> {
   const modules = await listCourseModules(db)
   const { module, index } = findCourseModule(modules, slug)
   const rows = await readRows(db, userId, modules)
@@ -123,7 +125,6 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
   if (!context) throw notFound()
   assertModuleOpen(found, index)
 
-  const now = new Date()
   const row = await markOpened(db, found, now)
   const state = parseProgressState(row.state)
   const versionId = versionIdFor(row, module)
@@ -143,7 +144,7 @@ export async function loadModule(db: PrismaClient, userId: string, slug: string)
     phase: module.phase,
     plain: !context.hasCourse,
     rail: context.hasCourse ? cardsFor(modules, rows.map((r) => (r.id === row.id ? row : r)), now) : [],
-    blocks: renderBlocks(blocks, context.placeholders),
+    blocks: withVideoDetails(renderBlocks(blocks, context.placeholders), evaluated.videos, state, row.status === 'COMPLETED'),
     lead: context.lead,
     team: context.team,
     buddy: context.buddy,

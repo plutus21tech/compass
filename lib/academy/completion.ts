@@ -1,11 +1,13 @@
 // Pure rules: no server-only imports. Safe for client components.
 import type { OnboardingCompletionRule } from '@prisma/client'
 import type { Block } from './blocks'
-import type { ProgressState } from './progress'
+import { videoWatched, type ProgressState } from './progress'
 
 export interface CompletionFacts {
   tutorialCount: number
   dashboardLinkSet: boolean
+  /** The module's video has an ID, a duration and a chapter in HR's config. */
+  videoReady: boolean
 }
 
 export type PaymentFacts = { kind: 'PK'; bankSaved: boolean } | { kind: 'OTHER'; payoutSaved: boolean }
@@ -19,6 +21,8 @@ export interface CompletionInput {
   discordUsername: string | null
   securityAckSigned: boolean
   payment: PaymentFacts
+  /** HR's duration for the module's ready video; absent or null when there is none. */
+  videoDurationSeconds?: number | null
 }
 
 export type CompletionResult = { met: true } | { met: false; reason: string }
@@ -40,7 +44,7 @@ const hasInputField = (blocks: readonly Block[], ...targets: string[]): boolean 
 function canMeetRule(rule: OnboardingCompletionRule, blocks: readonly Block[], facts: CompletionFacts): boolean {
   switch (rule) {
     case 'VIDEO_95':
-      return false
+      return facts.videoReady && blocks.some((b) => b.type === 'video')
     case 'SCROLL_END':
       return true
     case 'ALL_LINKS_OPENED':
@@ -92,6 +96,7 @@ export function evaluateCompletion(input: CompletionInput): CompletionResult {
   const { state } = input
   switch (input.rule) {
     case 'VIDEO_95':
+      return result(videoWatched(state, input.videoDurationSeconds), 'Watch the video to the end first.')
     case 'SCROLL_END':
       return result(state.scrolledToEnd, 'Read to the end of this page first.')
     case 'BUDDY_HELLO':

@@ -99,9 +99,9 @@ test('LINK_OPENED', () => {
   assert.deepEqual(run({ rule: 'LINK_OPENED', state: { ...state, linksOpenedAt: { COMPANY_DASHBOARD: 'x' } } }), { met: true })
 })
 
-test('VIDEO_95 is evaluated as SCROLL_END', () => {
-  assert.equal(reason(run({ rule: 'VIDEO_95' })), 'Read to the end of this page first.')
-  assert.deepEqual(run({ rule: 'VIDEO_95', state: { ...state, scrolledToEnd: true } }), { met: true })
+test('VIDEO_95 needs the video watched, not the page scrolled (effectiveRule picks it only for a ready video)', () => {
+  assert.equal(reason(run({ rule: 'VIDEO_95', videoDurationSeconds: 100 })), 'Watch the video to the end first.')
+  assert.equal(run({ rule: 'VIDEO_95', videoDurationSeconds: 100, state: { ...state, scrolledToEnd: true } }).met, false)
 })
 
 test('a checklist is not required by a non-checklist rule', () => {
@@ -109,7 +109,7 @@ test('a checklist is not required by a non-checklist rule', () => {
 })
 
 test('effectiveRule fallbacks', () => {
-  const facts = { tutorialCount: 2, dashboardLinkSet: true }
+  const facts = { tutorialCount: 2, dashboardLinkSet: true, videoReady: false }
   const buddyBlocks = [checklist('buddy-hello')]
   assert.equal(effectiveRule('VIDEO_95', [], facts), 'SCROLL_END')
   assert.equal(effectiveRule('ALL_LINKS_OPENED', [], { ...facts, tutorialCount: 0 }), 'SCROLL_END')
@@ -119,7 +119,7 @@ test('effectiveRule fallbacks', () => {
   assert.equal(effectiveRule('BUDDY_HELLO', buddyBlocks, facts), 'BUDDY_HELLO')
 })
 
-const FACTS = { tutorialCount: 1, dashboardLinkSet: true }
+const FACTS = { tutorialCount: 1, dashboardLinkSet: true, videoReady: false }
 const input = (target: 'discordUsername' | 'linkedinUrl' | 'bank' | 'payout'): Block => ({ type: 'inputField', target, label: 'x' })
 const ack: Block = { type: 'acknowledgement', kind: 'SECURITY_SOPS', statement: 'x' }
 const emptyChecklist: Block = { type: 'checklist', items: [] }

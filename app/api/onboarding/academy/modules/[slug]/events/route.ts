@@ -14,7 +14,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     await guardAcademyMutation(request, user.id)
     const { slug } = await context.params
     const event = progressEventSchema.parse(await request.json())
-    return NextResponse.json({ success: true, data: await recordEvent(prisma, user.id, slug, event) })
+    // The server's clock, never the client's, decides how far a video report may reach.
+    return NextResponse.json({ success: true, data: await recordEvent(prisma, user.id, slug, event, new Date()) })
   } catch (error) {
     return academyErrorResponse(error)
   }

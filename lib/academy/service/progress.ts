@@ -4,10 +4,12 @@ import { filterBlocks, parseBlocks, readingBlocks, type Block } from '../blocks'
 import { effectiveRule, evaluateCompletion, type PaymentFacts } from '../completion'
 import { AcademyError } from '../errors'
 import { resolveAcademyLink } from '../links'
-import { applyEvent, moduleCardState, nextToUnlock, parseProgressState, type ProgressEvent, type ProgressState } from '../progress'
+import {
+  applyEvent, applyVideoProgress, moduleCardState, nextToUnlock, parseProgressState, type ProgressEvent, type ProgressState,
+} from '../progress'
 import { holidayTeamFor, moduleDueAt } from '../schedule'
 import { timeZoneFor } from '../time'
-import { eventKeysFor, latestDue, type ModuleProgressView } from '../view'
+import { eventKeysFor, latestDue, moduleVideo, type ModuleProgressView } from '../view'
 import { ATTRIBUTE_SELECT } from './attributes'
 import { loadRowFacts, type HireFacts, type LearnerFacts } from './context'
 import { getAcademyConfig } from './library'
@@ -177,7 +179,10 @@ export async function evaluateModule(
   const tutorialKeys = blocks.some((b) => b.type === 'tutorialCards') ? facts.tutorials.map((t) => t.key) : []
   const dashboardLinkSet =
     blocks.some((b) => b.type === 'dashboardLink') && resolveAcademyLink(config.links.COMPANY_DASHBOARD) !== null
-  const rule = effectiveRule(module.completionRule, blocks, { tutorialCount: tutorialKeys.length, dashboardLinkSet })
+  const video = moduleVideo(blocks, config.videos)
+  const rule = effectiveRule(module.completionRule, blocks, {
+    tutorialCount: tutorialKeys.length, dashboardLinkSet, videoReady: video !== null,
+  })
   const completion = evaluateCompletion({
     rule,
     blocks: [...blocks],
@@ -186,8 +191,9 @@ export async function evaluateModule(
     discordUsername: facts.discordUsername,
     securityAckSigned: acknowledgement !== null,
     payment,
+    videoDurationSeconds: video?.video.durationSeconds ?? null,
   })
-  return { rule, completion, payment, acknowledgement }
+  return { rule, completion, payment, acknowledgement, videos: config.videos }
 }
 
 export function toProgressView(
@@ -206,11 +212,13 @@ export function toProgressView(
   }
 }
 
+const notInModule = () => new AcademyError("That isn't part of this module.", 400)
+
 function assertKnownEventKey(event: ProgressEvent, blocks: readonly Block[], facts: LearnerFacts): void {
-  if (event.type === 'SCROLLED_END') return
+  if (event.type === 'SCROLLED_END' || event.type === 'VIDEO_PROGRESS') return
   const keys = eventKeysFor(blocks, facts.tutorials.map((t) => t.key))
   const allowed = event.type === 'CHECK' ? keys.checks : keys.links
-  if (!allowed.includes(event.key)) throw new AcademyError("That isn't part of this module.", 400)
+  if (!allowed.includes(event.key)) throw notInModule()
 }
 
 async function requireRowFacts(db: Db, userId: string, row: OnboardingProgress): Promise<LearnerFacts> {
@@ -219,11 +227,24 @@ async function requireRowFacts(db: Db, userId: string, row: OnboardingProgress):
   return facts
 }
 
+/** A video report counts only against a ready video this person is shown; the server's clock decides how far. */
+async function applyReport(
+  tx: Tx, event: ProgressEvent, blocks: readonly Block[], row: OnboardingProgress, now: Date,
+): Promise<(state: ProgressState) => ProgressState> {
+  if (event.type !== 'VIDEO_PROGRESS') return (state) => applyEvent(state, event, now)
+  const video = moduleVideo(blocks, (await getAcademyConfig(tx)).videos)
+  if (!video) throw notInModule()
+  return (state) => applyVideoProgress(state, event.seconds, now, video.video.durationSeconds, row.startedAt)
+}
+
 /**
  * The row lock serializes every write to `state`. A completed module is finished record, so an
  * event on it (the end-of-page sentinel fires on a re-read) is accepted and changes nothing.
+ * `now` is injectable for tests; routes use the server's clock.
  */
-export async function recordEvent(db: PrismaClient, userId: string, slug: string, event: ProgressEvent): Promise<ModuleProgressView> {
+export async function recordEvent(
+  db: PrismaClient, userId: string, slug: string, event: ProgressEvent, now: Date = new Date(),
+): Promise<ModuleProgressView> {
   return db.$transaction(async (tx) => {
     const { module, index } = findCourseModule(await listCourseModules(tx), slug)
     const row = await lockProgressRow(tx, userId, module.id)
@@ -233,10 +254,10 @@ export async function recordEvent(db: PrismaClient, userId: string, slug: string
     const blocks = await moduleBlocks(tx, versionId, facts, await collectsData(tx, row))
     assertKnownEventKey(event, blocks, facts)
 
-    const now = new Date()
     const current = parseProgressState(row.state)
+    const apply = await applyReport(tx, event, blocks, row, now)
     const finished = row.status === 'COMPLETED'
-    const state = finished ? current : applyEvent(current, event, now)
+    const state = finished ? current : apply(current)
     const saved = finished
       ? row
       : await tx.onboardingProgress.update({ where: { id: row.id }, data: { state: state as unknown as Prisma.InputJsonObject } })

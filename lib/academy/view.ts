@@ -12,9 +12,10 @@ import type { CompletionResult } from './completion'
 import { attributeValueLabel } from './labels'
 import { libraryCardSchema, resolveAcademyLink, resolveCardLink, type AcademyLink, type AcademyLinkKey } from './links'
 import { renderPlaceholders, type PlaceholderKey } from './placeholders'
-import { moduleCardState, type CardStatus, type ProgressState } from './progress'
+import { moduleCardState, videoFurthest, videoWatched, type CardStatus, type ProgressState } from './progress'
 import type { QuizPaper, QuizStatus } from './quiz'
 import { blockersCallLocal, formatClock, overlapWindowLocal, timeZoneFor } from './time'
+import { VIDEO_LANGUAGES, isVideoReady, type VideoConfig, type VideoConfigs, type VideoKey, type VideoLanguage } from './video'
 
 const COMMUTE_TOKEN = '{commute rate table}'
 const COMMUTE_EMPTY_MESSAGE = 'Ask HR for the current rates.'
@@ -91,6 +92,57 @@ export interface ModuleProgressView {
   completedAt: string | null
 }
 
+type VideoBlock = Extract<Block, { type: 'video' }>
+
+/** What the player needs. Transcripts load separately, so the page stays small. */
+export interface ReadyVideoView {
+  ready: true
+  youtubeId: string
+  durationSeconds: number
+  chapters: VideoConfig['chapters']
+  /** Languages with a non-empty transcript. */
+  transcriptLanguages: VideoLanguage[]
+  /** The server's count against this duration. */
+  furthest: number
+  /** Watched to 95%, or the module is finished: seeking is free. */
+  completed: boolean
+}
+
+export type VideoBlockView = VideoBlock & (ReadyVideoView | { ready: false })
+export type ModuleBlockView = Exclude<Block, { type: 'video' }> | VideoBlockView
+
+/** The module's video: the first video block's key, with HR's config when it is ready. */
+export function moduleVideo(blocks: readonly Block[], videos: VideoConfigs): { key: VideoKey; video: VideoConfig } | null {
+  const block = blocks.find((b): b is VideoBlock => b.type === 'video')
+  const video = block ? videos[block.videoKey] : undefined
+  return block && isVideoReady(video) ? { key: block.videoKey, video } : null
+}
+
+export function transcriptLanguages(video: VideoConfig): VideoLanguage[] {
+  return VIDEO_LANGUAGES.filter((language) => (video.transcripts[language] ?? '').trim().length > 0)
+}
+
+/** Adds the player details to each ready video block; an unready one only says so. */
+export function withVideoDetails(
+  blocks: readonly Block[], videos: VideoConfigs, state: ProgressState, rowCompleted: boolean,
+): ModuleBlockView[] {
+  return blocks.map((block): ModuleBlockView => {
+    if (block.type !== 'video') return block
+    const video = videos[block.videoKey]
+    if (!isVideoReady(video)) return { ...block, ready: false }
+    return {
+      ...block,
+      ready: true,
+      youtubeId: video.youtubeId,
+      durationSeconds: video.durationSeconds,
+      chapters: video.chapters,
+      transcriptLanguages: transcriptLanguages(video),
+      furthest: videoFurthest(state, video.durationSeconds),
+      completed: rowCompleted || videoWatched(state, video.durationSeconds),
+    }
+  })
+}
+
 export interface SecurityAcknowledgementView { statementText: string; typedName: string; signedAt: string }
 
 export interface ModuleView {
@@ -107,8 +159,8 @@ export interface ModuleView {
   /** Staff reading an assigned module: no course around it, so no rail and an empty one here. */
   plain: boolean
   rail: ModuleCardView[]
-  /** Conditions applied and placeholders rendered in every text field. */
-  blocks: Block[]
+  /** Conditions applied and placeholders rendered in every text field; video blocks carry the player details. */
+  blocks: ModuleBlockView[]
   lead: PersonView | null
   team: PersonView[]
   buddy: PersonView | null
