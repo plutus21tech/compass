@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
-import { academyRequest } from '../api'
+import { blockRequest, previewSafeSubmit } from '../api'
 import type { BlockContext } from '../types'
 import { FieldError, FieldPanel, SaveButton, SavedNote, TextField, useFieldSave } from './FieldParts'
 
@@ -59,7 +59,8 @@ function MethodPicker({ method, onChange }: { method: PayoutMethod; onChange: (m
 
 /** Saved details are never read back here: the view's saved flag is all this form needs. */
 export function PayoutField({ label, context }: PayoutFieldProps) {
-  const { view, readOnly, onSaved } = context
+  const { view, readOnly, preview, onSaved } = context
+  const request = blockRequest(preview)
   const { saving, error, run } = useFieldSave()
   const [method, setMethod] = useState<PayoutMethod>('WISE')
   const [saved, setSaved] = useState(view.payoutSaved)
@@ -85,7 +86,7 @@ export function PayoutField({ label, context }: PayoutFieldProps) {
     event.preventDefault()
     const form = event.currentTarget
     const values = Object.fromEntries(new FormData(form)) as Record<string, string>
-    const ok = await run(() => academyRequest(PAYOUT_URL, 'PUT', payoutBody(method, values)))
+    const ok = await run(() => request(PAYOUT_URL, 'PUT', payoutBody(method, values)))
     if (!ok) return
     form.reset()
     setSaved(true)
@@ -108,7 +109,7 @@ export function PayoutField({ label, context }: PayoutFieldProps) {
 
   return (
     <FieldPanel title={label}>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={previewSafeSubmit(preview, submit)} className="space-y-4">
         <MethodPicker method={method} onChange={setMethod} />
         {/* The key clears what was typed for one method when the hire picks another. */}
         <div key={method} className="space-y-3">

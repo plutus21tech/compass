@@ -36,3 +36,32 @@ export async function academyRequest<T = void>(url: string, method: 'GET' | 'POS
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : FAILED_MESSAGE
 }
+
+export const PREVIEW_REFUSAL = "This is a preview. Nothing is saved."
+
+export type AcademyRequest = typeof academyRequest
+
+/**
+ * The request a block uses. In HR's preview every write is refused before it reaches fetch, so nothing
+ * rendered there can save as HR, whatever a disabled fieldset does or doesn't cover. Reads still go.
+ */
+export function blockRequest(preview: boolean): AcademyRequest {
+  return preview ? previewRequest : academyRequest
+}
+
+/** One function, so a hook that depends on the request stays stable across renders. */
+const previewRequest: AcademyRequest = <T = void>(url: string, method: 'GET' | 'POST' | 'PUT', body?: unknown): Promise<T> =>
+  method === 'GET' ? academyRequest<T>(url, method, body) : Promise.reject(new AcademyRequestError(PREVIEW_REFUSAL, 403))
+
+/** A form's submit handler that, in a preview, only stops the browser's own submit. */
+export function previewSafeSubmit<E extends { preventDefault: () => void }>(
+  preview: boolean, submit: (event: E) => unknown,
+): (event: E) => void {
+  return (event) => {
+    if (preview) {
+      event.preventDefault()
+      return
+    }
+    void submit(event)
+  }
+}

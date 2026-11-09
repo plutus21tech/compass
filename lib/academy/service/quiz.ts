@@ -227,6 +227,10 @@ export interface SubmittedQuiz {
 /** Everything is decided under the user lock, so a double submit grades once and a cooldown can't be raced. */
 export async function submitQuiz(db: PrismaClient, userId: string, input: unknown): Promise<SubmittedQuiz> {
   const { answers } = submissionSchema.parse(input)
+  // Read before the transaction, so the user lock is held no longer than grading needs. Links only point;
+  // the lock decides the grade, and a hire without a course is refused inside it.
+  const before = await loadHireFacts(db, userId)
+  const linkFor = before ? await chapterLinks(db, userId, before) : NO_CHAPTER_LINKS
   return db.$transaction(async (tx) => {
     await lockUserRow(tx, userId)
     const facts = await loadHireFacts(tx, userId)
@@ -254,7 +258,7 @@ export async function submitQuiz(db: PrismaClient, userId: string, input: unknow
         total: graded.total,
         passed: graded.passed,
         passPercent,
-        review: toReview(graded.answersJson, questions, await chapterLinks(tx, userId, facts)),
+        review: toReview(graded.answersJson, questions, linkFor),
       },
       failAlertDue: !graded.passed && crossesFailThreshold(failedCount, config.failAlertThreshold),
       failedCount,

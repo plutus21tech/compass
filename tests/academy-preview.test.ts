@@ -5,7 +5,7 @@ import {
   previewConditions,
   previewRequestSchema,
 } from '../lib/academy/preview'
-import { mutationLimitFor } from '../lib/academy/rate-limits'
+import { mutationLimitFor, rateLimitMessage } from '../lib/academy/rate-limits'
 
 test('preview facts default to Karachi, office, PK employment, permanent, Partners, no client account', () => {
   assert.deepEqual(DEFAULT_PREVIEW_FACTS, {
@@ -48,4 +48,10 @@ test('a client account is a yes or no: the preview never carries a real account 
 test('previews have their own rate-limit bucket, so trying facts never uses up HR\'s saves', () => {
   assert.deepEqual(mutationLimitFor('u1', 'preview'), { key: 'academy-preview:u1', max: 120 })
   assert.deepEqual(mutationLimitFor('u1', 'default'), { key: 'academy:u1', max: 120 })
+})
+
+test('the preview limit has its own message; other writes keep theirs', () => {
+  assert.equal(rateLimitMessage('preview'), 'Too many previews in a short time. Wait a moment and try again.')
+  assert.equal(rateLimitMessage('default'), 'Too many changes in a short time. Wait a few minutes and try again.')
+  assert.equal(rateLimitMessage('video'), 'Too many changes in a short time. Wait a few minutes and try again.')
 })

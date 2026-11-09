@@ -8,11 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { academyRequest } from '../api'
+import { blockRequest } from '../api'
 import type { BlockContext } from '../types'
 import { useFieldSave } from './FieldParts'
 
 const ACK_URL = '/api/onboarding/academy/acknowledgements'
+
+/** Preview's sign handler: nothing is sent. */
+const NO_SIGN = async () => {}
 
 type AcknowledgementBlockType = Extract<Block, { type: 'acknowledgement' }>
 
@@ -96,14 +99,15 @@ interface AcknowledgementBlockProps {
 }
 
 export function AcknowledgementBlock({ block, context }: AcknowledgementBlockProps) {
-  const { view, readOnly, onSaved } = context
+  const { view, readOnly, preview, onSaved } = context
+  const request = blockRequest(preview)
   const timeZone = view.callTimes.timeZone
   const [signedNow, setSignedNow] = useState<Signature | null>(null)
   const signed = view.securityAcknowledgement ?? signedNow
 
   const sign = async (typedName: string) => {
     const body = { kind: block.kind, typedName, moduleSlug: view.slug }
-    const { signedAt } = await academyRequest<{ signedAt: string }>(ACK_URL, 'POST', body)
+    const { signedAt } = await request<{ signedAt: string }>(ACK_URL, 'POST', body)
     setSignedNow({ typedName, signedAt })
     onSaved()
   }
@@ -112,7 +116,7 @@ export function AcknowledgementBlock({ block, context }: AcknowledgementBlockPro
     <section className="space-y-4 rounded-2xl bg-academy-navy p-5 text-white sm:p-6">
       <h2 className="text-lg font-semibold">{block.statement}</h2>
       {signed ? <Signed name={signed.typedName} date={formatAcademyDate(signed.signedAt, timeZone)} /> : null}
-      {!signed && !readOnly ? <SignForm timeZone={timeZone} onSign={sign} /> : null}
+      {!signed && !readOnly ? <SignForm timeZone={timeZone} onSign={preview ? NO_SIGN : sign} /> : null}
     </section>
   )
 }

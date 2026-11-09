@@ -1,7 +1,7 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { academyRequest } from '../api'
+import { blockRequest, previewSafeSubmit } from '../api'
 import type { BlockContext } from '../types'
 import { FieldError, FieldPanel, SaveButton, SavedNote, TextField, useFieldSave } from './FieldParts'
 
@@ -11,7 +11,8 @@ interface LinkedinFieldProps {
 }
 
 export function LinkedinField({ label, context }: LinkedinFieldProps) {
-  const { state, readOnly, onSaved } = context
+  const { state, readOnly, preview, onSaved } = context
+  const request = blockRequest(preview)
   const { saving, error, run } = useFieldSave()
   const saved = state.linkedinUrl
 
@@ -26,13 +27,13 @@ export function LinkedinField({ label, context }: LinkedinFieldProps) {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const linkedinUrl = String(new FormData(event.currentTarget).get('linkedinUrl') ?? '')
-    const ok = await run(() => academyRequest('/api/onboarding/academy/linkedin', 'PUT', { linkedinUrl }))
+    const ok = await run(() => request('/api/onboarding/academy/linkedin', 'PUT', { linkedinUrl }))
     if (ok) onSaved()
   }
 
   return (
     <FieldPanel title={label}>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={previewSafeSubmit(preview, submit)} className="space-y-3">
         <TextField
           id="linkedin-url"
           name="linkedinUrl"

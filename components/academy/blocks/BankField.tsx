@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
-import { academyRequest } from '../api'
+import { blockRequest, previewSafeSubmit } from '../api'
 import type { BlockContext } from '../types'
 import { FieldError, FieldPanel, SaveButton, SavedNote, TextField, useFieldSave } from './FieldParts'
 
@@ -22,7 +22,8 @@ function savedLine(status: BankStatus | null): string {
 
 /** The form is uncontrolled, so bank values never reach React state, and it resets after a save. */
 export function BankField({ label, context }: BankFieldProps) {
-  const { view, readOnly, onSaved } = context
+  const { view, readOnly, preview, onSaved } = context
+  const request = blockRequest(preview)
   const { saving, error, run } = useFieldSave()
   const [status, setStatus] = useState<BankStatus | null>(null)
   const [saved, setSaved] = useState(view.bankSaved)
@@ -30,8 +31,8 @@ export function BankField({ label, context }: BankFieldProps) {
 
   // The masked IBAN is a nicety: if it can't be read, the line still says the details are saved.
   const loadStatus = useCallback(() => {
-    academyRequest<BankStatus>(BANK_URL, 'GET').then(setStatus, () => setStatus(null))
-  }, [])
+    request<BankStatus>(BANK_URL, 'GET').then(setStatus, () => setStatus(null))
+  }, [request])
 
   useEffect(() => {
     if (saved) loadStatus()
@@ -49,7 +50,7 @@ export function BankField({ label, context }: BankFieldProps) {
     event.preventDefault()
     const form = event.currentTarget
     const body = Object.fromEntries(new FormData(form))
-    const ok = await run(() => academyRequest(BANK_URL, 'PUT', body))
+    const ok = await run(() => request(BANK_URL, 'PUT', body))
     if (!ok) return
     form.reset()
     setSaved(true)
@@ -73,7 +74,7 @@ export function BankField({ label, context }: BankFieldProps) {
 
   return (
     <FieldPanel title={label}>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={previewSafeSubmit(preview, submit)} className="space-y-3">
         <TextField id="bank-title" name="accountTitle" label="Account title" />
         <TextField id="bank-name" name="bankName" label="Bank" />
         <TextField id="bank-branch" name="branch" label="Branch" />

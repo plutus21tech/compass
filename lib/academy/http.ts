@@ -4,7 +4,7 @@ import { getSession, type SafeUser } from '@/lib/auth'
 import { formatZodIssues } from './profile-input'
 import { isAcademyEnabled } from './flag'
 import { AcademyError } from './errors'
-import { mutationLimitFor, type MutationBucket } from './rate-limits'
+import { mutationLimitFor, rateLimitMessage, type MutationBucket } from './rate-limits'
 import { checkRateLimit, RateLimitUnavailableError } from '@/lib/rate-limit'
 import { assertSameOrigin, SameOriginError } from '@/lib/security/same-origin'
 
@@ -25,7 +25,7 @@ export async function guardAcademyMutation(
   try {
     const { key, max } = mutationLimitFor(userId, bucket)
     const limit = await checkRateLimit(key, max)
-    if (!limit.allowed) throw new AcademyError('Too many changes in a short time. Wait a few minutes and try again.', 429)
+    if (!limit.allowed) throw new AcademyError(rateLimitMessage(bucket), 429)
   } catch (error) {
     if (error instanceof RateLimitUnavailableError) {
       console.warn('[academy] rate limiter unavailable; allowing request')

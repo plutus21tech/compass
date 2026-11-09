@@ -20,3 +20,11 @@ export function mutationLimitFor(userId: string, bucket: MutationBucket): { key:
       return { key: `academy:${userId}`, max: MUTATIONS_PER_WINDOW }
   }
 }
+
+const CHANGES_MESSAGE = 'Too many changes in a short time. Wait a few minutes and try again.'
+const PREVIEWS_MESSAGE = 'Too many previews in a short time. Wait a moment and try again.'
+
+/** What the person is told when a bucket is full. */
+export function rateLimitMessage(bucket: MutationBucket): string {
+  return bucket === 'preview' ? PREVIEWS_MESSAGE : CHANGES_MESSAGE
+}
