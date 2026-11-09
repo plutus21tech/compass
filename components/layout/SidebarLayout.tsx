@@ -11,7 +11,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { BookOpen, CalendarCheck, CreditCard, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
+import { BookOpen, CalendarCheck, Clapperboard, CreditCard, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
 import { withAcademyNav, withGroupItem, withOaPaymentNav, withItemPatched, withLockedHandbookNav, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
 import { shouldRedirectLockedPage } from '@/lib/academy/lockout'
 
@@ -201,7 +201,7 @@ export function SidebarLayout({
     baseSidebarConfig === onboardingSidebarConfig
       ? withLockedHandbookNav(sidebarConfigWithSecurity, academyEnabled === true, BookOpen)
       : withOaPaymentNav(
-          withAcademyNav(sidebarConfigWithSecurity, academyEnabled === true, { library: BookOpen, contacts: Users, links: Link2 }),
+          withAcademyNav(sidebarConfigWithSecurity, academyEnabled === true, { library: BookOpen, contacts: Users, links: Link2, videos: Clapperboard }),
           academyEnabled === true && user?.role === 'OA',
           CreditCard,
         )

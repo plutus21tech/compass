@@ -62,7 +62,7 @@ export default function AcademyVideosPage() {
   const [drafts, setDrafts] = useState<Drafts>({ VIDEO_1: EMPTY_VIDEO_DRAFT, VIDEO_2: EMPTY_VIDEO_DRAFT })
   const [unreadable, setUnreadable] = useState<VideoKey[]>([])
   const [savedIds, setSavedIds] = useState<Record<VideoKey, string | null>>({ VIDEO_1: null, VIDEO_2: null })
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null)
+  const [versions, setVersions] = useState<VideoSettingsView['versions'] | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<VideoKey | null>(null)
@@ -76,10 +76,14 @@ export default function AcademyVideosPage() {
         setDrafts({ VIDEO_1: toDraft(view.videos.VIDEO_1), VIDEO_2: toDraft(view.videos.VIDEO_2) })
         setSavedIds({ VIDEO_1: view.videos.VIDEO_1?.youtubeId ?? null, VIDEO_2: view.videos.VIDEO_2?.youtubeId ?? null })
         setUnreadable(view.unreadable)
-        setUpdatedAt(view.updatedAt)
+        setVersions(view.versions)
         setLoaded(true)
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load the videos'))
+      .catch((e) => {
+        // A reload that fails must not leave the old forms looking current.
+        setLoaded(false)
+        setError(e instanceof Error ? e.message : 'Could not load the videos')
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -87,6 +91,7 @@ export default function AcademyVideosPage() {
 
   const save = async (key: VideoKey) => {
     const { video, error: problem } = fromDraft(drafts[key])
+    if (!versions) return
     if (problem) {
       setError(`${TITLES[key]} - ${problem}`)
       return
@@ -96,13 +101,13 @@ export default function AcademyVideosPage() {
     try {
       const view = await academyFetch<VideoSettingsView>('/api/admin/onboarding/videos', {
         method: 'PUT',
-        body: { key, video, expectedUpdatedAt: updatedAt },
+        body: { key, video, expectedVersion: versions[key] },
       })
       // Only the saved video's form is refreshed; the other form keeps whatever is being typed.
       setDrafts((current) => ({ ...current, [key]: toDraft(view.videos[key]) }))
       setSavedIds((current) => ({ ...current, [key]: view.videos[key]?.youtubeId ?? null }))
       setUnreadable((current) => current.filter((k) => k !== key))
-      setUpdatedAt(view.updatedAt)
+      setVersions(view.versions)
       toast.success(`${TITLES[key]} saved`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the video')

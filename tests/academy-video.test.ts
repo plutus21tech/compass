@@ -79,14 +79,14 @@ test('m:ss durations are converted', () => {
 
 interface Row { videos: unknown; updatedAt: Date }
 
-/** A one-row in-memory stand-in for the config table; `touch` simulates someone else saving. */
-function fakeDb(initial: Row | null) {
+/** A one-row in-memory stand-in for the config table; `touch` is someone saving another setting. */
+function fakeDb(initial: Row | null, createError: Error = Object.assign(new Error('unique'), { code: 'P2002' })) {
   const state = { row: initial }
   const db = {
     onboardingConfig: {
       findUnique: async () => state.row,
       create: async ({ data }: { data: { videos: unknown } }) => {
-        if (state.row) throw new Error('unique')
+        if (state.row) throw createError
         state.row = { videos: data.videos, updatedAt: new Date(1000) }
       },
       updateMany: async ({ where, data }: { where: { updatedAt: Date }; data: { videos: unknown } }) => {
@@ -102,10 +102,14 @@ function fakeDb(initial: Row | null) {
   return { db: db as unknown as PrismaClient, state, touch }
 }
 
+const versionOf = async (db: PrismaClient, key: 'VIDEO_1' | 'VIDEO_2') => (await getVideoSettings(db)).versions[key]
+const CONFLICT = (e: unknown) =>
+  e instanceof AcademyError && e.status === 409 && e.message === 'Someone else changed this video. Reload to see their changes.'
+
 test('saveVideo replaces only the named key and keeps the other as stored', async () => {
   const other = { ...valid, youtubeId: 'AAAAAAAAAAA' }
   const { db, state } = fakeDb({ videos: { VIDEO_1: other, VIDEO_2: 'junk' }, updatedAt: new Date(1000) })
-  const view = await saveVideo(db, { key: 'VIDEO_1', video: valid, expectedUpdatedAt: new Date(1000).toISOString() })
+  const view = await saveVideo(db, { key: 'VIDEO_1', video: valid, expectedVersion: await versionOf(db, 'VIDEO_1') })
   assert.equal(view.videos.VIDEO_1?.youtubeId, 'dQw4w9WgXcQ')
   assert.equal((state.row?.videos as Record<string, unknown>).VIDEO_2, 'junk')
   assert.deepEqual(view.unreadable, ['VIDEO_2'])
@@ -113,42 +117,75 @@ test('saveVideo replaces only the named key and keeps the other as stored', asyn
 
 test('saveVideo with null removes just that key', async () => {
   const { db } = fakeDb({ videos: { VIDEO_1: valid, VIDEO_2: valid }, updatedAt: new Date(1000) })
-  const view = await saveVideo(db, { key: 'VIDEO_2', video: null, expectedUpdatedAt: new Date(1000).toISOString() })
+  const view = await saveVideo(db, { key: 'VIDEO_2', video: null, expectedVersion: await versionOf(db, 'VIDEO_2') })
   assert.deepEqual(Object.keys(view.videos), ['VIDEO_1'])
 })
 
-test('saveVideo refuses a stale page with 409 and writes nothing', async () => {
-  const { db, state, touch } = fakeDb({ videos: { VIDEO_1: valid }, updatedAt: new Date(1000) })
-  const loadedAt = new Date(1000).toISOString()
-  touch()
+test('saveVideo refuses a page whose video changed since it loaded, and writes nothing', async () => {
+  const { db, state } = fakeDb({ videos: { VIDEO_1: valid }, updatedAt: new Date(1000) })
+  const loaded = await versionOf(db, 'VIDEO_1')
+  await saveVideo(db, { key: 'VIDEO_1', video: { ...valid, durationSeconds: 400 }, expectedVersion: loaded })
   const before = state.row
-  await assert.rejects(
-    saveVideo(db, { key: 'VIDEO_2', video: valid, expectedUpdatedAt: loadedAt }),
-    (e: unknown) => e instanceof AcademyError && e.status === 409 && e.message === 'Someone else changed the videos. Reload to see their changes.',
-  )
+  await assert.rejects(saveVideo(db, { key: 'VIDEO_1', video: valid, expectedVersion: loaded }), CONFLICT)
   assert.equal(state.row, before)
 })
 
-test('saveVideo creates the row when none exists and refuses a stale null', async () => {
+test('another setting saved meanwhile, or the other video, does not refuse this save', async () => {
+  const { db, state, touch } = fakeDb({ videos: { VIDEO_1: valid }, updatedAt: new Date(1000) })
+  const loaded2 = await versionOf(db, 'VIDEO_2')
+  touch()
+  await saveVideo(db, { key: 'VIDEO_1', video: { ...valid, durationSeconds: 400 }, expectedVersion: await versionOf(db, 'VIDEO_1') })
+  const view = await saveVideo(db, { key: 'VIDEO_2', video: valid, expectedVersion: loaded2 })
+  assert.equal(view.videos.VIDEO_2?.youtubeId, valid.youtubeId)
+  assert.equal((state.row?.videos as Record<string, { durationSeconds: number }>).VIDEO_1.durationSeconds, 400)
+})
+
+test('saveVideo creates the row when none exists; a row made meanwhile is written to, not refused', async () => {
   const empty = fakeDb(null)
-  const view = await saveVideo(empty.db, { key: 'VIDEO_1', video: valid, expectedUpdatedAt: null })
+  const none = await versionOf(empty.db, 'VIDEO_1')
+  const view = await saveVideo(empty.db, { key: 'VIDEO_1', video: valid, expectedVersion: none })
   assert.ok(view.updatedAt)
-  const created = fakeDb({ videos: {}, updatedAt: new Date(1000) })
-  await assert.rejects(saveVideo(created.db, { key: 'VIDEO_1', video: valid, expectedUpdatedAt: null }), (e: unknown) => e instanceof AcademyError && e.status === 409)
+  // Another setting created the row first: VIDEO_2 is still as the page saw it, so the save goes through.
+  const raced = fakeDb(null)
+  const loaded = await versionOf(raced.db, 'VIDEO_2')
+  raced.state.row = { videos: {}, updatedAt: new Date(1000) }
+  const after = await saveVideo(raced.db, { key: 'VIDEO_2', video: valid, expectedVersion: loaded })
+  assert.equal(after.videos.VIDEO_2?.youtubeId, valid.youtubeId)
+})
+
+test('a create failure other than a unique clash is not reported as a conflict', async () => {
+  const broken = fakeDb(null, new Error('connection lost'))
+  const none = await versionOf(broken.db, 'VIDEO_1')
+  // The row appears between the read and the create, and the create fails for another reason.
+  const config = (broken.db as unknown as { onboardingConfig: { findUnique: () => Promise<Row | null> } }).onboardingConfig
+  let reads = 0
+  config.findUnique = async () => {
+    reads += 1
+    if (reads === 1) {
+      broken.state.row = { videos: {}, updatedAt: new Date(1) }
+      return null
+    }
+    return broken.state.row
+  }
+  await assert.rejects(saveVideo(broken.db, { key: 'VIDEO_1', video: valid, expectedVersion: none }), /connection lost/)
 })
 
 test('saveVideo validates the video and the key', async () => {
   const { db } = fakeDb(null)
-  await assert.rejects(saveVideo(db, { key: 'VIDEO_1', video: { ...valid, youtubeId: 'bad' }, expectedUpdatedAt: null }))
-  await assert.rejects(saveVideo(db, { key: 'VIDEO_3', video: valid, expectedUpdatedAt: null }))
+  const none = await versionOf(db, 'VIDEO_1')
+  await assert.rejects(saveVideo(db, { key: 'VIDEO_1', video: { ...valid, youtubeId: 'bad' }, expectedVersion: none }))
+  await assert.rejects(saveVideo(db, { key: 'VIDEO_3', video: valid, expectedVersion: none }))
 })
 
-test('getVideoSettings reports unreadable videos and updatedAt', async () => {
+test('getVideoSettings reports unreadable videos, updatedAt and a version per key', async () => {
   const { db } = fakeDb({ videos: { VIDEO_1: valid, VIDEO_2: { youtubeId: 'x' } }, updatedAt: new Date(1000) })
   const view = await getVideoSettings(db)
   assert.deepEqual(view.unreadable, ['VIDEO_2'])
   assert.equal(view.updatedAt, new Date(1000).toISOString())
-  assert.deepEqual((await getVideoSettings(fakeDb(null).db)), { videos: {}, unreadable: [], updatedAt: null })
+  assert.notEqual(view.versions.VIDEO_1, view.versions.VIDEO_2)
+  const empty = await getVideoSettings(fakeDb(null).db)
+  assert.deepEqual([empty.videos, empty.unreadable, empty.updatedAt], [{}, [], null])
+  assert.equal(empty.versions.VIDEO_1, empty.versions.VIDEO_2)
 })
 
 test('the admin nav links to the video settings', () => {
@@ -159,6 +196,14 @@ test('the admin nav links to the video settings', () => {
   }
   const hrefs = withAcademyNav(config, true, { library: icon, contacts: icon, links: icon }).groups[0].items.map((i) => i.href)
   assert.ok(hrefs.includes('/admin/onboarding/academy/videos'))
+})
+
+test('the Videos nav item has its own icon', () => {
+  const icon = (() => null) as unknown as SidebarConfig['items'][number]['icon']
+  const videos = (() => null) as unknown as SidebarConfig['items'][number]['icon']
+  const config: SidebarConfig = { items: [{ label: 'Dashboard', href: '/admin', icon }], groups: [{ label: 'Onboarding', items: [] }] }
+  const items = withAcademyNav(config, true, { library: icon, contacts: icon, links: icon, videos }).groups[0].items
+  assert.equal(items.find((i) => i.href === '/admin/onboarding/academy/videos')?.icon, videos)
 })
 
 test('lengthMismatch warns only past 2 seconds, in m:ss, and never for an unreadable length', async () => {

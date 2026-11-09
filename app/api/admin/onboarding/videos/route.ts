@@ -14,7 +14,7 @@ export async function GET() {
   }
 }
 
-/** Body: { key: 'VIDEO_1' | 'VIDEO_2', video: config | null, expectedUpdatedAt: string | null } */
+/** Body: { key: 'VIDEO_1' | 'VIDEO_2', video: config | null, expectedVersion: the key's version from GET } */
 export async function PUT(request: NextRequest) {
   try {
     const user = await requireAcademyHr()

@@ -61,6 +61,8 @@ export interface AcademyNavIcons {
   library: NavItem['icon']
   contacts: NavItem['icon']
   links: NavItem['icon']
+  /** Falls back to the library icon. */
+  videos?: NavItem['icon']
 }
 
 /** Sends a group's item somewhere else, keeping its place and label; the same config when it is missing. */
@@ -84,7 +86,7 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
     { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
     { label: 'Assign a module', href: '/admin/onboarding/academy/assign', icon: icons.library },
     { label: 'Checklist template', href: '/admin/onboarding/academy/checklist', icon: icons.links },
-    { label: 'Videos', href: '/admin/onboarding/academy/videos', icon: icons.library },
+    { label: 'Videos', href: '/admin/onboarding/academy/videos', icon: icons.videos ?? icons.library },
   ]
   const moved = withGroupItemMoved(
     withGroupItemMoved(config, '/admin/onboarding/modules', '/admin/onboarding/academy/modules'),
