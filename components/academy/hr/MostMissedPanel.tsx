@@ -73,7 +73,7 @@ export function MostMissedPanel() {
       )}
       {rows !== null && rows.length > TOP && (
         <Button type="button" size="sm" variant="outline" onClick={() => setAll((v) => !v)}>
-          {all ? 'Show top 10' : `Show all ${rows.length}`}
+          {all ? `Show top ${TOP}` : `Show all ${rows.length}`}
         </Button>
       )}
     </section>

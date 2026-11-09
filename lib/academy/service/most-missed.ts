@@ -11,6 +11,7 @@ export async function loadMostMissed(db: Db, actor: { id: string; role: string }
   if (!canManageOnboarding(actor.role as Parameters<typeof canManageOnboarding>[0])) {
     throw new AcademyError('Forbidden', 403)
   }
+  // Unbounded on purpose: every attempt counts toward the rates, and the table stays small (a few per hire).
   const rows = await db.quizAttempt.findMany({ select: { userId: true, createdAt: true, answersJson: true } })
   // The legacy quiz stored a map of answers in this table; only array-shaped rows are Academy attempts.
   const attempts = rows.flatMap(({ userId, createdAt, answersJson }) => {

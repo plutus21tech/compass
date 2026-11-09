@@ -9,7 +9,7 @@ const attempt = (userId: string, day: number, answers: ReturnType<typeof answer>
 })
 const question = (id: string, retiredAt: Date | null = null): MissedQuestion => ({ id, questionText: `Question ${id}`, retiredAt })
 
-test('rates are wrong over attempts, sorted by rate then by attempts', () => {
+test('rates are wrong over attempts; rows short of MIN_ANSWERS sort by attempts', () => {
   const rows = mostMissed(
     [
       attempt('u1', 1, [answer('a', false), answer('b', true), answer('c', false)]),
@@ -20,11 +20,11 @@ test('rates are wrong over attempts, sorted by rate then by attempts', () => {
     [question('a'), question('b'), question('c')],
   )
   assert.deepEqual(rows.map((r) => [r.questionId, r.attempts, r.wrong, r.wrongRate]), [
-    ['c', 2, 2, 1],
     ['a', 4, 2, 0.5],
     ['b', 3, 1, 1 / 3],
+    ['c', 2, 2, 1],
   ])
-  assert.equal(rows[0].question, 'Question c')
+  assert.equal(rows[2].question, 'Question c')
 })
 
 test('equal rates put the question with more attempts first', () => {
@@ -74,4 +74,19 @@ test('the note shows under 5 answers and not from 5', () => {
   assert.equal(MIN_ANSWERS, 5)
   assert.equal(answerNote(4), 'Not enough answers yet')
   assert.equal(answerNote(5), null)
+})
+
+test('rows with enough answers rank first by rate; the rest follow by attempts', () => {
+  const many = (prefix: string, count: number, questionId: string, wrongCount: number) =>
+    Array.from({ length: count }, (_, i) => attempt(`${prefix}${i}`, 1, [answer(questionId, i >= wrongCount)]))
+  const rows = mostMissed(
+    [
+      ...many('few', 1, 'one-of-one', 1), // 1 of 1 wrong: 100%, too few answers
+      ...many('some', 3, 'three', 1), // 1 of 3 wrong, too few answers
+      ...many('real', MIN_ANSWERS, 'real-high', 3), // 3 of 5 wrong
+      ...many('low', MIN_ANSWERS + 1, 'real-low', 1), // 1 of 6 wrong
+    ],
+    [question('one-of-one'), question('three'), question('real-high'), question('real-low')],
+  )
+  assert.deepEqual(rows.map((r) => r.questionId), ['real-high', 'real-low', 'three', 'one-of-one'])
 })

@@ -34,7 +34,7 @@ interface Tally {
 /**
  * How often each question is answered wrongly, over every attempt and over each person's first attempt
  * at it. Academy attempts only (the caller passes nothing else). Retired questions are kept, labelled.
- * Questions nobody has answered are left out; the worst come first.
+ * Questions nobody has answered are left out; the worst with enough answers come first.
  */
 export function mostMissed(
   attempts: readonly MissedAttempt[],
@@ -72,9 +72,20 @@ export function mostMissed(
       retired: question.retiredAt !== null,
     }
   })
-  return rows.sort(
-    (a, b) => b.wrongRate - a.wrongRate || b.attempts - a.attempts || a.question.localeCompare(b.question),
-  )
+  return rows.sort(byWorst)
+}
+
+const hasEnough = (row: MostMissedRow) => row.attempts >= MIN_ANSWERS
+
+/**
+ * Rows with enough answers come first, by rate then attempts. The rest follow by attempts alone,
+ * since a 1-of-1 rate says nothing and must not crowd out a real problem.
+ */
+function byWorst(a: MostMissedRow, b: MostMissedRow): number {
+  const enough = Number(hasEnough(b)) - Number(hasEnough(a))
+  if (enough !== 0) return enough
+  const rate = hasEnough(a) ? b.wrongRate - a.wrongRate : 0
+  return rate || b.attempts - a.attempts || a.question.localeCompare(b.question)
 }
 
 /** The note that stands in for a row's numbers while there are too few answers. */
