@@ -11,6 +11,7 @@ import {
   sanitizeStoredLinks,
   type AcademyConfigView,
 } from '../links'
+import { VIDEO_KEYS, readVideo, type VideoConfigs } from '../video'
 
 type Db = PrismaClient | Prisma.TransactionClient
 
@@ -122,6 +123,16 @@ function validCount(value: unknown, min: number, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min ? value : fallback
 }
 
+/** Keeps only videos that validate; a broken one reads as no video. Never throws. */
+function sanitizeStoredVideos(stored: unknown): VideoConfigs {
+  const out: VideoConfigs = {}
+  for (const key of VIDEO_KEYS) {
+    const video = readVideo(stored, key)
+    if (video) out[key] = video
+  }
+  return out
+}
+
 /** Tolerates a missing row and malformed stored JSON; never returns a link that fails validation. */
 export async function getAcademyConfig(db: Db): Promise<AcademyConfigView> {
   const row = await db.onboardingConfig.findUnique({ where: { id: CONFIG_ID } })
@@ -133,6 +144,7 @@ export async function getAcademyConfig(db: Db): Promise<AcademyConfigView> {
     blockersCallCt: blockers && BLOCKERS_CALL_PATTERN.test(blockers) ? blockers : DEFAULTS.blockersCallCt,
     retakeCooldownMinutes: validCount(row?.retakeCooldownMinutes, 0, DEFAULTS.retakeCooldownMinutes),
     failAlertThreshold: validCount(row?.failAlertThreshold, 1, DEFAULTS.failAlertThreshold),
+    videos: sanitizeStoredVideos(row?.videos),
   }
 }
 
@@ -146,6 +158,7 @@ export async function updateAcademyConfig(db: PrismaClient, input: unknown): Pro
     ...(parsed.blockersCallCt !== undefined ? { blockersCallCt: parsed.blockersCallCt } : {}),
     ...(parsed.retakeCooldownMinutes !== undefined ? { retakeCooldownMinutes: parsed.retakeCooldownMinutes } : {}),
     ...(parsed.failAlertThreshold !== undefined ? { failAlertThreshold: parsed.failAlertThreshold } : {}),
+    ...(parsed.videos !== undefined ? { videos: parsed.videos as Prisma.InputJsonObject } : {}),
   }
   await db.onboardingConfig.upsert({
     where: { id: CONFIG_ID },

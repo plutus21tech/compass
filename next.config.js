@@ -2,9 +2,10 @@
 const cspReportOnly = [
   "default-src 'self'",
   // Next.js and Vercel analytics require inline/eval in some cases; allow them for report-only phase.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://vercel.live https://www.youtube.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' data: blob: https:",
+  "img-src 'self' data: blob: https: https://i.ytimg.com",
+  "frame-src 'self' https://www.youtube-nocookie.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' https://vercel.live wss://ws-us3.pusher.com https://sockjs-us3.pusher.com",
   "frame-ancestors 'none'",

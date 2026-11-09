@@ -84,6 +84,7 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
     { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
     { label: 'Assign a module', href: '/admin/onboarding/academy/assign', icon: icons.library },
     { label: 'Checklist template', href: '/admin/onboarding/academy/checklist', icon: icons.links },
+    { label: 'Videos', href: '/admin/onboarding/academy/videos', icon: icons.library },
   ]
   const moved = withGroupItemMoved(
     withGroupItemMoved(config, '/admin/onboarding/modules', '/admin/onboarding/academy/modules'),

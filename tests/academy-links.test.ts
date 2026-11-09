@@ -116,7 +116,7 @@ const adminConfig: SidebarConfig = {
 const onboardingConfig: SidebarConfig = { items: [{ label: 'Onboarding', href: '/onboarding', icon }], groups: [] }
 const icons = { library: icon, contacts: icon, links: icon }
 
-test('withAcademyNav adds five items to the admin Onboarding group only when enabled', () => {
+test('withAcademyNav adds six items to the admin Onboarding group only when enabled', () => {
   assert.equal(withAcademyNav(adminConfig, false, icons), adminConfig)
   const next = withAcademyNav(adminConfig, true, icons)
   assert.deepEqual(
@@ -128,9 +128,10 @@ test('withAcademyNav adds five items to the admin Onboarding group only when ena
       '/admin/onboarding/academy/links',
       '/admin/onboarding/academy/assign',
       '/admin/onboarding/academy/checklist',
+      '/admin/onboarding/academy/videos',
     ],
   )
-  assert.equal(withAcademyNav(next, true, icons).groups[0].items.length, 6)
+  assert.equal(withAcademyNav(next, true, icons).groups[0].items.length, 7)
   assert.equal(adminConfig.groups[0].items.length, 1)
 })
 

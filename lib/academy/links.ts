@@ -1,5 +1,6 @@
 // Pure link and config rules for the Academy. No server-only imports: safe for client components.
 import { z } from 'zod'
+import { videoConfigsSchema, type VideoConfigs } from './video'
 import { CONTRACT_TYPES, EMPLOYMENT_STATUSES, WORK_MODES } from './attributes'
 
 export const ACADEMY_LINK_KEYS = [
@@ -119,6 +120,7 @@ export interface AcademyConfigView {
   blockersCallCt: string
   retakeCooldownMinutes: number
   failAlertThreshold: number
+  videos: VideoConfigs
 }
 
 export const BLOCKERS_CALL_PATTERN = /^(MON|TUE|WED|THU|FRI|SAT|SUN) ([01]\d|2[0-3]):[0-5]\d$/
@@ -134,6 +136,7 @@ export const academyConfigInputSchema = z.object({
   blockersCallCt: z.string().trim().toUpperCase().regex(BLOCKERS_CALL_PATTERN, 'use a format like WED 07:00').optional(),
   retakeCooldownMinutes: z.number().int().min(0).max(525600).optional(),
   failAlertThreshold: z.number().int().min(1).max(1000).optional(),
+  videos: videoConfigsSchema.optional(),
 })
 
 export type AcademyConfigInput = z.infer<typeof academyConfigInputSchema>
