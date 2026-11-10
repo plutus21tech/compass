@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ALL_TEAMS, INTERNAL_TEAMS } from '../lib/handbook/teams'
+import { ALL_TEAMS, INTERNAL_TEAMS, LEGACY_CATALOG } from './helpers/team-catalog'
 import {
   computeCoverage,
   summarizeCoverage,
@@ -68,7 +68,7 @@ const unreviewedGaps: AdminPageInput = {
 const pages = [universal, pakistanOnly, unreviewedGaps]
 
 test('every row has one cell per team, in ALL_TEAMS order', () => {
-  const rows = computeCoverage(pages)
+  const rows = computeCoverage(pages, ALL_TEAMS)
   assert.equal(rows.length, 3)
   for (const row of rows) {
     assert.equal(row.cells.length, ALL_TEAMS.length)
@@ -80,7 +80,7 @@ test('every row has one cell per team, in ALL_TEAMS order', () => {
 })
 
 test('a team addressed by a variant is COVERED and carries that variant id', () => {
-  const row = computeCoverage(pages).find((r) => r.slug === 'universal')!
+  const row = computeCoverage(pages, ALL_TEAMS).find((r) => r.slug === 'universal')!
   for (const cell of row.cells) {
     assert.equal(cell.state, 'COVERED')
     assert.equal(cell.variantId, 'v1')
@@ -88,7 +88,7 @@ test('a team addressed by a variant is COVERED and carries that variant id', () 
 })
 
 test('a gap listed in intentionalGapTeams is INTENTIONAL, not UNREVIEWED', () => {
-  const row = computeCoverage(pages).find((r) => r.slug === 'pakistan-only')!
+  const row = computeCoverage(pages, ALL_TEAMS).find((r) => r.slug === 'pakistan-only')!
   const pk = row.cells.find((c) => c.team === 'PAKISTAN')!
   const ma = row.cells.find((c) => c.team === 'MOROCCO')!
   assert.equal(pk.state, 'COVERED')
@@ -97,7 +97,7 @@ test('a gap listed in intentionalGapTeams is INTENTIONAL, not UNREVIEWED', () =>
 })
 
 test('a gap with no decision recorded is UNREVIEWED', () => {
-  const row = computeCoverage(pages).find((r) => r.slug === 'unreviewed-gaps')!
+  const row = computeCoverage(pages, ALL_TEAMS).find((r) => r.slug === 'unreviewed-gaps')!
   assert.equal(row.cells.find((c) => c.team === 'INDONESIA')!.state, 'UNREVIEWED')
   assert.equal(row.cells.find((c) => c.team === 'NOBLE')!.state, 'UNREVIEWED')
   assert.equal(row.cells.find((c) => c.team === 'PAKISTAN')!.state, 'COVERED')
@@ -114,12 +114,12 @@ test('COVERED wins over an intentional gap claiming the same team', () => {
     intentionalGapTeams: ['PAKISTAN'],
     variants: [{ id: 'v4', bodyMarkdown: 'BODY_D', orderIndex: 0, audiences: ['PAKISTAN'] }],
   }
-  const row = computeCoverage([contradictory])[0]
+  const row = computeCoverage([contradictory], ALL_TEAMS)[0]
   assert.equal(row.cells.find((c) => c.team === 'PAKISTAN')!.state, 'COVERED')
 })
 
 test('summarize counts every cell exactly once', () => {
-  const s = summarizeCoverage(computeCoverage(pages))
+  const s = summarizeCoverage(computeCoverage(pages, ALL_TEAMS))
   assert.equal(s.total, 24) // 3 pages x 8 teams
   assert.equal(s.covered, 8 + 1 + 5)
   assert.equal(s.intentional, 7)
@@ -128,11 +128,11 @@ test('summarize counts every cell exactly once', () => {
 })
 
 test('matchGroup recognises EVERYONE and PLUTUS21_INTERNAL', () => {
-  assert.equal(matchGroup([...ALL_TEAMS]), 'EVERYONE')
-  assert.equal(matchGroup([...INTERNAL_TEAMS]), 'PLUTUS21_INTERNAL')
-  assert.equal(matchGroup(['PAKISTAN']), null)
+  assert.equal(matchGroup([...ALL_TEAMS], LEGACY_CATALOG), 'EVERYONE')
+  assert.equal(matchGroup([...INTERNAL_TEAMS], LEGACY_CATALOG), 'PLUTUS21_INTERNAL')
+  assert.equal(matchGroup(['PAKISTAN'], LEGACY_CATALOG), null)
 })
 
 test('matchGroup ignores ordering', () => {
-  assert.equal(matchGroup([...ALL_TEAMS].reverse()), 'EVERYONE')
+  assert.equal(matchGroup([...ALL_TEAMS].reverse(), LEGACY_CATALOG), 'EVERYONE')
 })

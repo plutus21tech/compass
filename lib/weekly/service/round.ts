@@ -1,7 +1,7 @@
 // The Evaluation round page (UX spec, section 4): one round = one evaluation period and its weekly cycle. HR moves it
 // Draft → Review → Open → Closed → Released; this service derives the stage, says what is next, and makes the moves.
 import { prisma } from '@/lib/db'
-import { getResolvedEvaluationAssignments, snapshotEvaluationPeriodAssignments } from '@/lib/evaluation-assignments'
+import { getResolvedEvaluationAssignments, snapshotEvaluationPeriodAssignments, snapshotOnLock } from '@/lib/evaluation-assignments'
 import { cycleWeeks, effectiveWeek, parseCalendarDate, startOfKarachiDay, weekStartsAt } from '../calendar'
 import { evaluateeExclusion, isOutsideRedesign } from '../eligibility'
 import { renderRequestExpiredEmail } from '../emails'
@@ -310,7 +310,8 @@ export async function setRoundLock(actor: WeeklyActor, periodId: string, locked:
     await prisma.$transaction(async (tx) => {
       // Waits for any late form an employee is saving (they hold the row FOR SHARE), so none lands after the close.
       await tx.$queryRaw`SELECT id FROM "EvaluationPeriod" WHERE id = ${periodId} FOR UPDATE`
-      if (locked) await snapshotEvaluationPeriodAssignments(periodId, tx)
+      // Closing keeps mappings that were fixed to what the quarter ran with (Q3 2026); otherwise it saves today's.
+      if (locked) await snapshotOnLock(periodId, tx)
       // Closing also ends employees' late forms for good: reopening to correct something does not bring them back.
       await tx.evaluationPeriod.update({ where: { id: periodId }, data: locked ? { isLocked: true, lateFormsOpenedAt: null } : { isLocked: false } })
     }, { timeout: 60_000 })
@@ -326,7 +327,8 @@ export async function setRoundLock(actor: WeeklyActor, periodId: string, locked:
     throw new WeeklyError(active ? `This round cannot be unlocked while ${active.name} is active` : 'Make this quarter active before unlocking it', 409)
   }
   await prisma.$transaction(async (tx) => {
-    if (locked) await snapshotEvaluationPeriodAssignments(periodId, tx)
+    // A closed round already saved its mappings; locking keeps those rather than taking today's.
+    if (locked) await snapshotOnLock(periodId, tx)
     await tx.evaluationPeriod.update({ where: { id: periodId }, data: { isLocked: locked } })
   }, { timeout: 60_000 })
   await recordAudit(prisma, { cycleId: cycle.id, actorId: actor.id, actorRole: 'HR', action: locked ? 'ROUND_LOCK' : 'ROUND_UNLOCK', objectType: 'EvaluationPeriod', objectId: periodId })

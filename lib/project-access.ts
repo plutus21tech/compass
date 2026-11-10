@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 export type ProjectViewer = {
   id: string
   role: string | null | undefined
+  position?: string | null
 }
 
 export type ProjectMembershipForAccess = {
@@ -22,13 +23,18 @@ export type ProjectAuthorization = {
 
 const MANAGER_MEMBERSHIP_ROLES = new Set(['OWNER', 'LEAD'])
 
+// HR and partners (any title containing "partner"; only HR can set titles) see and manage every project.
+export function hasAllProjectsAccess(viewer: ProjectViewer) {
+  return viewer.role === 'HR' || Boolean(viewer.position?.toLowerCase().includes('partner'))
+}
+
 export function resolveProjectCapabilities(input: {
   viewer: ProjectViewer
   ownerId: string
   members: ProjectMembershipForAccess[]
 }) {
   const membership = input.members.find((member) => member.userId === input.viewer.id) || null
-  const isHr = input.viewer.role === 'HR'
+  const isHr = hasAllProjectsAccess(input.viewer)
   const isOwner = input.ownerId === input.viewer.id
   const isParticipant = isOwner || Boolean(membership)
   const isMembershipManager = Boolean(
@@ -54,17 +60,16 @@ export function canEditAssignedProjectTask(input: {
     || Boolean(input.assistantIds?.includes(input.viewerId))
 }
 
-export function canEditTaskCoAssignees(input: {
-  viewerId: string
-  assigneeId: string | null
-  assistantIds: string[]
-  canManage: boolean
-}) {
-  return canEditAssignedProjectTask(input)
+const ASSIGNMENT_UPDATE_KEYS = new Set(['taskId', 'assigneeId', 'assistantIds'])
+
+// A PUT that only changes the assignee or co-assignees, which any project member may do.
+export function isAssignmentOnlyTaskUpdate(body: unknown) {
+  return typeof body === 'object' && body !== null && !Array.isArray(body)
+    && Object.keys(body).every((key) => ASSIGNMENT_UPDATE_KEYS.has(key))
 }
 
 export function accessibleProjectsWhere(viewer: ProjectViewer): Prisma.ProjectWhereInput {
-  if (viewer.role === 'HR') return {}
+  if (hasAllProjectsAccess(viewer)) return {}
 
   return {
     OR: [

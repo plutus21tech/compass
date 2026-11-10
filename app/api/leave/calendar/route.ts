@@ -1,6 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth'
+import { birthdaysInMonth } from '@/lib/leave-holidays'
+import { leaveDateKey } from '@/lib/leave-utils'
+
+/** Holidays in the month that apply to the viewer's own team -- the ones that affect their leave. */
+async function loadViewerHolidays(teamTag: string | null, startOfMonth: Date, endOfMonth: Date) {
+  if (!teamTag) return []
+  // Same rule as leaveHolidayAppliesTo: the holiday lists the viewer's team.
+  const holidays = await prisma.leaveHoliday.findMany({
+    where: { date: { gte: startOfMonth, lte: endOfMonth }, teamTags: { has: teamTag } },
+    select: { id: true, date: true, name: true },
+    orderBy: { date: 'asc' },
+  })
+  return holidays.map((holiday) => ({ id: holiday.id, date: leaveDateKey(holiday.date), name: holiday.name }))
+}
+
+/** Everyone's birthdays in the month: name and day only, never a year. */
+async function loadMonthBirthdays(year: number, monthIndex: number) {
+  const rows = await prisma.employeeBirthday.findMany({
+    where: { month: monthIndex + 1 },
+    select: { userId: true, month: true, day: true, user: { select: { name: true } } },
+  })
+  return birthdaysInMonth(
+    rows.map((row) => ({ userId: row.userId, name: row.user.name, month: row.month, day: row.day })),
+    year,
+    monthIndex
+  )
+}
 
 // GET - Get team leave calendar data
 export async function GET(request: NextRequest) {
@@ -63,8 +90,13 @@ export async function GET(request: NextRequest) {
       status: request.status,
       isCurrentUser: request.employeeId === user.id,
     }))
-    
-    return NextResponse.json({ events })
+
+    const [holidays, birthdays] = await Promise.all([
+      loadViewerHolidays(user.teamTag, startOfMonth, endOfMonth),
+      loadMonthBirthdays(year, month),
+    ])
+
+    return NextResponse.json({ events, holidays, birthdays })
   } catch (error) {
     console.error('Failed to fetch calendar data:', error)
     return NextResponse.json({ error: 'Failed to fetch calendar' }, { status: 500 })

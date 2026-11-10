@@ -1,5 +1,5 @@
-import type { TeamTag } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import type { TeamTag } from '@/lib/teams/catalog'
 import { findAudienceOverlap, type VariantInput } from './audience'
 import type { AdminPageInput } from './coverage'
 

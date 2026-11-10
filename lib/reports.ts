@@ -13,6 +13,9 @@ import { calculateRedistributedWeights } from '@/lib/config'
 import {
   getEvaluationQuestionMeta,
   getDefaultQuestionBankRelationshipType,
+  getPeriodPinnedQuestionIds,
+  isPinnedQuestion,
+  type PinnedQuestionIds,
 } from '@/lib/pre-evaluation'
 import { getResolvedEvaluationAssignments } from '@/lib/evaluation-assignments'
 import {
@@ -24,6 +27,7 @@ import {
   filterPooledRelationshipEvaluations,
 } from '@/lib/evaluation-completion'
 import { applyAuthoritativeDeptPoolEvaluations } from '@/lib/dept-evaluation-pool'
+import { departedUserIds } from '@/lib/departed-evaluators'
 import {
   buildAssignmentLookup,
   resolveEvaluationRelationshipTypeForRow,
@@ -69,15 +73,23 @@ function assertReportEligibility(employee: {
  *
  * - Lead-authored questions are only valid for TEAM_LEAD evaluators.
  * - Regular questions must match the expected bank type for the evaluator's
- *   current relationship (DIRECT_REPORT → TEAM_LEAD bank, etc).
+ *   current relationship (DIRECT_REPORT → TEAM_LEAD bank, etc), unless the
+ *   quarter pinned that question for them (e.g. Daniyal's C-Level questions
+ *   as a lead in Q3 2026, see EvaluationPeriodQuestion).
  */
 function isEvaluationInCurrentBank(
   evaluation: {
+    evaluatorId: string
+    questionId?: string | null
     leadQuestionId?: string | null
     question?: { relationshipType: RelationshipType } | null
   },
-  evaluatorRelationshipType: RelationshipType
+  evaluatorRelationshipType: RelationshipType,
+  pinned: PinnedQuestionIds
 ): boolean {
+  if (evaluation.questionId && isPinnedQuestion(pinned, evaluatorRelationshipType, evaluation.evaluatorId, evaluation.questionId)) {
+    return true
+  }
   if (evaluation.leadQuestionId) {
     return evaluatorRelationshipType === 'TEAM_LEAD'
   }
@@ -154,6 +166,7 @@ export async function generateDetailedReport(
     evaluateeId: employeeId,
     includeUsers: true,
   })
+  const pinned = await getPeriodPinnedQuestionIds(periodId)
   const deptEvaluatorIds = [...new Set(
     mappings
       .filter((mapping) => mapping.relationshipType === 'DEPT')
@@ -232,7 +245,7 @@ export async function generateDetailedReport(
     const effectiveEvaluatorEvaluations = filterPooledRelationshipEvaluations(
       relationshipType,
       evaluatorEvaluations
-    ).filter((evaluation) => isEvaluationInCurrentBank(evaluation, relationshipType))
+    ).filter((evaluation) => isEvaluationInCurrentBank(evaluation, relationshipType, pinned))
     if (effectiveEvaluatorEvaluations.length === 0) {
       continue
     }
@@ -391,9 +404,10 @@ export function formatReportAsHTML(
   const getSectionTitle = (type: RelationshipType): string => {
     const labels: Record<RelationshipType, string> = {
       C_LEVEL: 'CEO/Leadership Evaluation',
-      TEAM_LEAD: 'Evaluation as a Team Lead',
-      DIRECT_REPORT: 'Evaluation as a Reporting Team Member',
-      PEER: 'Evaluation as a Peer',
+      // Who evaluated the person: their lead, a member of their team, a peer.
+      TEAM_LEAD: 'Evaluation by a Team Lead',
+      DIRECT_REPORT: 'Evaluation by a Reporting Team Member',
+      PEER: 'Evaluation by a Peer',
       CROSS_DEPARTMENT: 'Cross-Department Evaluation',
       HR: 'HR Evaluation',
       DEPT: 'Department Evaluation',
@@ -622,9 +636,9 @@ export function formatReportAsHTML(
 
   // Map relationship types to display names
   const displayNames: Record<RelationshipType, string> = {
-    TEAM_LEAD: 'Evaluation As Team Lead',
-    DIRECT_REPORT: 'Evaluation As Reporting Team Member',
-    PEER: 'Evaluation As Peer',
+    TEAM_LEAD: 'Evaluation By Team Lead',
+    DIRECT_REPORT: 'Evaluation By Reporting Team Member',
+    PEER: 'Evaluation By Peer',
     CROSS_DEPARTMENT: 'Cross-Department Evaluation',
     HR: 'HR Evaluation',
     C_LEVEL: 'CEO Evaluation',
@@ -838,6 +852,7 @@ export async function generateVerificationCsv(periodId: string): Promise<string>
     throw new Error('Period not found')
   }
 
+  const pinned = await getPeriodPinnedQuestionIds(period.id)
   const [employees, allEvaluations, allMappings, allWeightProfiles, allCustomWeightages] =
     await Promise.all([
       // Role filter removed so HR/OA/SECURITY/EXECUTION users who legitimately
@@ -858,6 +873,8 @@ export async function generateVerificationCsv(periodId: string): Promise<string>
       prisma.weightProfile.findMany(),
       prisma.weightage.findMany(),
     ])
+  // People who have left can no longer submit, so completion does not wait on them.
+  const departed = await departedUserIds()
 
   // Index maps
   const mappingsByEmployee = new Map<string, typeof allMappings>()
@@ -982,7 +999,7 @@ export async function generateVerificationCsv(periodId: string): Promise<string>
     for (const ev of employeeEvals) {
       const type = resolveEvaluationRelationshipTypeForRow({ evaluation: ev, assignmentLookup })
       if (!type) continue
-      if (!isEvaluationInCurrentBank(ev, type)) continue
+      if (!isEvaluationInCurrentBank(ev, type, pinned)) continue
       submittedSlots.push({
         evaluatorId: ev.evaluatorId,
         evaluateeId: ev.evaluateeId,
@@ -1120,6 +1137,7 @@ export async function generateVerificationCsv(periodId: string): Promise<string>
       })),
       submittedSlots,
       weights,
+      departedEvaluatorIds: departed,
     })
     const evaluatorNamesById = new Map<string, string>()
     for (const m of employeeMappings) {

@@ -19,7 +19,8 @@ import {
 } from '@/components/ui/select'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { VariantEditor, type EditableVariant } from '@/components/handbook/VariantEditor'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel } from '@/lib/handbook/teams'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { cn } from '@/lib/utils'
 
 type AdminPage = {
@@ -43,6 +44,7 @@ export default function AdminHandbookPageEditor({ params }: { params: Promise<{ 
   const [page, setPage] = useState<AdminPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const { catalog } = useTeamCatalog()
 
   const load = useCallback(() => {
     return fetch('/api/admin/handbook')
@@ -89,7 +91,7 @@ export default function AdminHandbookPageEditor({ params }: { params: Promise<{ 
     // A new variant needs at least one team, and only uncovered teams are
     // available -- an overlap would be rejected by the API anyway.
     const covered = new Set(page?.variants.flatMap((v) => v.audiences) ?? [])
-    const firstFree = ALL_TEAMS.find((t) => !covered.has(t))
+    const firstFree = catalog.active.find((t) => !covered.has(t))
     if (!firstFree) {
       toast.error('Every team is already covered by a variant on this page')
       return
@@ -129,7 +131,8 @@ export default function AdminHandbookPageEditor({ params }: { params: Promise<{ 
   }
 
   const coveredTeams = new Set(page.variants.flatMap((v) => v.audiences))
-  const gapTeams = ALL_TEAMS.filter((t) => !coveredTeams.has(t))
+  // Archived teams are not gaps: nobody needs new content written for them.
+  const gapTeams = catalog.active.filter((t) => !coveredTeams.has(t))
 
   return (
     <div className="p-6 sm:p-8 max-w-5xl mx-auto">
@@ -279,7 +282,7 @@ export default function AdminHandbookPageEditor({ params }: { params: Promise<{ 
                           : 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
                       )}
                     >
-                      {TEAM_LABELS[team]} {intentional ? '– intentional' : '⚠ needs a decision'}
+                      {teamLabel(catalog, team)} {intentional ? '– intentional' : '⚠ needs a decision'}
                     </button>
                   )
                 })}
@@ -298,7 +301,7 @@ export default function AdminHandbookPageEditor({ params }: { params: Promise<{ 
       </div>
 
       {page.variants.map((v) => (
-        <VariantEditor key={v.id} variant={v} onSaved={load} onDeleted={load} />
+        <VariantEditor key={v.id} variant={v} catalog={catalog} onSaved={load} onDeleted={load} />
       ))}
     </div>
   )

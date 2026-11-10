@@ -1,5 +1,4 @@
-import type { TeamTag } from '@prisma/client'
-import { ALL_TEAMS, COUNTRY_TEAM_GROUPS } from '@/lib/handbook/teams'
+import { COUNTRY_TEAM_GROUPS, type TeamTag } from '@/lib/teams/catalog'
 
 /**
  * Which public holidays apply to whom.
@@ -34,8 +33,13 @@ import { ALL_TEAMS, COUNTRY_TEAM_GROUPS } from '@/lib/handbook/teams'
  *
  * An empty list is returned unchanged. Empty means "predates tagging, applies to
  * everyone", and the API relies on that to reject a mis-saved empty selection.
+ *
+ * `allTeams` is the catalog's display order (TeamCatalog.all).
  */
-export function expandHolidayTeamTags(teamTags: readonly TeamTag[]): TeamTag[] {
+export function expandHolidayTeamTags(
+  teamTags: readonly TeamTag[],
+  allTeams: readonly TeamTag[]
+): TeamTag[] {
   if (teamTags.length === 0) return []
 
   const selected = new Set<TeamTag>(teamTags)
@@ -45,8 +49,8 @@ export function expandHolidayTeamTags(teamTags: readonly TeamTag[]): TeamTag[] {
     }
   }
 
-  // ALL_TEAMS order, so stored tags read consistently wherever they are displayed.
-  return ALL_TEAMS.filter((team) => selected.has(team))
+  // Catalog order, so stored tags read consistently wherever they are displayed.
+  return allTeams.filter((team) => selected.has(team))
 }
 
 export type HolidayLike = {

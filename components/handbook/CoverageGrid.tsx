@@ -2,21 +2,13 @@
 
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, teamShortLabel } from '@/lib/handbook/teams'
 import type { CoverageRow } from '@/lib/handbook/coverage'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 
-const SHORT_LABELS: Record<string, string> = {
-  PAKISTAN: 'PK',
-  MOROCCO: 'MA',
-  COLOMBIA: 'CO',
-  INDONESIA: 'ID',
-  ECUADOR: 'EC',
-  NOBLE: 'NB',
-  THREE_E_PAKISTAN: '3E PK',
-  THREE_E_MOROCCO: '3E MA',
-}
-
-export function CoverageGrid({ rows }: { rows: CoverageRow[] }) {
+/** `teams` are the columns the server computed coverage for, in display order. */
+export function CoverageGrid({ rows, teams }: { rows: CoverageRow[]; teams: readonly string[] }) {
+  const { catalog } = useTeamCatalog()
   return (
     // Wide content scrolls inside its own container -- the page body must never
     // scroll horizontally.
@@ -27,13 +19,13 @@ export function CoverageGrid({ rows }: { rows: CoverageRow[] }) {
             <th className="text-left font-medium text-foreground bg-muted/50 px-3 py-2 border-b border-border">
               Page
             </th>
-            {ALL_TEAMS.map((team) => (
+            {teams.map((team) => (
               <th
                 key={team}
-                title={TEAM_LABELS[team]}
+                title={teamLabel(catalog, team)}
                 className="font-medium text-muted-foreground bg-muted/50 px-2 py-2 border-b border-border text-center whitespace-nowrap"
               >
-                {SHORT_LABELS[team]}
+                {teamShortLabel(catalog, team)}
               </th>
             ))}
           </tr>
@@ -58,7 +50,7 @@ export function CoverageGrid({ rows }: { rows: CoverageRow[] }) {
                 <td key={cell.team} className="px-2 py-2 border-b border-border text-center">
                   <Link
                     href={`/admin/handbook/${row.pageId}`}
-                    title={`${row.title} — ${TEAM_LABELS[cell.team]}: ${cell.state.toLowerCase()}`}
+                    title={`${row.title} — ${teamLabel(catalog, cell.team)}: ${cell.state.toLowerCase()}`}
                     className={cn(
                       'inline-flex h-6 w-6 items-center justify-center rounded-md text-xs transition-colors',
                       cell.state === 'COVERED' &&

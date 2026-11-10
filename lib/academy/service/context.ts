@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import type { KeyContactGroup, OnboardingProgress, Prisma, PrismaClient, TeamTag } from '@prisma/client'
+import type { KeyContactGroup, OnboardingProgress, Prisma, PrismaClient } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 import type { PersonAttributes } from '../attributes'
 import type { ConditionFacts } from '../blocks'
 import type { AcademyConfigView } from '../links'

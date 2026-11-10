@@ -19,18 +19,9 @@ import {
   getPersonAttributes,
   setPersonAttributes,
 } from '@/lib/academy/service/attributes'
+import { checkAssignableTeamTag } from '@/lib/teams/load'
 
 const VALID_USER_ROLES = ['EMPLOYEE', 'HR', 'SECURITY', 'OA', 'EXECUTION'] as const
-const VALID_TEAM_TAGS = [
-  'PAKISTAN',
-  'MOROCCO',
-  'COLOMBIA',
-  'INDONESIA',
-  'ECUADOR',
-  'NOBLE',
-  'THREE_E_PAKISTAN',
-  'THREE_E_MOROCCO',
-] as const
 
 const SAFE_USER_RESPONSE_SELECT = {
   id: true,
@@ -394,8 +385,11 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedTeamTag = normalizeOptionalString(teamTag)
-    if (normalizedTeamTag && !VALID_TEAM_TAGS.includes(normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number])) {
-      return NextResponse.json({ error: 'Invalid team tag' }, { status: 400 })
+    if (normalizedTeamTag) {
+      const check = await checkAssignableTeamTag(normalizedTeamTag)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
+      }
     }
 
     const newUser = await prisma.$transaction(async (tx) => {
@@ -409,7 +403,7 @@ export async function POST(request: NextRequest) {
           role: normalizedRole as (typeof VALID_USER_ROLES)[number],
           passwordHash,
           benefitCategoryId: normalizedBenefitCategoryId || null,
-          teamTag: (normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number]) || null,
+          teamTag: normalizedTeamTag || null,
           onboardingCompleted: shouldCreateAsNewHire ? false : true,
         },
         select: SAFE_USER_RESPONSE_SELECT,
@@ -514,8 +508,13 @@ export async function PUT(request: NextRequest) {
     }
 
     const normalizedTeamTag = normalizeOptionalString(teamTag)
-    if (normalizedTeamTag && !VALID_TEAM_TAGS.includes(normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number])) {
-      return NextResponse.json({ error: 'Invalid team tag' }, { status: 400 })
+    if (normalizedTeamTag) {
+      // Keeping an archived tag the person already has is fine; moving them onto one is not.
+      const current = await prisma.user.findUnique({ where: { id }, select: { teamTag: true } })
+      const check = await checkAssignableTeamTag(normalizedTeamTag, current?.teamTag ?? null)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
+      }
     }
 
     const normalizedRole = typeof role === 'string' ? role.toUpperCase() : 'EMPLOYEE'
@@ -545,7 +544,7 @@ export async function PUT(request: NextRequest) {
       ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
       // Omitting teamTag leaves it untouched; sending null clears it.
       ...(teamTag !== undefined
-        ? { teamTag: (normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number]) ?? null }
+        ? { teamTag: normalizedTeamTag ?? null }
         : {}),
     }
 

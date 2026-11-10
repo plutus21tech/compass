@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient, TeamTag } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 import type { CommuteRow } from '../view'
 
 // The only reads onboarding makes of tables that belong to payroll: read-only lookups of shared data,

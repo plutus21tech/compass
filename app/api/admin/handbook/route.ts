@@ -4,6 +4,7 @@ import { isAdminRole } from '@/lib/permissions'
 import { prisma } from '@/lib/db'
 import { getAllPagesForAdmin } from '@/lib/handbook/admin-queries'
 import { computeCoverage, summarizeCoverage } from '@/lib/handbook/coverage'
+import { loadTeamCatalog } from '@/lib/teams/load'
 
 const VALID_CATEGORIES = [
   'START_HERE',
@@ -21,9 +22,15 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const pages = await getAllPagesForAdmin()
-    const coverage = computeCoverage(pages)
-    return NextResponse.json({ pages, coverage, summary: summarizeCoverage(coverage) })
+    const [pages, teams] = await Promise.all([getAllPagesForAdmin(), loadTeamCatalog()])
+    const coverage = computeCoverage(pages, teams.active)
+    return NextResponse.json({
+      pages,
+      coverage,
+      summary: summarizeCoverage(coverage),
+      // The grid's columns, so header and cells always agree.
+      teams: teams.active,
+    })
   } catch (error) {
     console.error('Failed to fetch handbook admin data:', error)
     return NextResponse.json({ error: 'Failed to fetch handbook' }, { status: 500 })

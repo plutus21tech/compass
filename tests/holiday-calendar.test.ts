@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { TeamTag } from '@prisma/client'
+import type { TeamTag } from '../lib/teams/catalog'
 import { buildHolidayEventPayload } from '../lib/holiday-calendar'
+import { LEGACY_CATALOG } from './helpers/team-catalog'
 
 const eid = {
   id: 'hol_eid',
@@ -18,7 +19,7 @@ const legacy = {
 }
 
 test('holiday event is all-day with Google exclusive end date', () => {
-  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [] })
+  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [], teams: LEGACY_CATALOG })
 
   // A single-day holiday ends the *next* day: Google treats the end of an all-day
   // event as exclusive, so 05-27 would otherwise render as a zero-length event.
@@ -27,7 +28,7 @@ test('holiday event is all-day with Google exclusive end date', () => {
 })
 
 test('holiday event carries the holidayId used to find it again', () => {
-  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [] })
+  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [], teams: LEGACY_CATALOG })
   assert.equal(payload.extendedProperties.private.holidayId, 'hol_eid')
 })
 
@@ -37,6 +38,7 @@ test('a company-wide invite does not expose its guest list', () => {
   const payload = buildHolidayEventPayload({
     holiday: eid,
     attendeeEmails: ['a@plutus21.com', 'b@plutus21.com'],
+    teams: LEGACY_CATALOG,
   })
   assert.equal(payload.guestsCanSeeOtherGuests, false)
   assert.equal(payload.guestsCanInviteOthers, false)
@@ -44,12 +46,12 @@ test('a company-wide invite does not expose its guest list', () => {
 })
 
 test('an empty attendee list omits the attendees field entirely', () => {
-  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [] })
+  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [], teams: LEGACY_CATALOG })
   assert.equal('attendees' in payload, false)
 })
 
 test('the description names the teams that actually observe the holiday', () => {
-  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [] })
+  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [], teams: LEGACY_CATALOG })
   assert.match(payload.description, /Pakistan Team/)
   assert.match(payload.description, /3E Pakistan Team/)
   assert.doesNotMatch(payload.description, /Morocco/)
@@ -57,12 +59,12 @@ test('the description names the teams that actually observe the holiday', () => 
 
 test('an untagged holiday reads as company-wide, not as a list of every team', () => {
   // Empty teamTags means "predates tagging, applies to everyone" -- see lib/holidays.ts.
-  const payload = buildHolidayEventPayload({ holiday: legacy, attendeeEmails: [] })
+  const payload = buildHolidayEventPayload({ holiday: legacy, attendeeEmails: [], teams: LEGACY_CATALOG })
   assert.match(payload.description, /All teams/)
   assert.equal(payload.summary, "Public Holiday — New Year's Day")
 })
 
 test('the holiday blocks the day rather than showing as free', () => {
-  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [] })
+  const payload = buildHolidayEventPayload({ holiday: eid, attendeeEmails: [], teams: LEGACY_CATALOG })
   assert.equal(payload.transparency, 'opaque')
 })

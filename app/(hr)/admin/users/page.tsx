@@ -28,10 +28,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import Papa from 'papaparse'
+import { Users, Plus, Search, Upload, Edit2, Trash2, UserCheck, Shield, Key, Eye, EyeOff, RotateCcw, XCircle, Tags } from 'lucide-react'
+import { TeamTagsManager } from '@/components/admin/team-tags/TeamTagsManager'
+import { pickerTeams, teamLabel } from '@/lib/teams/catalog'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { prefillFromTeamTag, type PersonAttributes } from '@/lib/academy/attributes'
 import { applyPrefill } from '@/lib/academy/profile-input'
 import { AttributeFields } from './_components/AttributeFields'
-import { Users, Plus, Search, Upload, Edit2, Trash2, UserCheck, Shield, Key, Eye, EyeOff, RotateCcw, XCircle } from 'lucide-react'
 
 const MotionTableRow = motion(TableRow)
 
@@ -43,27 +46,8 @@ const EMPTY_ATTRIBUTES: PersonAttributes = {
   employmentStatus: null,
 }
 
-type TeamTagValue =
-  | 'PAKISTAN'
-  | 'MOROCCO'
-  | 'COLOMBIA'
-  | 'INDONESIA'
-  | 'ECUADOR'
-  | 'NOBLE'
-  | 'THREE_E_PAKISTAN'
-  | 'THREE_E_MOROCCO'
-
-/** Drives which Handbook content a person sees. Exactly one per user. */
-const TEAM_TAG_OPTIONS: { value: TeamTagValue; label: string }[] = [
-  { value: 'PAKISTAN', label: 'Pakistan Team' },
-  { value: 'MOROCCO', label: 'Morocco Team' },
-  { value: 'COLOMBIA', label: 'Colombia Team' },
-  { value: 'INDONESIA', label: 'Indonesia Team' },
-  { value: 'ECUADOR', label: 'Ecuador Team' },
-  { value: 'NOBLE', label: 'Noble Team' },
-  { value: 'THREE_E_PAKISTAN', label: '3E Pakistan Team' },
-  { value: 'THREE_E_MOROCCO', label: '3E Morocco Team' },
-]
+/** A TeamTagDefinition code. HR manages the list via "Team tags" on this page. */
+type TeamTagValue = string
 
 interface User {
   id: string
@@ -165,6 +149,8 @@ interface AvailableNewHire {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
+  const { catalog: teamCatalog, reload: reloadTeamCatalog } = useTeamCatalog()
+  const [isTeamTagsOpen, setIsTeamTagsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('')
@@ -615,7 +601,10 @@ export default function UsersPage() {
             <h1 className="text-2xl font-bold text-foreground font-display">User Management</h1>
             <p className="text-muted-foreground mt-1">{users.length} users total</p>
           </div>
-          <div className="flex gap-3 mt-4 md:mt-0">
+          <div className="flex flex-wrap gap-3 mt-4 md:mt-0">
+            <Button variant="outline" onClick={() => setIsTeamTagsOpen(true)}>
+              <Tags className="w-4 h-4" /> Team tags
+            </Button>
             <Button variant="outline" onClick={() => setIsImportModalOpen(true)}>
               <Upload className="w-4 h-4" /> Import CSV
             </Button>
@@ -797,6 +786,12 @@ export default function UsersPage() {
         </motion.div>
 
       {/* Add/Edit Modal */}
+      <TeamTagsManager
+        isOpen={isTeamTagsOpen}
+        onClose={() => setIsTeamTagsOpen(false)}
+        onChanged={() => void reloadTeamCatalog()}
+      />
+
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedUser ? 'Edit User' : 'Add User'}>
         <form onSubmit={handleSubmit} className="space-y-4 max-h-[72vh] overflow-y-auto pr-1">
           <div>
@@ -854,9 +849,11 @@ export default function UsersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Not set</SelectItem>
-                {TEAM_TAG_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                {/* Archived tags are not offered, except the one this person already has. */}
+                {pickerTeams(teamCatalog, formData.teamTag ? [formData.teamTag] : []).map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {teamLabel(teamCatalog, code)}
+                    {!teamCatalog.active.includes(code) && ' (archived)'}
                   </SelectItem>
                 ))}
               </SelectContent>

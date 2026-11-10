@@ -132,3 +132,24 @@ test('cancelling gives back the working days from today to the end, including a 
   assert.equal(cancellableLeaveDays(leave(19, 19, true), at(19)), 0, 'a half day on its own day is its last day')
   assert.equal(cancellableLeaveDays(leave(20, 20, true), at(19)), 0.5)
 })
+
+// Holidays are matched by UTC day key; Wednesday 21 October 2026 is a holiday here.
+const holidays = new Set(['2026-10-21'])
+
+test('a holiday inside a multi-day leave is not counted', () => {
+  assert.equal(calculateLeaveDays(day(19), day(23), holidays), 4)
+  assert.equal(calculateLeaveDuration(day(19), day(23), false, holidays), 4)
+  assert.equal(calculateLeaveDuration(day(21), day(21), false, holidays), 0, 'a leave on only the holiday costs nothing')
+  assert.equal(calculateLeaveDays(day(19), day(23)), 5, 'no holidays given: the weekday count is unchanged')
+})
+
+test('a half day on a holiday counts 0', () => {
+  assert.equal(calculateLeaveDuration(day(21), day(21), true, holidays), 0)
+  assert.equal(calculateLeaveDuration(day(22), day(22), true, holidays), 0.5)
+})
+
+test('cancelling never gives back a holiday that was not charged', () => {
+  const leave = { startDate: day(19), endDate: day(23), isHalfDay: false }
+  assert.equal(cancellableLeaveDays(leave, at(19), holidays), 4)
+  assert.equal(cancellableLeaveDays(leave, at(22), holidays), 2)
+})

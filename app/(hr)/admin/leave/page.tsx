@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { calculateLeaveDuration } from '@/lib/leave-utils'
 import { TransitionPlanView } from '@/components/leave/TransitionPlanView'
+import { LeaveHolidaysManager } from '@/components/leave/LeaveHolidaysManager'
+import { BirthdaysManager } from '@/components/leave/BirthdaysManager'
 import {
   transitionPlanRequired,
   validateTransitionTasks,
@@ -39,7 +41,9 @@ import {
   User,
   MessageSquare,
   FileText,
-  Eye
+  Eye,
+  CalendarDays,
+  Cake
 } from 'lucide-react'
 import { isThreeEDepartment } from '@/lib/company-branding'
 import { calculateWfhDays } from '@/lib/wfh-utils'
@@ -74,6 +78,8 @@ interface LeaveRequest {
   transitionPlanLeadStatus?: 'PENDING' | 'APPROVED' | 'DISAPPROVED'
   transitionPlanDisapprovalReason?: string | null
   status: string
+  // Holiday-aware day count from the API -- what the balance is charged.
+  leaveDays?: number
   employee: {
     id: string
     name: string
@@ -233,6 +239,8 @@ export default function HRLeavePage() {
   const [savingThreeELead, setSavingThreeELead] = useState(false)
   const [removingThreeELeadId, setRemovingThreeELeadId] = useState<string | null>(null)
   const [threeELeadForm, setThreeELeadForm] = useState({ employeeId: '', leadId: '' })
+  const [isHolidaysModalOpen, setIsHolidaysModalOpen] = useState(false)
+  const [isBirthdaysModalOpen, setIsBirthdaysModalOpen] = useState(false)
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false)
   const [balanceEmployeeId, setBalanceEmployeeId] = useState('')
   const [balanceYear, setBalanceYear] = useState(new Date().getFullYear())
@@ -702,11 +710,9 @@ export default function HRLeavePage() {
     }
   }
 
-  const getDaysCount = (start: string, end: string, isHalfDay = false) => {
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-    return calculateLeaveDuration(startDate, endDate, isHalfDay)
-  }
+  // Prefer the server's count: it leaves out holidays for the employee's team.
+  const getRequestDays = (request: LeaveRequest) =>
+    request.leaveDays ?? calculateLeaveDuration(new Date(request.startDate), new Date(request.endDate), request.isHalfDay)
 
   const loadThreeELeads = async () => {
     setLoadingThreeELeads(true)
@@ -830,6 +836,14 @@ export default function HRLeavePage() {
               <User className="w-4 h-4" />
               3E Team Leads
             </Button>
+            <Button variant="outline" onClick={() => setIsHolidaysModalOpen(true)}>
+              <CalendarDays className="w-4 h-4" />
+              Holidays
+            </Button>
+            <Button variant="outline" onClick={() => setIsBirthdaysModalOpen(true)}>
+              <Cake className="w-4 h-4" />
+              Birthdays
+            </Button>
             <Button
               variant="outline"
               onClick={handleSendTransitionPlanReminders}
@@ -907,7 +921,7 @@ export default function HRLeavePage() {
                 const typeConfig = LEAVE_TYPE_CONFIG[request.leaveType]
                 const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
                 const TypeIcon = typeConfig.icon
-                const days = getDaysCount(request.startDate, request.endDate, request.isHalfDay)
+                const days = getRequestDays(request)
                 const needsHRApproval = request.status === 'PENDING' || request.status === 'LEAD_APPROVED'
                 const leadNotRequired = !request.leadApprovedBy && request.status === 'APPROVED' && !!request.hrApprovedBy
                 
@@ -1235,7 +1249,7 @@ export default function HRLeavePage() {
                 <p className="font-medium text-foreground">{selectedRequest.employee.name}</p>
                 <p className="text-sm text-muted-foreground">
                   {LEAVE_TYPE_CONFIG[selectedRequest.leaveType].label} Leave - 
-                  {getDurationLabel(getDaysCount(selectedRequest.startDate, selectedRequest.endDate, selectedRequest.isHalfDay))}
+                  {getDurationLabel(getRequestDays(selectedRequest))}
                 </p>
               </CardContent>
             </Card>
@@ -1955,6 +1969,20 @@ export default function HRLeavePage() {
           </div>
         </form>
       </Modal>
+
+      <LeaveHolidaysManager
+        isOpen={isHolidaysModalOpen}
+        onClose={() => {
+          setIsHolidaysModalOpen(false)
+          // Holiday changes re-count leave days, so refresh the list's durations.
+          void loadRequests()
+        }}
+      />
+      <BirthdaysManager
+        isOpen={isBirthdaysModalOpen}
+        onClose={() => setIsBirthdaysModalOpen(false)}
+        people={users}
+      />
     </div>
   )
 }

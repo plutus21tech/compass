@@ -1,5 +1,6 @@
 // Pure rules: no server-only imports. Safe for client components.
-import type { OfficeLocation, TeamTag } from '@prisma/client'
+import type { OfficeLocation } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 import { endOfDayInZone } from './time'
 
 const WEEK_1_WORKING_DAYS = 5

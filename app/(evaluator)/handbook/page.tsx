@@ -11,7 +11,8 @@ import { HandbookHero } from '@/components/handbook/HandbookHero'
 import { HandbookRow } from '@/components/handbook/HandbookRow'
 import { HandbookHubSkeleton } from '@/components/handbook/HandbookSkeletons'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { pickerTeams, teamLabel as labelForTeam } from '@/lib/handbook/teams'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { filterPages } from '@/lib/handbook/search'
 import type { HubPage } from '@/lib/handbook/audience'
 import { isAdminRole } from '@/lib/permissions'
@@ -54,6 +55,7 @@ function HandbookHubInner() {
   const [untagged, setUntagged] = useState(false)
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  const { catalog } = useTeamCatalog()
 
   useEffect(() => {
     const qs = previewTeam ? `?previewTeam=${encodeURIComponent(previewTeam)}` : ''
@@ -73,11 +75,9 @@ function HandbookHubInner() {
 
   // The server decides what the preview shows; this label only reflects it.
   const previewLabel =
-    previewTeam && previewTeam !== 'UNTAGGED'
-      ? TEAM_LABELS[previewTeam as keyof typeof TEAM_LABELS]
-      : null
+    previewTeam && previewTeam !== 'UNTAGGED' ? labelForTeam(catalog, previewTeam) : null
   const teamLabel =
-    previewLabel ?? (user?.teamTag ? TEAM_LABELS[user.teamTag as keyof typeof TEAM_LABELS] : null)
+    previewLabel ?? (user?.teamTag ? labelForTeam(catalog, user.teamTag) : null)
   const firstName = user?.name?.split(' ')[0] ?? null
 
   const featured = visible.filter((p) => p.category === 'START_HERE')
@@ -110,7 +110,7 @@ function HandbookHubInner() {
           >
             Untagged
           </Link>
-          {ALL_TEAMS.map((team) => (
+          {pickerTeams(catalog).map((team) => (
             <Link
               key={team}
               href={`/handbook?previewTeam=${team}`}
@@ -121,7 +121,7 @@ function HandbookHubInner() {
                   : 'border-border text-muted-foreground hover:bg-muted'
               )}
             >
-              {TEAM_LABELS[team]}
+              {labelForTeam(catalog, team)}
             </Link>
           ))}
         </div>

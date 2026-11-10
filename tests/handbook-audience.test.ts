@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { TeamTag } from '@prisma/client'
-import { ALL_TEAMS, expandGroup } from '../lib/handbook/teams'
+import type { TeamTag } from '../lib/teams/catalog'
+import { expandGroup } from '../lib/handbook/teams'
+import { ALL_TEAMS, LEGACY_CATALOG } from './helpers/team-catalog'
 import {
   selectVariant,
   toHubResponse,
@@ -62,12 +63,12 @@ const pages = [welcome, leave, draft]
 // ─── groups ──────────────────────────────────────────────────────────────────
 
 test('expandGroup EVERYONE is all eight teams', () => {
-  assert.deepEqual([...expandGroup('EVERYONE')].sort(), [...ALL_TEAMS].sort())
-  assert.equal(expandGroup('EVERYONE').length, 8)
+  assert.deepEqual([...expandGroup('EVERYONE', LEGACY_CATALOG)].sort(), [...ALL_TEAMS].sort())
+  assert.equal(expandGroup('EVERYONE', LEGACY_CATALOG).length, 8)
 })
 
 test('expandGroup PLUTUS21_INTERNAL excludes both 3E teams', () => {
-  const internal = expandGroup('PLUTUS21_INTERNAL')
+  const internal = expandGroup('PLUTUS21_INTERNAL', LEGACY_CATALOG)
   assert.equal(internal.length, 6)
   assert.ok(internal.includes('ECUADOR'))
   assert.ok(!internal.includes('THREE_E_PAKISTAN'))
@@ -77,9 +78,9 @@ test('expandGroup PLUTUS21_INTERNAL excludes both 3E teams', () => {
 // ─── selectVariant ───────────────────────────────────────────────────────────
 
 test('selectVariant returns the variant addressed to the tag', () => {
-  assert.equal(selectVariant(leave, 'PAKISTAN')?.bodyMarkdown, 'INTERNAL_LEAVE_BODY')
-  assert.equal(selectVariant(leave, 'THREE_E_MOROCCO')?.bodyMarkdown, 'THREE_E_MA_LEAVE_BODY')
-  assert.equal(selectVariant(leave, 'NOBLE')?.bodyMarkdown, 'NOBLE_LEAVE_BODY')
+  assert.equal(selectVariant(leave, 'PAKISTAN', ALL_TEAMS)?.bodyMarkdown, 'INTERNAL_LEAVE_BODY')
+  assert.equal(selectVariant(leave, 'THREE_E_MOROCCO', ALL_TEAMS)?.bodyMarkdown, 'THREE_E_MA_LEAVE_BODY')
+  assert.equal(selectVariant(leave, 'NOBLE', ALL_TEAMS)?.bodyMarkdown, 'NOBLE_LEAVE_BODY')
 })
 
 test('selectVariant returns null when no variant addresses the tag', () => {
@@ -89,28 +90,28 @@ test('selectVariant returns null when no variant addresses the tag', () => {
     slug: 'travel-policy',
     variants: [{ id: 'v6', bodyMarkdown: 'TRAVEL_BODY', orderIndex: 0, audiences: ['PAKISTAN'] }],
   }
-  assert.equal(selectVariant(pakistanOnly, 'NOBLE'), null)
+  assert.equal(selectVariant(pakistanOnly, 'NOBLE', ALL_TEAMS), null)
 })
 
 test('untagged user gets a variant only when ONE variant covers all eight teams', () => {
-  assert.equal(selectVariant(welcome, null)?.bodyMarkdown, 'UNIVERSAL_BODY')
+  assert.equal(selectVariant(welcome, null, ALL_TEAMS)?.bodyMarkdown, 'UNIVERSAL_BODY')
 })
 
 test('untagged user gets NOTHING from a page that reaches eight teams across variants', () => {
   // Leave reaches all 8 collectively, but only by telling each team something
   // different. An untagged user has no team, so there is no right answer.
-  assert.equal(selectVariant(leave, null), null)
+  assert.equal(selectVariant(leave, null, ALL_TEAMS), null)
 })
 
 // ─── hub ─────────────────────────────────────────────────────────────────────
 
 test('hub excludes unpublished pages', () => {
-  const slugs = toHubResponse(pages, 'PAKISTAN').pages.map((p) => p.slug)
+  const slugs = toHubResponse(pages, 'PAKISTAN', ALL_TEAMS).pages.map((p) => p.slug)
   assert.ok(!slugs.includes('draft-page'))
 })
 
 test('hub for an untagged user is universal pages only, and flags untagged', () => {
-  const res = toHubResponse(pages, null)
+  const res = toHubResponse(pages, null, ALL_TEAMS)
   assert.deepEqual(
     res.pages.map((p) => p.slug),
     ['welcome']
@@ -119,7 +120,7 @@ test('hub for an untagged user is universal pages only, and flags untagged', () 
 })
 
 test('hub for a tagged user includes pages addressed to them', () => {
-  const res = toHubResponse(pages, 'THREE_E_PAKISTAN')
+  const res = toHubResponse(pages, 'THREE_E_PAKISTAN', ALL_TEAMS)
   assert.deepEqual(res.pages.map((p) => p.slug).sort(), ['leave-policy', 'welcome'])
   assert.equal(res.untagged, false)
 })
@@ -128,7 +129,7 @@ test('hub for a tagged user includes pages addressed to them', () => {
 
 test('LEAKAGE: hub response carries no bodies at all', () => {
   for (const tag of [...ALL_TEAMS, null] as (TeamTag | null)[]) {
-    const json = JSON.stringify(toHubResponse(pages, tag))
+    const json = JSON.stringify(toHubResponse(pages, tag, ALL_TEAMS))
     assert.ok(!json.includes('BODY'), `hub leaked a body for tag=${tag}`)
   }
 })
@@ -152,7 +153,7 @@ test('LEAKAGE: detail response contains only the requesting team body', () => {
     ],
   ]
   for (const [tag, own, foreign] of cases) {
-    const json = JSON.stringify(toDetailResponse(leave, tag))
+    const json = JSON.stringify(toDetailResponse(leave, tag, ALL_TEAMS))
     assert.ok(json.includes(own), `${tag} did not receive its own body`)
     for (const f of foreign) {
       assert.ok(!json.includes(f), `${tag} LEAKED ${f}`)
@@ -161,11 +162,11 @@ test('LEAKAGE: detail response contains only the requesting team body', () => {
 })
 
 test('LEAKAGE: untagged user receives no team-specific body', () => {
-  assert.equal(toDetailResponse(leave, null), null)
+  assert.equal(toDetailResponse(leave, null, ALL_TEAMS), null)
 })
 
 test('detail returns null for an unpublished page', () => {
-  assert.equal(toDetailResponse(draft, 'PAKISTAN'), null)
+  assert.equal(toDetailResponse(draft, 'PAKISTAN', ALL_TEAMS), null)
 })
 
 // ─── overlap ─────────────────────────────────────────────────────────────────

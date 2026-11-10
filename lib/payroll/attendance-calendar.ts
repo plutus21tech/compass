@@ -1,4 +1,4 @@
-import type { TeamTag } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 import { isUntaggedHoliday, holidayDatesForTeam, type HolidayLike } from '@/lib/holidays'
 import { calculateWorkingDays } from '@/lib/payroll/settings'
 

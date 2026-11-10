@@ -4,9 +4,9 @@ import type {
   ContractType,
   EmploymentStatus,
   OfficeLocation,
-  TeamTag,
   WorkMode,
 } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 
 export const OFFICE_LOCATIONS = ['KARACHI', 'CASABLANCA', 'BOGOTA', 'DALLAS', 'REMOTE'] as const satisfies readonly OfficeLocation[]
 export const WORK_MODES = ['OFFICE', 'HYBRID', 'REMOTE'] as const satisfies readonly WorkMode[]
