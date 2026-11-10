@@ -50,3 +50,54 @@ export function withSecurityChecksNav(config: SidebarConfig, access: SecurityChe
   }
   return withItemAfter(config, entry, '/my-tasks')
 }
+
+/** The Company Dashboard link for a hire in onboarding. Module 14 sends them there, and it is all they can read. */
+export function withLockedHandbookNav(config: SidebarConfig, enabled: boolean, icon: NavItem['icon']): SidebarConfig {
+  if (!enabled) return config
+  return withItemAfter(config, { label: 'Company Dashboard', href: '/handbook', icon }, '/onboarding')
+}
+
+export interface AcademyNavIcons {
+  library: NavItem['icon']
+  contacts: NavItem['icon']
+  links: NavItem['icon']
+  /** Falls back to the library icon. */
+  videos?: NavItem['icon']
+}
+
+/** Sends a group's item somewhere else, keeping its place and label; the same config when it is missing. */
+function withGroupItemMoved(config: SidebarConfig, href: string, nextHref: string): SidebarConfig {
+  if (!config.groups.some((group) => group.items.some((item) => item.href === href))) return config
+  return {
+    ...config,
+    groups: config.groups.map((group) => ({
+      ...group,
+      items: group.items.map((item) => (item.href === href ? { ...item, href: nextHref } : item)),
+    })),
+  }
+}
+
+/** Academy settings pages, under the admin console's Onboarding group only (never the onboarding sidebar). */
+export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: AcademyNavIcons): SidebarConfig {
+  if (!enabled || !config.items.some((item) => item.href === '/admin')) return config
+  const entries: NavItem[] = [
+    { label: 'Academy library', href: '/admin/onboarding/academy/library', icon: icons.library },
+    { label: 'Key contacts', href: '/admin/onboarding/academy/contacts', icon: icons.contacts },
+    { label: 'Links & settings', href: '/admin/onboarding/academy/links', icon: icons.links },
+    { label: 'Assign a module', href: '/admin/onboarding/academy/assign', icon: icons.library },
+    { label: 'Checklist template', href: '/admin/onboarding/academy/checklist', icon: icons.links },
+    { label: 'Videos', href: '/admin/onboarding/academy/videos', icon: icons.videos ?? icons.library },
+  ]
+  const moved = withGroupItemMoved(
+    withGroupItemMoved(config, '/admin/onboarding/modules', '/admin/onboarding/academy/modules'),
+    '/admin/onboarding/quiz',
+    '/admin/onboarding/academy/quiz',
+  )
+  return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), moved)
+}
+
+/** O&A's "Payment details" page: hires' saved payout details, masked. Academy flag on, O&A only. */
+export function withOaPaymentNav(config: SidebarConfig, show: boolean, icon: NavItem['icon']): SidebarConfig {
+  if (!show) return config
+  return withItemAfter(config, { label: 'Payment details', href: '/oa/payment-details', icon }, '/handbook')
+}

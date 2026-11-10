@@ -32,8 +32,19 @@ import { Users, Plus, Search, Upload, Edit2, Trash2, UserCheck, Shield, Key, Eye
 import { TeamTagsManager } from '@/components/admin/team-tags/TeamTagsManager'
 import { pickerTeams, teamLabel } from '@/lib/teams/catalog'
 import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
+import { prefillFromTeamTag, type PersonAttributes } from '@/lib/academy/attributes'
+import { applyPrefill } from '@/lib/academy/profile-input'
+import { AttributeFields } from './_components/AttributeFields'
 
 const MotionTableRow = motion(TableRow)
+
+const EMPTY_ATTRIBUTES: PersonAttributes = {
+  officeLocation: null,
+  remoteCountry: null,
+  workMode: null,
+  contractType: null,
+  employmentStatus: null,
+}
 
 /** A TeamTagDefinition code. HR manages the list via "Team tags" on this page. */
 type TeamTagValue = string
@@ -63,6 +74,8 @@ interface User {
     status: 'PENDING' | 'ONBOARDING' | 'COMPLETED'
   } | null
   createdAt: string
+  attributes?: PersonAttributes
+  missingAttributes?: Array<keyof PersonAttributes>
   payrollProfile?: {
     id: string
     officialEmail: string | null
@@ -142,6 +155,9 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('')
   const [filterDepartment, setFilterDepartment] = useState<string>('')
+  const [academyEnabled, setAcademyEnabled] = useState(false)
+  const [filterMissing, setFilterMissing] = useState(false)
+  const [attributeForm, setAttributeForm] = useState<PersonAttributes>(EMPTY_ATTRIBUTES)
   
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
@@ -210,6 +226,7 @@ export default function UsersPage() {
       const res = await fetch('/api/admin/users')
       const data = await res.json()
       setUsers(data.users || [])
+      setAcademyEnabled(data.academyEnabled === true)
       if (data.payrollMeta) {
         setPayrollMeta({
           departments: data.payrollMeta.departments || [],
@@ -226,6 +243,12 @@ export default function UsersPage() {
   }
 
   const handleOpenModal = (user?: User) => {
+    // Suggestions fill empty fields only; nothing is saved until HR saves the dialog.
+    setAttributeForm(
+      user
+        ? applyPrefill(user.attributes ?? EMPTY_ATTRIBUTES, prefillFromTeamTag(user.teamTag))
+        : EMPTY_ATTRIBUTES,
+    )
     if (user) {
       setSelectedUser(user)
       setFormData({
@@ -390,6 +413,7 @@ export default function UsersPage() {
             role: formData.role,
             benefitCategoryId: formData.benefitCategoryId || null,
             teamTag: formData.teamTag || null,
+            ...(academyEnabled ? attributeForm : {}),
             payrollProfile,
           }
         : {
@@ -556,8 +580,11 @@ export default function UsersPage() {
       u.discordId?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchRole = !filterRole || u.role === filterRole
     const matchDept = !filterDepartment || u.department === filterDepartment
-    return matchSearch && matchRole && matchDept
+    const matchMissing = !filterMissing || (u.missingAttributes?.length ?? 0) > 0
+    return matchSearch && matchRole && matchDept && matchMissing
   })
+  const missingCount = users.filter((u) => (u.missingAttributes?.length ?? 0) > 0).length
+
 
   if (loading) {
     return (
@@ -624,6 +651,17 @@ export default function UsersPage() {
                     {departments.map(d => <SelectItem key={d} value={d!}>{d}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {academyEnabled && (
+                  <Button
+                    type="button"
+                    variant={filterMissing ? 'default' : 'outline'}
+                    size="sm"
+                    aria-pressed={filterMissing}
+                    onClick={() => setFilterMissing((on) => !on)}
+                  >
+                    Missing attributes ({missingCount})
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -824,6 +862,10 @@ export default function UsersPage() {
               Controls which Handbook content this person sees.
             </p>
           </div>
+
+          {academyEnabled && selectedUser && (
+            <AttributeFields value={attributeForm} onChange={setAttributeForm} />
+          )}
 
           <div>
             <Label className="mb-1">Benefit Category</Label>

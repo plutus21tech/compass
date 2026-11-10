@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withoutDraft } from '@/lib/academy/content-rules'
+import { isAcademyEnabled } from '@/lib/academy/flag'
+import { blocksModuleSwitch } from '@/lib/academy/service/progress'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
@@ -55,7 +58,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({
-      module,
+      module: withoutDraft(module),
       progress,
     })
   } catch (error) {
@@ -71,6 +74,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    if (isAcademyEnabled()) {
+      return NextResponse.json({ error: 'Use the new module editor.' }, { status: 409 })
+    }
+
     const { id } = await context.params
     const module = await findModuleByIdOrSlug(id)
     if (!module) {
@@ -83,6 +90,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const isActive = typeof body.isActive === 'boolean' ? body.isActive : undefined
     const orderIndex =
       typeof body.orderIndex === 'number' && Number.isInteger(body.orderIndex) ? body.orderIndex : undefined
+
+    if (blocksModuleSwitch(module, isActive)) {
+      return NextResponse.json({ error: "Course modules can't be switched off." }, { status: 409 })
+    }
 
     if (orderIndex !== undefined && orderIndex < 1) {
       return NextResponse.json({ error: 'orderIndex must be >= 1' }, { status: 400 })
@@ -113,7 +124,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
     })
 
-    return NextResponse.json({ success: true, module: updated })
+    return NextResponse.json({ success: true, module: withoutDraft(updated) })
   } catch (error) {
     console.error('Failed to update onboarding module:', error)
     return NextResponse.json({ error: 'Failed to update onboarding module' }, { status: 500 })

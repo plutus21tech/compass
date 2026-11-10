@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft } from 'lucide-react'
+import { MyChecklist } from '@/components/academy/hr/MyChecklist'
 
 interface ChecklistData {
   equipmentReady: boolean
@@ -35,6 +36,7 @@ export default function SecurityChecklistPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [newHire, setNewHire] = useState<NewHireSummary | null>(null)
+  const [academyEnabled, setAcademyEnabled] = useState(false)
   const [checklist, setChecklist] = useState<ChecklistData>({
     equipmentReady: false,
     equipmentReceived: false,
@@ -54,6 +56,7 @@ export default function SecurityChecklistPage() {
       }
       setNewHire(data.newHire)
       setChecklist(data.checklist)
+      setAcademyEnabled(data.academyEnabled === true)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load checklist')
     } finally {
@@ -144,6 +147,8 @@ export default function SecurityChecklistPage() {
               ? `Checklist completed on ${new Date(checklist.completedAt).toLocaleString()}`
               : 'Checklist will mark complete once all boxes are checked.'}
           </p>
+
+          {academyEnabled && newHireId && <MyChecklist newHireId={newHireId} />}
         </CardContent>
       </Card>
       </motion.div>

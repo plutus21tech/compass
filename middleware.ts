@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { bypassesSessionCheck } from '@/lib/middleware-paths'
+import { ACADEMY_PATH_HEADER } from '@/lib/academy/lockout'
+
+/** Overwrites the header getSession() reads, so a client can't choose the path it is judged on. */
+function nextWithPathname(request: NextRequest): NextResponse {
+  const headers = new Headers(request.headers)
+  headers.set(ACADEMY_PATH_HEADER, request.nextUrl.pathname)
+  return NextResponse.next({ request: { headers } })
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Public pages, and cron routes that verify their own secret
   if (bypassesSessionCheck(pathname)) {
-    return NextResponse.next()
+    return nextWithPathname(request)
   }
 
   // Check for encrypted session cookie
@@ -24,7 +32,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  return NextResponse.next()
+  return nextWithPathname(request)
 }
 
 export const config = {

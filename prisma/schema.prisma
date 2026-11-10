@@ -419,6 +419,24 @@ model User {
   @@index([name])
   @@index([email])
   @@index([benefitCategoryId])
+
+  discordUsername String?
+  linkedinUrl     String?
+  officeLocation  OfficeLocation?
+  remoteCountry   String? @db.Char(2)
+  workMode        WorkMode?
+  contractType    ContractType?
+  employmentStatus EmploymentStatus?
+  newHireTeamMemberships        NewHireTeamMember[]            @relation("NewHireTeamMemberUser")
+  onboardingProgressHistory     OnboardingProgressHistory[]    @relation("OnboardingProgressHistoryUser")
+  onboardingAcknowledgements    OnboardingAcknowledgement[]    @relation("OnboardingAcknowledgementUser")
+  onboardingKeyContacts         OnboardingKeyContact[]         @relation("OnboardingKeyContactUser")
+  onboardingProgressAssigned    OnboardingProgress[]           @relation("OnboardingProgressAssignedBy")
+  onboardingProgressUnlocked    OnboardingProgress[]           @relation("OnboardingProgressUnlockedEarlyBy")
+  onboardingProgressWatched     OnboardingProgress[]           @relation("OnboardingProgressMarkedWatchedBy")
+  onboardingVersionsPublished   OnboardingModuleVersion[]      @relation("OnboardingModuleVersionPublisher")
+  onboardingChecklistItemsDone  OnboardingChecklistItem[]      @relation("OnboardingChecklistItemDoneBy")
+  onboardingPaymentDetails      OnboardingPaymentDetails?      @relation("OnboardingPaymentDetailsUser")
 }
 
 model OfficeUserPreference {
@@ -1646,6 +1664,26 @@ model NewHire {
   @@index([status])
   @@index([teamLeadId])
   @@index([buddyId])
+
+  preferredName     String?
+  companyWing       CompanyWing?
+  clientAccount     String?
+  officeLocation    OfficeLocation?
+  remoteCountry     String?        @db.Char(2)
+  workMode          WorkMode?
+  contractType      ContractType?
+  employmentStatus  EmploymentStatus?
+  hrCallAt          DateTime?
+  teamCallAt        DateTime?
+  coreHoursStart    String?
+  coreHoursEnd      String?
+  academyReleasedAt DateTime?
+  academyReleasedById String?
+  securityCallAt    DateTime?
+  linkedinVerifiedAt DateTime?
+
+  teamMembers       NewHireTeamMember[]
+  checklistItems    OnboardingChecklistItem[]
 }
 
 model TeamLeadForm {
@@ -1662,6 +1700,15 @@ model TeamLeadForm {
   updatedAt       DateTime  @updatedAt
 
   newHire         NewHire   @relation(fields: [newHireId], references: [id], onDelete: Cascade)
+
+  roleExpectations String?
+  day1Goal         String?
+  week1Goal        String?
+  month1Goal       String?
+  month3Goal       String?
+  tutorials        Json?
+  teamTools        Json?
+  leadInputDueAt   DateTime?
 }
 
 model SecurityChecklist {
@@ -1690,6 +1737,19 @@ model OnboardingModule {
   updatedAt  DateTime             @updatedAt
 
   progress   OnboardingProgress[]
+
+  phase            OnboardingPhase?
+  estimatedMinutes Int?
+  headlineLead     String?
+  headlineAccent   String?
+  icon             String?
+  completionRule   OnboardingCompletionRule?
+  currentVersionId String?
+  heroImageUrl     String?
+  draftBlocks      Json?
+  draftDetails     Json?
+
+  versions         OnboardingModuleVersion[]
 }
 
 model OnboardingProgress {
@@ -1707,6 +1767,22 @@ model OnboardingProgress {
 
   @@unique([userId, moduleId])
   @@index([userId, status])
+
+  versionId          String?
+  dueAt              DateTime?
+  source             OnboardingProgressSource @default(COURSE)
+  assignedById       String?
+  unlockedEarlyById  String?
+  state              Json?
+
+  assignedBy         User? @relation("OnboardingProgressAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  unlockedEarlyBy    User? @relation("OnboardingProgressUnlockedEarlyBy", fields: [unlockedEarlyById], references: [id], onDelete: SetNull)
+
+  // HR marked a ready video watched for a hire whose player wouldn't load (R5): who, when and why.
+  markedWatchedById   String?
+  markedWatchedAt     DateTime?
+  markedWatchedReason String?
+  markedWatchedBy     User? @relation("OnboardingProgressMarkedWatchedBy", fields: [markedWatchedById], references: [id], onDelete: SetNull)
 }
 
 model OnboardingQuizQuestion {
@@ -1720,6 +1796,10 @@ model OnboardingQuizQuestion {
   updatedAt     DateTime @updatedAt
 
   @@unique([orderIndex])
+  explanation     String?
+  valueKey        String?
+  videoChapterKey String?
+  retiredAt       DateTime?
 }
 
 model QuizAttempt {
@@ -1743,6 +1823,13 @@ model OnboardingConfig {
   welcomeMessage  String   @default("Welcome to Compass onboarding.")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  links                 Json     @default("{}")
+  invoiceTemplates      Json     @default("{}")
+  bankLetterTemplate    String?
+  retakeCooldownMinutes Int      @default(15)
+  failAlertThreshold    Int      @default(3)
+  blockersCallCt        String   @default("WED 07:00")
+  videos                Json     @default("{}")
 }
 
 model BenefitCategory {
@@ -3127,4 +3214,277 @@ model SecuritySettings {
   retentionFirstRunAt        DateTime?
   updatedById                String?
   updatedAt                  DateTime  @updatedAt
+}
+
+enum OfficeLocation {
+  KARACHI
+  CASABLANCA
+  BOGOTA
+  DALLAS
+  REMOTE
+}
+
+enum WorkMode {
+  OFFICE
+  HYBRID
+  REMOTE
+}
+
+enum ContractType {
+  PK_EMPLOYMENT
+  INDEPENDENT_CONTRACTOR
+  OTHER_EMPLOYMENT
+}
+
+enum EmploymentStatus {
+  PERMANENT
+  FIXED_TERM
+  INTERN
+}
+
+enum CompanyWing {
+  CAPITAL
+  PARTNERS
+}
+
+enum OnboardingPhase {
+  DAY_1
+  WEEK_1
+}
+
+enum OnboardingCompletionRule {
+  VIDEO_95
+  SCROLL_END
+  BUDDY_HELLO
+  ALL_LINKS_OPENED
+  CHECKLIST_AND_FIELD
+  CHECKLIST_AND_ACK
+  FIELD_SUBMITTED
+  PAYMENT_SETUP
+  LINK_OPENED
+}
+
+enum OnboardingProgressSource {
+  COURSE
+  SINGLE_ASSIGNMENT
+  REREAD
+}
+
+enum AcknowledgementKind {
+  SECURITY_SOPS
+  VALUES_CODE_OF_CONDUCT
+}
+
+enum LibraryCardKind {
+  BENEFIT
+  REIMBURSEMENT
+}
+
+enum KeyContactGroup {
+  HR
+  SECURITY_IT
+  ACCOUNTS
+  EXECUTION
+}
+
+enum ChecklistOwnerRole {
+  HR
+  SECURITY
+  OA
+  TEAM_LEAD
+}
+
+enum OnboardingPaymentMethod {
+  PK_BANK
+  WISE
+  BANK_TRANSFER
+  PAYONEER
+  OTHER
+}
+
+model NewHireTeamMember {
+  id        String   @id @default(cuid())
+  newHireId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  newHire   NewHire  @relation(fields: [newHireId], references: [id], onDelete: Cascade)
+  user      User     @relation("NewHireTeamMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([newHireId, userId])
+  @@index([userId])
+}
+
+model OnboardingModuleVersion {
+  id            String           @id @default(cuid())
+  moduleId      String
+  version       Int
+  blocks        Json
+  publishedAt   DateTime         @default(now())
+  publishedById String?
+  changeNote    String?
+
+  module        OnboardingModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  publishedBy   User?            @relation("OnboardingModuleVersionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([moduleId, version])
+}
+
+model OnboardingProgressHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  moduleId    String
+  versionId   String?
+  completedAt DateTime
+  createdAt   DateTime @default(now())
+
+  // A Mark watched (R5) carried over from the live row when it is reopened. A plain id, not a relation,
+  // so the record outlives the HR account.
+  markedWatchedById   String?
+  markedWatchedAt     DateTime?
+  markedWatchedReason String?
+
+  user        User     @relation("OnboardingProgressHistoryUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, moduleId])
+}
+
+model OnboardingAcknowledgement {
+  id              String              @id @default(cuid())
+  userId          String
+  kind            AcknowledgementKind
+  statementText   String
+  moduleVersionId String?
+  typedName       String
+  signedAt        DateTime            @default(now())
+
+  user            User                @relation("OnboardingAcknowledgementUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind])
+}
+
+model OnboardingLibraryCard {
+  id                 String             @id @default(cuid())
+  kind               LibraryCardKind
+  title              String
+  icon               String
+  body               String
+  links              Json               @default("[]")
+  countries          String[]           @default([])
+  workModes          WorkMode[]         @default([])
+  contractTypes      ContractType[]     @default([])
+  employmentStatuses EmploymentStatus[] @default([])
+  orderIndex         Int
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([kind, isActive, orderIndex])
+}
+
+model OnboardingKeyContact {
+  id         String          @id @default(cuid())
+  group      KeyContactGroup
+  userId     String?
+  label      String?
+  email      String?
+  orderIndex Int
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  user       User?           @relation("OnboardingKeyContactUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([group, orderIndex])
+}
+
+model OnboardingChecklistTemplateItem {
+  id            String             @id @default(cuid())
+  key           String             @unique
+  title         String
+  ownerRole     ChecklistOwnerRole
+  dueOffsetDays Int
+  autoTickEvent String?
+  orderIndex    Int
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  items         OnboardingChecklistItem[]
+}
+
+model OnboardingChecklistItem {
+  id             String                          @id @default(cuid())
+  newHireId      String
+  templateItemId String
+  /// Copied from the template when the row is made: a later template edit never reaches it.
+  title          String
+  ownerRole      ChecklistOwnerRole
+  orderIndex     Int
+  dueAt          DateTime
+  dueOffsetDays  Int?
+  doneAt         DateTime?
+  doneById       String?
+  autoTicked     Boolean                         @default(false)
+  missReason     String?
+  createdAt      DateTime                        @default(now())
+  updatedAt      DateTime                        @updatedAt
+
+  newHire        NewHire                         @relation(fields: [newHireId], references: [id], onDelete: Cascade)
+  templateItem   OnboardingChecklistTemplateItem @relation(fields: [templateItemId], references: [id], onDelete: Restrict)
+  doneBy         User?                           @relation("OnboardingChecklistItemDoneBy", fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@unique([newHireId, templateItemId])
+  @@index([dueAt])
+}
+
+/// A hire's bank details or preferred way of being paid, kept apart from payroll: OA enters them there by hand.
+/// PK_BANK uses accountTitle, bankName, branch, iban. Every sensitive value is encrypted.
+model OnboardingPaymentDetails {
+  id                  String                  @id @default(cuid())
+  userId              String                  @unique
+  method              OnboardingPaymentMethod
+  accountHolderName   String?
+  accountTitle        String?
+  payoutEmail         String?
+  bankName            String?
+  branch              String?
+  iban                String?
+  accountNumberOrIban String?
+  swiftBic            String?
+  bankCountry         String?
+  bankAddress         String?
+  instructions        String?
+  currency            String?
+  submittedAt         DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  user                User                    @relation("OnboardingPaymentDetailsUser", fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OnboardingPaymentRevealLog {
+  id            String   @id @default(cuid())
+  paymentUserId String // plain id, no relation: the audit trail must survive user deletion
+  viewerId      String // plain id, for the same reason
+  createdAt     DateTime @default(now())
+
+  @@index([paymentUserId, createdAt])
+}
+
+/// Keys of notices already sent, so a notice goes out once.
+model OnboardingNotificationLog {
+  id     String   @id @default(cuid())
+  key    String   @unique
+  sentAt DateTime @default(now())
+}
+
+/// Who saved payment details and when. Plain ids, no relations: the trail must survive user deletion.
+model OnboardingPaymentChangeLog {
+  id          String   @id @default(cuid())
+  userId      String
+  actorId     String
+  method      String
+  isFirstSave Boolean
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
 import { sendTeamLeadFormRequestNotification } from '@/lib/email'
 import { validateTeamLeadEligibility } from '@/lib/onboarding'
+import { isAcademyEnabled } from '@/lib/academy/flag'
+import { COURSE_TX_OPTIONS, recomputeDueDatesForHire } from '@/lib/academy/service/progress'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -39,7 +41,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'New hire not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ newHire })
+    return NextResponse.json({ newHire, academyEnabled: isAcademyEnabled() })
   } catch (error) {
     console.error('Failed to fetch new hire:', error)
     return NextResponse.json({ error: 'Failed to fetch new hire' }, { status: 500 })
@@ -93,28 +95,33 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
-    const updated = await prisma.newHire.update({
-      where: { id },
-      data: {
-        ...(name !== undefined ? { name } : {}),
-        ...(title !== undefined ? { title } : {}),
-        ...(company !== undefined ? { company: company || null } : {}),
-        ...(department !== undefined ? { department: department || null } : {}),
-        ...(teamLeadId !== undefined ? { teamLeadId } : {}),
-        ...(email !== undefined ? { email } : {}),
-        ...(onboardingDate !== undefined ? { onboardingDate } : {}),
-        ...(buddyId !== undefined ? { buddyId } : {}),
-        ...(status ? { status: status as 'PENDING' | 'ONBOARDING' | 'COMPLETED' } : {}),
-      },
-      include: {
-        position: true,
-        teamLead: { select: { id: true, name: true, email: true } },
-        buddy: { select: { id: true, name: true, email: true } },
-        user: { select: { id: true, name: true, email: true, onboardingCompleted: true } },
-        teamLeadForm: true,
-        securityChecklist: true,
-      },
-    })
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.newHire.update({
+        where: { id },
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(title !== undefined ? { title } : {}),
+          ...(company !== undefined ? { company: company || null } : {}),
+          ...(department !== undefined ? { department: department || null } : {}),
+          ...(teamLeadId !== undefined ? { teamLeadId } : {}),
+          ...(email !== undefined ? { email } : {}),
+          ...(onboardingDate !== undefined ? { onboardingDate } : {}),
+          ...(buddyId !== undefined ? { buddyId } : {}),
+          ...(status ? { status: status as 'PENDING' | 'ONBOARDING' | 'COMPLETED' } : {}),
+        },
+        include: {
+          position: true,
+          teamLead: { select: { id: true, name: true, email: true } },
+          buddy: { select: { id: true, name: true, email: true } },
+          user: { select: { id: true, name: true, email: true, onboardingCompleted: true } },
+          teamLeadForm: true,
+          securityChecklist: true,
+        },
+      })
+      // Does nothing unless the course was released, so the legacy flow is unchanged.
+      if (onboardingDate !== undefined) await recomputeDueDatesForHire(tx, id)
+      return saved
+    }, COURSE_TX_OPTIONS)
 
     if (teamLeadId !== undefined && teamLeadId !== null && teamLeadId !== existing.teamLeadId) {
       try {

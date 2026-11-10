@@ -50,6 +50,7 @@ import {
   type AvatarOutfitType,
 } from '@/shared/avatar-v2'
 import { isValidEmailAddress } from '@/lib/email-address'
+import { ATTRIBUTE_LABELS, attributeValueLabel } from '@/lib/academy/labels'
 
 const WEEKDAYS = [
   { value: '0', label: 'Sunday' },
@@ -194,10 +195,25 @@ function drawAvatarPreview(
 }
 
 
+interface AcademyProfile {
+  discordUsername: string | null
+  linkedinUrl: string | null
+  officeLocation: string | null
+  remoteCountry: string | null
+  workMode: string | null
+  contractType: string | null
+  employmentStatus: string | null
+}
+
+const ATTRIBUTE_ROWS = ['officeLocation', 'remoteCountry', 'workMode', 'contractType', 'employmentStatus'] as const
+
 export default function ProfilePage() {
   const user = useLayoutUser()
   const [email, setEmail] = useState('')
   const [discordId, setDiscordId] = useState('')
+  const [academy, setAcademy] = useState<AcademyProfile | null>(null)
+  const [discordUsername, setDiscordUsername] = useState('')
+  const [linkedinUrl, setLinkedinUrl] = useState('')
   const [savingProfile, setSavingProfile] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -224,6 +240,22 @@ export default function ProfilePage() {
   const [avatarHeadCoveringColor, setAvatarHeadCoveringColor] = useState<string>(AVATAR_HIJAB_COLORS[0])
   const [avatarAccessories, setAvatarAccessories] = useState<AvatarAccessory[]>([])
   const [savingAvatar, setSavingAvatar] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/users/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data || data.academyEnabled !== true || !data.user) return
+        setAcademy(data.user)
+        setDiscordUsername(data.user.discordUsername || '')
+        setLinkedinUrl(data.user.linkedinUrl || '')
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     setEmail(user?.email || '')
@@ -311,12 +343,19 @@ export default function ProfilePage() {
         body: JSON.stringify({
           email: normalizedEmail || null,
           discordId: normalizedDiscordId || null,
+          ...(academy
+            ? { discordUsername: discordUsername.trim() || null, linkedinUrl: linkedinUrl.trim() || null }
+            : {}),
         }),
       })
       const data = await res.json()
       if (data.success) {
         setEmail(data.user?.email || '')
         setDiscordId(data.user?.discordId || '')
+        if (academy) {
+          setDiscordUsername(data.user?.discordUsername || '')
+          setLinkedinUrl(data.user?.linkedinUrl || '')
+        }
         toast.success('Profile details updated')
       } else {
         toast.error(data.error || 'Failed to update profile details')
@@ -483,6 +522,21 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {academy && (
+              <div className="mt-6 pt-5 border-t border-border">
+                <h3 className="text-sm font-semibold text-foreground mb-1">Onboarding attributes</h3>
+                <p className="text-xs text-muted-foreground mb-3">Set by HR. Ask HR if something here is wrong.</p>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {ATTRIBUTE_ROWS.filter((key) => key !== 'remoteCountry' || academy.officeLocation === 'REMOTE').map((key) => (
+                    <div key={key} className="p-3 rounded-lg bg-muted/50">
+                      <dt className="text-xs text-muted-foreground">{ATTRIBUTE_LABELS[key]}</dt>
+                      <dd className="text-sm font-medium text-foreground">{attributeValueLabel(academy[key])}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
+
             <form onSubmit={handleProfileUpdate} className="space-y-4 mt-6 pt-5 border-t border-border">
               <div className="flex items-center gap-2 mb-1">
                 <Mail className="h-4 w-4 text-primary" />
@@ -510,6 +564,32 @@ export default function ProfilePage() {
                   className="mt-1"
                 />
               </div>
+              {academy && (
+                <>
+                  <div>
+                    <Label htmlFor="profile-discordUsername">Discord username</Label>
+                    <Input
+                      id="profile-discordUsername"
+                      type="text"
+                      value={discordUsername}
+                      onChange={(e) => setDiscordUsername(e.target.value)}
+                      placeholder="e.g. ana_t"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="profile-linkedinUrl">LinkedIn</Label>
+                    <Input
+                      id="profile-linkedinUrl"
+                      type="url"
+                      value={linkedinUrl}
+                      onChange={(e) => setLinkedinUrl(e.target.value)}
+                      placeholder="https://www.linkedin.com/in/your-name"
+                      className="mt-1"
+                    />
+                  </div>
+                </>
+              )}
               <Button type="submit" disabled={savingProfile}>
                 {savingProfile ? 'Saving...' : 'Save Contact Details'}
               </Button>

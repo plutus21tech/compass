@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { ZodError } from 'zod'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { isAdminRole } from '@/lib/permissions'
@@ -9,6 +10,15 @@ import {
   encryptSensitivePayrollProfileFields,
 } from '@/lib/payroll/sensitive-fields'
 import { isPlutusEmail } from '@/lib/onboarding'
+import { isAcademyEnabled } from '@/lib/academy/flag'
+import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
+import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNewHireSetup } from '@/lib/academy/profile-input'
+import {
+  ATTRIBUTE_SELECT,
+  copySetupToUser,
+  getPersonAttributes,
+  setPersonAttributes,
+} from '@/lib/academy/service/attributes'
 import { checkAssignableTeamTag } from '@/lib/teams/load'
 
 const VALID_USER_ROLES = ['EMPLOYEE', 'HR', 'SECURITY', 'OA', 'EXECUTION'] as const
@@ -145,6 +155,18 @@ async function upsertPayrollProfileAndRevision(args: {
   })
 }
 
+/** The Academy attributes of a listed user, with the ones still to fill in. */
+function academyFields(entry: Partial<PersonAttributes>) {
+  const attributes: PersonAttributes = {
+    officeLocation: entry.officeLocation ?? null,
+    remoteCountry: entry.remoteCountry ?? null,
+    workMode: entry.workMode ?? null,
+    contractType: entry.contractType ?? null,
+    employmentStatus: entry.employmentStatus ?? null,
+  }
+  return { attributes, missingAttributes: missingAttributes(attributes) }
+}
+
 // GET - List all users
 export async function GET(_request: NextRequest) {
   try {
@@ -154,6 +176,7 @@ export async function GET(_request: NextRequest) {
     }
 
     await ensurePayrollMasterDefaults()
+    const academyEnabled = isAcademyEnabled()
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -167,6 +190,7 @@ export async function GET(_request: NextRequest) {
         benefitCategoryId: true,
         teamTag: true,
         createdAt: true,
+        ...(academyEnabled ? ATTRIBUTE_SELECT : {}),
         benefitCategory: {
           select: {
             id: true,
@@ -239,9 +263,11 @@ export async function GET(_request: NextRequest) {
     ])
 
     return NextResponse.json({
+      academyEnabled,
       users: users.map((entry) => ({
         ...entry,
         payrollProfile: decryptSensitivePayrollProfileFields(entry.payrollProfile),
+        ...(academyEnabled ? academyFields(entry) : {}),
       })),
       payrollMeta: {
         departments: payrollDepartments,
@@ -392,6 +418,10 @@ export async function POST(request: NextRequest) {
           },
         })
 
+        if (shouldCopyNewHireSetup(isAcademyEnabled())) {
+          await copySetupToUser(tx, linkedNewHire.id, createdUser.id)
+        }
+
         const modules = await tx.onboardingModule.findMany({
           where: { isActive: true },
           orderBy: { orderIndex: 'asc' },
@@ -441,6 +471,14 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body: unknown = await request.json()
+    // Off, the attribute keys are unknown keys and ignored, as before. On, only HR may send them.
+    const attributeGate = adminAttributeGate(isAcademyEnabled(), user.role, body)
+    const attributeRequested = attributeGate === 'allow'
+    if (attributeGate === 'forbidden') {
+      return NextResponse.json({ error: 'Only HR can change onboarding attributes' }, { status: 403 })
+    }
+
     const {
       id,
       name,
@@ -452,7 +490,7 @@ export async function PUT(request: NextRequest) {
       benefitCategoryId,
       teamTag,
       payrollProfile,
-    } = (await request.json()) as {
+    } = body as {
       id?: string
       name?: string
       email?: string | null
@@ -496,23 +534,28 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: {
-        name,
-        email: normalizeOptionalString(email),
-        discordId: normalizeOptionalString(discordId),
-        department: department || null,
-        position: position || null,
-        role: normalizedRole as (typeof VALID_USER_ROLES)[number],
-        ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
-        // Omitting teamTag leaves it untouched; sending null clears it.
-        ...(teamTag !== undefined
-          ? { teamTag: normalizedTeamTag ?? null }
-          : {}),
-      },
-      select: SAFE_USER_RESPONSE_SELECT,
-    })
+    const userChanges = {
+      name,
+      email: normalizeOptionalString(email),
+      discordId: normalizeOptionalString(discordId),
+      department: department || null,
+      position: position || null,
+      role: normalizedRole as (typeof VALID_USER_ROLES)[number],
+      ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
+      // Omitting teamTag leaves it untouched; sending null clears it.
+      ...(teamTag !== undefined
+        ? { teamTag: normalizedTeamTag ?? null }
+        : {}),
+    }
+
+    const updatedUser = attributeRequested
+      ? await prisma.$transaction(async (tx) => {
+          const saved = await tx.user.update({ where: { id }, data: userChanges, select: SAFE_USER_RESPONSE_SELECT })
+          const current = await getPersonAttributes(tx, id)
+          await setPersonAttributes(tx, id, mergeAttributePatch(current, body))
+          return saved
+        })
+      : await prisma.user.update({ where: { id }, data: userChanges, select: SAFE_USER_RESPONSE_SELECT })
 
     if (payrollProfile) {
       await upsertPayrollProfileAndRevision({
@@ -526,6 +569,12 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && 'code' in error && (error as any).code === 'P2002') {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+    }
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        { error: formatZodIssues(error) },
+        { status: 400 },
+      )
     }
     console.error('Failed to update user:', error)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to update user' }, { status: 500 })
