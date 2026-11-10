@@ -118,7 +118,6 @@ async function seedOnboarding({ apply }: { apply: boolean }) {
         slug: moduleData.slug,
         title: moduleData.title,
         orderIndex: moduleData.orderIndex,
-        content: '',
         isActive: true,
       },
     })
@@ -135,7 +134,6 @@ async function seedOnboarding({ apply }: { apply: boolean }) {
       data: {
         id: 'singleton',
         quizPassPercent: 80,
-        maxQuizAttempts: 3,
         welcomeMessage: 'Welcome to Compass onboarding.',
       },
     })

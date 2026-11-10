@@ -350,6 +350,8 @@ The final review confirmed that every deferred minor from stages 1 to 4 and the 
 **Real-YouTube test video.** `e2e/academy-video.spec.ts` plays a third-party public video of about 48 seconds (`wwIt5ZvROrs`). It skips when YouTube is unreachable; if that video is removed, set `E2E_YOUTUBE_ID` and `E2E_YOUTUBE_SECONDS`. Its launch arg `--autoplay-policy=no-user-gesture-required` is scoped to that test and relaxes the browser, so the test does not prove a real user's first-click start.
 
 **Cleanup push (separate, after go-live)**
+
+PR A (2026-11-10) did the flag removal, the legacy code and the code reads of the two legacy columns; the column drops are PR B. See the runbook's section 11 for what was removed.
 - Remove the `ONBOARDING_ACADEMY_ENABLED` flag branches. Files that read `isAcademyEnabled` (from `lib/academy/flag.ts`) or the variable, found with `git grep -l "isAcademyEnabled\|ONBOARDING_ACADEMY_ENABLED"`:
   - `app/(evaluator)/onboarding/[moduleSlug]/page.tsx`
   - `app/(evaluator)/onboarding/complete/page.tsx`

@@ -1,7 +1,6 @@
 // Pure rules for the reminder job (three daily runs on the Hobby plan, see vercel.json). Server only because of the cron check, but free of data access.
 import { isCronAuthorized } from '@/lib/cron-auth'
 import type { AutoTickEvent } from './checklist'
-import { isAcademyEnabled } from './flag'
 import { moduleCardState, type ModuleCardRow } from './progress'
 
 const DEFAULT_ZONE = 'Asia/Karachi'
@@ -82,13 +81,13 @@ export function isOwnerChasable(item: { key: string; autoTickEvent: string | nul
   return item.autoTickEvent === null || !HIRE_DRIVEN_EVENTS.includes(item.autoTickEvent)
 }
 
-export type CronGate = { action: 'refuse'; status: 401 } | { action: 'skip' } | { action: 'run' }
+export type CronGate = { action: 'refuse'; status: 401 } | { action: 'run' }
 
-/** The secret comes first, so nobody can learn whether the flag is on without it. */
+/** The job runs only with the cron secret. */
 export function onboardingCronGate(
   authorization: string | null,
   env: Record<string, string | undefined> = process.env,
 ): CronGate {
   if (!isCronAuthorized(authorization, env.CRON_SECRET)) return { action: 'refuse', status: 401 }
-  return isAcademyEnabled(env) ? { action: 'run' } : { action: 'skip' }
+  return { action: 'run' }
 }

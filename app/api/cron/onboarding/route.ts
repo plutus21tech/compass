@@ -10,7 +10,6 @@ export const maxDuration = 300
 export async function GET(request: NextRequest) {
   const gate = onboardingCronGate(request.headers.get('authorization'))
   if (gate.action === 'refuse') return NextResponse.json({ error: 'Unauthorized' }, { status: gate.status })
-  if (gate.action === 'skip') return NextResponse.json({ skipped: 'The Onboarding Academy is off' })
   try {
     return NextResponse.json({ success: true, ...(await runOnboardingJob(prisma, new Date(), emailSenders)) })
   } catch (error) {

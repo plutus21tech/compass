@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession, type SafeUser } from '@/lib/auth'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { blocksActionOnAnotherUser, isLockedUser } from '@/lib/academy/lockout'
 import { isAdminRole } from '@/lib/permissions'
 import bcrypt from 'bcryptjs'
@@ -13,7 +12,6 @@ function finishOnboardingFirst(): NextResponse {
 // getSession lets a locked user through here for their own password, so the route refuses the rest.
 function lockedRefusal(currentUser: SafeUser, targetUserId: unknown): NextResponse | null {
   const blocked = blocksActionOnAnotherUser({
-    enabled: isAcademyEnabled(),
     onboardingCompleted: currentUser.onboardingCompleted,
     actorId: currentUser.id,
     targetUserId,
@@ -97,7 +95,7 @@ export async function DELETE(request: NextRequest) {
     const currentUser = await getSession()
 
     // Removing a password asks for no current password, so a locked user can't do it even to themselves.
-    if (currentUser && isLockedUser({ enabled: isAcademyEnabled(), onboardingCompleted: currentUser.onboardingCompleted })) {
+    if (currentUser && isLockedUser({ onboardingCompleted: currentUser.onboardingCompleted })) {
       return finishOnboardingFirst()
     }
 

@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { ZodError } from 'zod'
 import { getSession, type SafeUser } from '@/lib/auth'
 import { formatZodIssues } from './profile-input'
-import { isAcademyEnabled } from './flag'
 import { AcademyError } from './errors'
 import { mutationLimitFor, rateLimitMessage, type MutationBucket } from './rate-limits'
 import { checkRateLimit, RateLimitUnavailableError } from '@/lib/rate-limit'
@@ -11,7 +10,6 @@ import { assertSameOrigin, SameOriginError } from '@/lib/security/same-origin'
 export { AcademyError }
 
 export async function requireAcademySession(): Promise<SafeUser> {
-  if (!isAcademyEnabled()) throw new AcademyError('Not found', 404)
   const user = await getSession()
   if (!user) throw new AcademyError('Unauthorized', 401)
   return user

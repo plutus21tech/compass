@@ -54,20 +54,15 @@ export function contactFieldError(error: z.ZodError): string | null {
 
 export type AttributeGate = 'ignore' | 'allow' | 'forbidden'
 
-/** Admin PUT: flag off or no attribute keys -> ignored as unknown keys; otherwise only HR may write. */
-export function adminAttributeGate(enabled: boolean, role: string, body: unknown): AttributeGate {
-  if (!enabled || !hasAttributeKeys(body)) return 'ignore'
+/** Admin PUT: no attribute keys -> nothing to gate; otherwise only HR may write. */
+export function adminAttributeGate(role: string, body: unknown): AttributeGate {
+  if (!hasAttributeKeys(body)) return 'ignore'
   return role === 'HR' ? 'allow' : 'forbidden'
 }
 
-/** Self-service PUT: attribute keys are never allowed once the Academy is on. */
-export function selfAttributeGate(enabled: boolean, body: unknown): Exclude<AttributeGate, 'allow'> {
-  return enabled && hasAttributeKeys(body) ? 'forbidden' : 'ignore'
-}
-
-/** The new-hire link step copies setup onto the account only with the Academy on. */
-export function shouldCopyNewHireSetup(enabled: boolean): boolean {
-  return enabled
+/** Self-service PUT: attribute keys are never allowed; only HR sets them. */
+export function selfAttributeGate(body: unknown): Exclude<AttributeGate, 'allow'> {
+  return hasAttributeKeys(body) ? 'forbidden' : 'ignore'
 }
 
 export function formatZodIssues(error: z.ZodError): string {

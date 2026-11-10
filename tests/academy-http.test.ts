@@ -29,17 +29,6 @@ test('anything else maps to 500 without leaking the message', async (t) => {
   assert.doesNotMatch(JSON.stringify(await response.json()), /hunter2/)
 })
 
-test('requireAcademySession is a 404 while the flag is off', async () => {
-  const { AcademyError, requireAcademySession } = await loadHttp()
-  const saved = process.env.ONBOARDING_ACADEMY_ENABLED
-  delete process.env.ONBOARDING_ACADEMY_ENABLED
-  try {
-    await assert.rejects(requireAcademySession(), (e: unknown) => e instanceof AcademyError && e.status === 404)
-  } finally {
-    if (saved !== undefined) process.env.ONBOARDING_ACADEMY_ENABLED = saved
-  }
-})
-
 test('a cross-origin rejection maps to 403 and bad JSON to 400', async () => {
   const { academyErrorResponse } = await loadHttp()
   const { SameOriginError } = await import('../lib/security/same-origin')

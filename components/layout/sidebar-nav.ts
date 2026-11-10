@@ -52,8 +52,7 @@ export function withSecurityChecksNav(config: SidebarConfig, access: SecurityChe
 }
 
 /** The Company Dashboard link for a hire in onboarding. Module 14 sends them there, and it is all they can read. */
-export function withLockedHandbookNav(config: SidebarConfig, enabled: boolean, icon: NavItem['icon']): SidebarConfig {
-  if (!enabled) return config
+export function withLockedHandbookNav(config: SidebarConfig, icon: NavItem['icon']): SidebarConfig {
   return withItemAfter(config, { label: 'Company Dashboard', href: '/handbook', icon }, '/onboarding')
 }
 
@@ -78,8 +77,8 @@ function withGroupItemMoved(config: SidebarConfig, href: string, nextHref: strin
 }
 
 /** Academy settings pages, under the admin console's Onboarding group only (never the onboarding sidebar). */
-export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: AcademyNavIcons): SidebarConfig {
-  if (!enabled || !config.items.some((item) => item.href === '/admin')) return config
+export function withAcademyNav(config: SidebarConfig, icons: AcademyNavIcons): SidebarConfig {
+  if (!config.items.some((item) => item.href === '/admin')) return config
   const entries: NavItem[] = [
     { label: 'Academy library', href: '/admin/onboarding/academy/library', icon: icons.library },
     { label: 'Key contacts', href: '/admin/onboarding/academy/contacts', icon: icons.contacts },
@@ -96,7 +95,7 @@ export function withAcademyNav(config: SidebarConfig, enabled: boolean, icons: A
   return entries.reduce((acc, entry) => withGroupItem(acc, 'Onboarding', entry), moved)
 }
 
-/** O&A's "Payment details" page: hires' saved payout details, masked. Academy flag on, O&A only. */
+/** O&A's "Payment details" page: hires' saved payout details, masked. O&A only. */
 export function withOaPaymentNav(config: SidebarConfig, show: boolean, icon: NavItem['icon']): SidebarConfig {
   if (!show) return config
   return withItemAfter(config, { label: 'Payment details', href: '/oa/payment-details', icon }, '/handbook')

@@ -79,11 +79,9 @@ test('no seeded slug collides with a legacy module slug', () => {
   assert.deepEqual(slugs.filter((slug) => legacy.includes(slug)), [])
 })
 
-test('the seed CLI refuses unless both the flag and the confirm variable are set', () => {
-  const on = { ONBOARDING_ACADEMY_ENABLED: 'true', ONBOARDING_ACADEMY_SEED_CONFIRM: 'yes' }
+test('the seed CLI refuses unless the confirm variable is set', () => {
+  const on = { ONBOARDING_ACADEMY_SEED_CONFIRM: 'yes' }
   assert.equal(seedRefusal(on), null)
-  assert.match(seedRefusal({ ...on, ONBOARDING_ACADEMY_ENABLED: undefined }) ?? '', /ONBOARDING_ACADEMY_ENABLED/)
-  assert.match(seedRefusal({ ...on, ONBOARDING_ACADEMY_ENABLED: 'false' }) ?? '', /ONBOARDING_ACADEMY_ENABLED/)
   assert.match(seedRefusal({ ...on, ONBOARDING_ACADEMY_SEED_CONFIRM: undefined }) ?? '', /ONBOARDING_ACADEMY_SEED_CONFIRM/)
   assert.match(seedRefusal({}) ?? '', /ONBOARDING_ACADEMY/)
 })

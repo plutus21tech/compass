@@ -36,7 +36,6 @@ export default function SecurityChecklistPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [newHire, setNewHire] = useState<NewHireSummary | null>(null)
-  const [academyEnabled, setAcademyEnabled] = useState(false)
   const [checklist, setChecklist] = useState<ChecklistData>({
     equipmentReady: false,
     equipmentReceived: false,
@@ -56,7 +55,6 @@ export default function SecurityChecklistPage() {
       }
       setNewHire(data.newHire)
       setChecklist(data.checklist)
-      setAcademyEnabled(data.academyEnabled === true)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load checklist')
     } finally {
@@ -148,7 +146,7 @@ export default function SecurityChecklistPage() {
               : 'Checklist will mark complete once all boxes are checked.'}
           </p>
 
-          {academyEnabled && newHireId && <MyChecklist newHireId={newHireId} />}
+          {newHireId && <MyChecklist newHireId={newHireId} />}
         </CardContent>
       </Card>
       </motion.div>

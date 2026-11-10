@@ -3,7 +3,6 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canCompleteSecurityChecklist } from '@/lib/permissions'
 import { sendSecurityChecklistCompleteNotification } from '@/lib/email'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 
 interface RouteContext {
   params: Promise<{ newHireId: string }>
@@ -38,7 +37,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         teamLead: record.teamLead,
       },
       checklist: record.securityChecklist,
-      academyEnabled: isAcademyEnabled(),
     })
   } catch (error) {
     console.error('Failed to fetch security checklist:', error)

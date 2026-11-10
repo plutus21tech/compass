@@ -155,7 +155,6 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('')
   const [filterDepartment, setFilterDepartment] = useState<string>('')
-  const [academyEnabled, setAcademyEnabled] = useState(false)
   const [filterMissing, setFilterMissing] = useState(false)
   const [attributeForm, setAttributeForm] = useState<PersonAttributes>(EMPTY_ATTRIBUTES)
   
@@ -226,7 +225,6 @@ export default function UsersPage() {
       const res = await fetch('/api/admin/users')
       const data = await res.json()
       setUsers(data.users || [])
-      setAcademyEnabled(data.academyEnabled === true)
       if (data.payrollMeta) {
         setPayrollMeta({
           departments: data.payrollMeta.departments || [],
@@ -413,7 +411,7 @@ export default function UsersPage() {
             role: formData.role,
             benefitCategoryId: formData.benefitCategoryId || null,
             teamTag: formData.teamTag || null,
-            ...(academyEnabled ? attributeForm : {}),
+            ...attributeForm,
             payrollProfile,
           }
         : {
@@ -651,17 +649,15 @@ export default function UsersPage() {
                     {departments.map(d => <SelectItem key={d} value={d!}>{d}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                {academyEnabled && (
-                  <Button
-                    type="button"
-                    variant={filterMissing ? 'default' : 'outline'}
-                    size="sm"
-                    aria-pressed={filterMissing}
-                    onClick={() => setFilterMissing((on) => !on)}
-                  >
-                    Missing attributes ({missingCount})
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant={filterMissing ? 'default' : 'outline'}
+                  size="sm"
+                  aria-pressed={filterMissing}
+                  onClick={() => setFilterMissing((on) => !on)}
+                >
+                  Missing attributes ({missingCount})
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -863,7 +859,7 @@ export default function UsersPage() {
             </p>
           </div>
 
-          {academyEnabled && selectedUser && (
+          {selectedUser && (
             <AttributeFields value={attributeForm} onChange={setAttributeForm} />
           )}
 

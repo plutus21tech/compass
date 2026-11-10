@@ -211,7 +211,7 @@ async function runQuizAndSign(): Promise<void> {
   assert.equal(user.onboardingCompleted, true)
   const hire = await prisma.newHire.findFirstOrThrow({ where: { userId: HIRE_ID }, select: { status: true } })
   assert.equal(hire.status, 'COMPLETED')
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: user.onboardingCompleted, pathname: '/dashboard' }), false)
+  assert.equal(shouldBlockSession({ onboardingCompleted: user.onboardingCompleted, pathname: '/dashboard' }), false)
   assert.equal(await profiles(), profilesBefore)
 }
 

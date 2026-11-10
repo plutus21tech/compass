@@ -1,12 +1,9 @@
 // Re-runnable seed for the Onboarding Academy. Never runs on deploy.
-// RUN ONCE, AROUND THE PUSH THAT MAKES THE ACADEMY THE DEFAULT: this retires the legacy onboarding
-// modules and quiz questions, so with ONBOARDING_ACADEMY_ENABLED off the old flow would break.
-// Nothing reaches main until the whole Academy is ready (there is no separate switch-on step), so
-// run this, and the test-account cutover script, once as part of that release and not before.
-// CLI: ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
+// Production was seeded at go-live (2026-11-10). It retires any legacy onboarding modules and quiz
+// questions it finds, and a re-run renumbers the course modules back to the seeded order.
+// CLI: ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
 import { Prisma, PrismaClient } from '@prisma/client'
 import { parseBlocks } from '../lib/academy/blocks'
-import { isAcademyEnabled } from '../lib/academy/flag'
 import { academyLinkSchema, libraryCardSchema } from '../lib/academy/links'
 import { ACADEMY_CARDS, ACADEMY_CHECKLIST, ACADEMY_DEFAULT_LINKS, ACADEMY_MODULES } from './seed-academy-data'
 import { ACADEMY_MODULE_BLOCKS } from './seed-academy-content'
@@ -24,8 +21,8 @@ type Tx = Prisma.TransactionClient
 
 const RETIRED_OFFSET = 1000
 const REORDER_TIMEOUT_MS = 120_000
-const FLAG_ON_WARNING =
-  'WARNING: this retires the legacy onboarding modules and quiz questions. Run it once, around the push that makes the Academy the default (ONBOARDING_ACADEMY_ENABLED), not before.'
+const SEED_WARNING =
+  'WARNING: this retires any legacy onboarding modules and quiz questions, and a re-run renumbers the course modules back to the seeded order.'
 
 /** Highest first, so a bumped row can never land on one still waiting to move. */
 async function retireOldModules(db: Tx): Promise<number> {
@@ -164,11 +161,8 @@ function describeHost(url: string | undefined): string {
   }
 }
 
-/** Why the CLI must not run, or null when both the flag and the confirmation are set. */
+/** Why the CLI must not run, or null when the confirmation is set. */
 export function seedRefusal(env: Record<string, string | undefined>): string | null {
-  if (!isAcademyEnabled(env)) {
-    return 'Refusing to run: ONBOARDING_ACADEMY_ENABLED must be true, because this retires the legacy onboarding.'
-  }
   if (env.ONBOARDING_ACADEMY_SEED_CONFIRM !== 'yes') {
     return 'Refusing to run: set ONBOARDING_ACADEMY_SEED_CONFIRM=yes to seed the Academy.'
   }
@@ -181,7 +175,7 @@ async function main(): Promise<void> {
     console.error(refusal)
     process.exit(1)
   }
-  console.warn(FLAG_ON_WARNING)
+  console.warn(SEED_WARNING)
   console.log(`Seeding the Academy into database host: ${describeHost(process.env.DATABASE_URL)}`)
   const db = new PrismaClient()
   try {

@@ -6,7 +6,6 @@ import {
   leadInputSchema,
   setupAccessGate,
   setupSchema,
-  shouldApplyLeadInput,
   buildLeadSubmitData,
   isLeadInputSubmitted,
   withoutSetupOwnedFields,
@@ -97,11 +96,9 @@ test('leadInputSchema rejects a non-https tutorial URL', () => {
   assert.equal(r.success, false)
 })
 
-test('setup access and lead-input gates', () => {
+test('setup access gate', () => {
   assert.equal(setupAccessGate('HR'), 'allow')
   assert.equal(setupAccessGate('OA'), 'forbidden')
-  assert.equal(shouldApplyLeadInput(true), true)
-  assert.equal(shouldApplyLeadInput(false), false)
 })
 
 import { buildLeadDraftData } from '../lib/academy/setup'
@@ -228,7 +225,7 @@ test('lead submit errors are readable for lists too', () => {
 })
 
 test('lead draft errors are readable', () => {
-  const r = buildLeadDraftData(true, { tutorials: [{ title: 'x', url: 'http://a.test' }] })
+  const r = buildLeadDraftData({ tutorials: [{ title: 'x', url: 'http://a.test' }] })
   assert.equal(r.ok, false)
   if (!r.ok) assert.equal(r.error, 'Tutorial 1 link must be an https link.')
 })
@@ -246,7 +243,7 @@ test('setupSchema rejects the hire on their own team list', () => {
 })
 
 test('lead draft: absent key preserved, blank key cleared, flag off gives nothing', () => {
-  const r = buildLeadDraftData(true, { week1Goal: 'Shadow', month1Goal: '  ', tutorials: [] })
+  const r = buildLeadDraftData({ week1Goal: 'Shadow', month1Goal: '  ', tutorials: [] })
   assert.ok(r.ok)
   if (r.ok) {
     assert.equal(r.data.week1Goal, 'Shadow')
@@ -256,6 +253,5 @@ test('lead draft: absent key preserved, blank key cleared, flag off gives nothin
     assert.equal('month3Goal' in r.data, false)
     assert.equal('teamTools' in r.data, false)
   }
-  assert.deepEqual(buildLeadDraftData(false, { week1Goal: 'x' }), { ok: true, data: {} })
-  assert.equal(buildLeadDraftData(true, { tutorials: [{ title: 'x', url: 'http://a.test' }] }).ok, false)
+  assert.equal(buildLeadDraftData({ tutorials: [{ title: 'x', url: 'http://a.test' }] }).ok, false)
 })

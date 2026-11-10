@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { stripHtml } from '@/lib/sanitize'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { missingAttributes } from '@/lib/academy/attributes'
 import { contactFieldError, selfAttributeGate, selfContactExtrasShape } from '@/lib/academy/profile-input'
 import { getPersonAttributes } from '@/lib/academy/service/attributes'
@@ -42,9 +41,8 @@ const profileShape = {
   avatarAccessories: z.array(z.enum(AVATAR_ACCESSORIES)).max(3).nullable().optional(),
 }
 
-const profileUpdateSchema = z.object(profileShape).strict()
-// With the Academy on, the two contact fields are accepted too; off, they are unknown keys as before.
-const academyProfileUpdateSchema = z.object({ ...profileShape, ...selfContactExtrasShape }).strict()
+// The profile fields plus the two contact fields the Academy collects.
+const profileUpdateSchema = z.object({ ...profileShape, ...selfContactExtrasShape }).strict()
 
 export async function GET() {
   try {
@@ -52,8 +50,6 @@ export async function GET() {
     if (!currentUser) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    if (!isAcademyEnabled()) return NextResponse.json({ academyEnabled: false })
-
     const [contact, attributes] = await Promise.all([
       prisma.user.findUniqueOrThrow({
         where: { id: currentUser.id },
@@ -62,7 +58,6 @@ export async function GET() {
       getPersonAttributes(prisma, currentUser.id),
     ])
     return NextResponse.json({
-      academyEnabled: true,
       user: { ...contact, ...attributes, missingAttributes: missingAttributes(attributes) },
     })
   } catch (error) {
@@ -79,14 +74,13 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json()
-    const academyEnabled = isAcademyEnabled()
-    if (selfAttributeGate(academyEnabled, body) === 'forbidden') {
+    if (selfAttributeGate(body) === 'forbidden') {
       return NextResponse.json({ error: 'Only HR can change these details' }, { status: 403 })
     }
-    const parsed = (academyEnabled ? academyProfileUpdateSchema : profileUpdateSchema).safeParse(body)
+    const parsed = profileUpdateSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json(
-        { error: (academyEnabled ? contactFieldError(parsed.error) : null) ?? 'Invalid profile payload', details: parsed.error.issues },
+        { error: contactFieldError(parsed.error) ?? 'Invalid profile payload', details: parsed.error.issues },
         { status: 400 }
       )
     }
@@ -125,7 +119,8 @@ export async function PUT(request: NextRequest) {
         name: true,
         email: true,
         discordId: true,
-        ...(academyEnabled ? { discordUsername: true, linkedinUrl: true } : {}),
+        discordUsername: true,
+        linkedinUrl: true,
         department: true,
         position: true,
         role: true,

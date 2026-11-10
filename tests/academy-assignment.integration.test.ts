@@ -143,7 +143,7 @@ test('assigning Module 7 to an employee never locks them, and they can load, sig
   assert.equal(row?.assignedById, P.hr.id)
   assert.equal(row?.dueAt, null)
   assert.equal(await isFinished(STAFF), true)
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: await isFinished(STAFF), pathname: '/dashboard' }), false)
+  assert.equal(shouldBlockSession({ onboardingCompleted: await isFinished(STAFF), pathname: '/dashboard' }), false)
 
   const view = await loadModule(prisma, STAFF, SECURITY)
   assert.equal(view.plain, true)
@@ -318,7 +318,7 @@ test('a finished hire stays finished and unlocked, reads through their rail, and
   assert.equal(row.source, 'REREAD')
   assert.equal(row.dueAt, null)
   assert.equal(await isFinished(HIRE_ID), true)
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: await isFinished(HIRE_ID), pathname: '/dashboard' }), false)
+  assert.equal(shouldBlockSession({ onboardingCompleted: await isFinished(HIRE_ID), pathname: '/dashboard' }), false)
   assert.ok(await loadCompletion(prisma, HIRE_ID))
 
   const view = await loadModule(prisma, HIRE_ID, 'welcome')

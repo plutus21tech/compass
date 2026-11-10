@@ -17,7 +17,6 @@ export default function OnboardingConfigPage() {
   const [form, setForm] = useState({
     welcomeMessage: '',
     quizPassPercent: 80,
-    maxQuizAttempts: 3,
   })
 
   const loadConfig = async () => {
@@ -30,7 +29,6 @@ export default function OnboardingConfigPage() {
       setForm({
         welcomeMessage: data.config.welcomeMessage || '',
         quizPassPercent: data.config.quizPassPercent ?? 80,
-        maxQuizAttempts: data.config.maxQuizAttempts ?? 3,
       })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load onboarding settings')
@@ -94,15 +92,6 @@ export default function OnboardingConfigPage() {
                 max={100}
                 value={form.quizPassPercent}
                 onChange={(e) => setForm({ ...form, quizPassPercent: Number(e.target.value) || 80 })}
-              />
-            </div>
-            <div>
-              <Label className="mb-1">Max Quiz Attempts</Label>
-              <Input
-                type="number"
-                min={1}
-                value={form.maxQuizAttempts}
-                onChange={(e) => setForm({ ...form, maxQuizAttempts: Number(e.target.value) || 3 })}
               />
             </div>
           </div>

@@ -194,7 +194,7 @@ test('the admin nav links to the video settings', () => {
     items: [{ label: 'Dashboard', href: '/admin', icon }],
     groups: [{ label: 'Onboarding', items: [] }],
   }
-  const hrefs = withAcademyNav(config, true, { library: icon, contacts: icon, links: icon }).groups[0].items.map((i) => i.href)
+  const hrefs = withAcademyNav(config, { library: icon, contacts: icon, links: icon }).groups[0].items.map((i) => i.href)
   assert.ok(hrefs.includes('/admin/onboarding/academy/videos'))
 })
 
@@ -202,7 +202,7 @@ test('the Videos nav item has its own icon', () => {
   const icon = (() => null) as unknown as SidebarConfig['items'][number]['icon']
   const videos = (() => null) as unknown as SidebarConfig['items'][number]['icon']
   const config: SidebarConfig = { items: [{ label: 'Dashboard', href: '/admin', icon }], groups: [{ label: 'Onboarding', items: [] }] }
-  const items = withAcademyNav(config, true, { library: icon, contacts: icon, links: icon, videos }).groups[0].items
+  const items = withAcademyNav(config, { library: icon, contacts: icon, links: icon, videos }).groups[0].items
   assert.equal(items.find((i) => i.href === '/admin/onboarding/academy/videos')?.icon, videos)
 })
 

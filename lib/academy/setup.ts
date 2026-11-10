@@ -118,11 +118,10 @@ function textKeysSentBlank(source: Record<string, unknown>): string[] {
 }
 
 /**
- * What a draft save writes. Flag off: nothing. A key absent from the request is left alone;
- * a text key sent blank is cleared. Returns an error message when the sent values are invalid.
+ * What a draft save writes. A key absent from the request is left alone; a text key sent blank
+ * is cleared. Returns an error message when the sent values are invalid.
  */
-export function buildLeadDraftData(enabled: boolean, body: unknown): LeadResult {
-  if (!shouldApplyLeadInput(enabled)) return { ok: true, data: {} }
+export function buildLeadDraftData(body: unknown): LeadResult {
   const source = asRecord(body)
   const parsed = leadInputDraftSchema.safeParse(normalizeLeadInputBody(source))
   if (!parsed.success) return { ok: false, error: describeLeadIssues(parsed.error) }
@@ -219,7 +218,3 @@ export function setupAccessGate(role: string | null | undefined): 'allow' | 'for
   return role === 'HR' ? 'allow' : 'forbidden'
 }
 
-/** The lead-input fields exist only while the Academy is on. */
-export function shouldApplyLeadInput(enabled: boolean): boolean {
-  return enabled
-}

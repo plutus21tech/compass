@@ -249,12 +249,6 @@ export function fixedBlocksChanged(live: readonly Block[], draft: readonly Block
   })
 }
 
-/** Legacy module routes send whole rows, and a draft is for HR's editor only. */
-export function withoutDraft<T extends { draftBlocks: unknown; draftDetails: unknown }>(module: T): Omit<T, 'draftBlocks' | 'draftDetails'> {
-  const { draftBlocks: _blocks, draftDetails: _details, ...rest } = module
-  return rest
-}
-
 const WING_LABELS: Record<'CAPITAL' | 'PARTNERS', string> = { CAPITAL: 'Capital', PARTNERS: 'Partners' }
 
 /** A conditional block's rule, in plain words. */
