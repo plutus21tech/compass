@@ -307,23 +307,81 @@ Stage 5 is built behind `ONBOARDING_ACADEMY_ENABLED`, like the stages before it.
 
 **Needs the owner's go-ahead (the go-live push)**
 - Set `ONBOARDING_FIELD_ENCRYPTION_KEY` on every environment.
-- Check the lockout header (`x-compass-pathname`) and the hourly `/api/cron/onboarding` job on a preview build.
-- Dry-run, then run, `completeTestUsers`; mark legacy PENDING or ONBOARDING hires COMPLETED.
+- Check the lockout header (`x-compass-pathname`) on a preview build. The hourly `/api/cron/onboarding` job cannot be proven on a preview (Vercel runs crons on production only); its real check is the post-deploy smoke.
+- Make a restore point first: a Neon branch of production, or a point-in-time-restore timestamp.
+- Dry-run, then run, `completeTestUsers`; mark legacy PENDING or ONBOARDING hires COMPLETED, by approved id only.
 - Run the seed once with `ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes`.
-- Turn the flag on, or remove the flag checks, in the same release. The flag stays in the code through stage 5 (ruling R1): deploying without the seed would lock hires out of an empty course.
-- Rolling back is the flag off or the previous deployment. The migrations only add. The seed deactivates legacy modules and questions rather than deleting them, so restoring the old flow after a seed needs those rows reactivated by hand.
+- Turn the flag on, or remove the flag checks, in the same release, as the last action, with the deploy ready right after the seed. The flag stays in the code through stage 5 (ruling R1): deploying without the seed would lock hires out of an empty course.
+- Rolling back: restore the Neon branch first; the hand-written reactivation of the retired rows is the fallback. The migrations only add. The seed deactivates legacy modules and questions rather than deleting them, so the flag off alone does not bring the old flow back after a seed.
 
 **Open product items (not blocking)**
-- **The bank letter download.** Module 11 still says "HR will share your bank letter" until HR sends the letter text. It needs a small build once the text exists.
-- **Videos.** HR enters each video's YouTube ID, length in seconds, chapters and transcripts. Until a video is ready, Modules 1 and 2 keep "Video coming soon" and scroll-to-end. A wrong typed length only shifts the 95% point (ruling R2), but one longer than the real video strands a hire on "Saving your progress".
-- **Key Contacts** are seeded empty; HR fills them in.
-- **The checklist draft** (design section 5.8) still needs HR's correction.
+- The bank letter text, which the owner will send. Module 11 says "HR will share your bank letter" until then; the download needs a small build once the text exists.
+- HR's correction of the checklist draft (design section 5.8).
+- HR entering the videos, their lengths and transcripts. Until a video is ready, Modules 1 and 2 keep "Video coming soon" and scroll-to-end.
+- The Key Contacts, which are seeded empty.
 
-**Cleanup push (separate, after the Academy is live)**
-- Remove the legacy onboarding code and the flag branches.
-- Remove dead columns: `OnboardingConfig.maxQuizAttempts` (retakes are never capped) and `OnboardingModule.content`.
-- Legacy rows (retired modules and questions, old progress and attempts) are deleted only with the owner's say-so.
+**Stage 5 rulings**
+- R1: the flag is kept through stage 5 and its removal belongs to the go-live push with the seed and cutover, because deploying without the seed would lock hires out of an empty course.
+- R2: HR types each video's duration because there is no YouTube API key; a wrong one only shifts the 95% point.
+- R3: the watch clock stores `reportedAt` pushed by the spent tolerance, so the +15s tolerance cannot compound; `reportedAt` may run up to about 14s later than real.
+- R4: each report counts at most 30s of real time, so an idle open tab cannot complete the video; a hire whose reports stop for a while must rewatch from where they stopped.
+- R5: a ready video that will not load is unblocked by HR with a logged "Mark watched" in the tracker drawer, not by reading the transcript, because a read fallback is easy to game.
+- R6: the videos editor warns when the player's real length differs from the typed length, because a wrong length strands hires on "Saving your progress".
+- R7: the end screen waits for the video's actual end while completion is sent at 95%, so viewers still see the closing seconds.
+- R8: Preview-as uses its own `preview` flag rather than `readOnly`, because `readOnly` shows saved values.
+- R9: `listAssignable` keeps its per-person active check, because one query would need loosening the payroll guard (cost: a slower assign page with many staff).
+- R10: Mark watched stores who, when and why on the progress row (3 nullable columns), so HR's override is traceable; the reopen path copies them into the history.
 
-**Carried forward**
-- The real-YouTube E2E (`e2e/academy-video.spec.ts`) plays a third-party public video of about 48 seconds (`wwIt5ZvROrs`). It skips when YouTube is unreachable; if that video is removed, set `E2E_YOUTUBE_ID` and `E2E_YOUTUBE_SECONDS`.
-- Review minors deferred during stage 5 are in the stage's SDD ledger (`.superpowers/sdd/2026-11-09-onboarding-academy-stage-5-video-polish/progress.md`).
+**Deferred items** (all minor, polish with no safety impact)
+
+| Item | File |
+|---|---|
+| The length warning appears only after saving. Confirm before saving when the measured length does not match. | `components/academy/hr/VideoConfigForm.tsx` |
+| "Saving your progress…" can sit unexplained when the server trails, such as a throttled background tab or a network gap. Add a second line after about 10s. | `components/academy/video/VideoPlayer.tsx` |
+| If HR replaces a video with one of a different duration mid-watch, show "This video was updated. Reload to continue." | `components/academy/video/useVideoSession.ts` (`handleAnswer`) |
+| `canOpenVideo` loads facts for all 14 rows on every transcript open. Filter to rows whose version has a video block. | `lib/academy/service/transcript.ts` |
+| The real-YouTube E2E fails after 120s instead of skipping if the video is removed. Add a video probe, or set `E2E_YOUTUBE_ID`. | `e2e/academy-video.spec.ts` |
+| The Preview-as E2E does not assert that switching work mode changed the content. | `e2e/academy.spec.ts` |
+
+The final review confirmed that every deferred minor from stages 1 to 4 and the earlier stage-5 tasks was addressed in the stage 5 T6 and T7 commits.
+
+**Test baseline.** `npm test` without DB env has 19 known failures outside the Academy: 18 in api-integration and 1 in rate-limit.
+
+**Real-YouTube test video.** `e2e/academy-video.spec.ts` plays a third-party public video of about 48 seconds (`wwIt5ZvROrs`). It skips when YouTube is unreachable; if that video is removed, set `E2E_YOUTUBE_ID` and `E2E_YOUTUBE_SECONDS`. Its launch arg `--autoplay-policy=no-user-gesture-required` is scoped to that test and relaxes the browser, so the test does not prove a real user's first-click start.
+
+**Cleanup push (separate, after go-live)**
+- Remove the `ONBOARDING_ACADEMY_ENABLED` flag branches. Files that read `isAcademyEnabled` (from `lib/academy/flag.ts`) or the variable, found with `git grep -l "isAcademyEnabled\|ONBOARDING_ACADEMY_ENABLED"`:
+  - `app/(evaluator)/onboarding/[moduleSlug]/page.tsx`
+  - `app/(evaluator)/onboarding/complete/page.tsx`
+  - `app/(evaluator)/onboarding/page.tsx`
+  - `app/(evaluator)/onboarding/quiz/page.tsx`
+  - `app/(hr)/admin/onboarding/academy/layout.tsx`
+  - `app/(hr)/admin/onboarding/modules/page.tsx`
+  - `app/(hr)/admin/onboarding/page.tsx`
+  - `app/(hr)/admin/onboarding/quiz/page.tsx`
+  - `app/(hr)/admin/onboarding/tracker/page.tsx`
+  - `app/(oa)/oa/payment-details/page.tsx`
+  - `app/api/admin/onboarding/quiz-attempts/reset/route.ts`
+  - `app/api/admin/onboarding/quiz-questions/[id]/route.ts`
+  - `app/api/admin/onboarding/quiz-questions/route.ts`
+  - `app/api/admin/password/route.ts`
+  - `app/api/admin/users/route.ts`
+  - `app/api/onboarding/academy/assigned/route.ts`
+  - `app/api/onboarding/academy/lost-equipment/route.ts`
+  - `app/api/onboarding/modules/[id]/route.ts`
+  - `app/api/onboarding/new-hires/[id]/route.ts`
+  - `app/api/onboarding/progress/route.ts`
+  - `app/api/onboarding/security-checklist/[newHireId]/route.ts`
+  - `app/api/onboarding/team-lead-form/[newHireId]/route.ts`
+  - `app/api/users/me/route.ts`
+  - `e2e/academy-env.ts`
+  - `lib/academy/flag.ts`
+  - `lib/academy/http.ts`
+  - `lib/academy/reminders.ts`
+  - `lib/auth.ts`
+  - `prisma/seed-academy.ts`
+- Remove the legacy columns and where they are read:
+  - `OnboardingConfig.maxQuizAttempts`: `app/api/onboarding/config/route.ts`, `app/(hr)/admin/onboarding/config/page.tsx`, `app/(evaluator)/onboarding/LegacyOnboardingHub.tsx`, `app/(evaluator)/onboarding/quiz/LegacyQuizPage.tsx`.
+  - `OnboardingModule.content`: `app/(hr)/admin/onboarding/modules/LegacyModulesPage.tsx` and the write in `app/api/onboarding/modules/[id]/route.ts`.
+- Remove the legacy onboarding code (the `Legacy*` pages above and the old routes they call).
+- Delete rows only with the owner's say-so, set by set, after a read-only count.

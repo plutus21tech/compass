@@ -1,9 +1,9 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, chromium, type Page } from '@playwright/test'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/db'
 import { P } from '../tests/helpers/academy-test-db'
 import { HIRE_ID, cleanCourse, createReleasedHire, failQuizAttempt, progressRow } from '../tests/helpers/academy-course-fixtures'
-import { academyE2eSkipReason } from './academy-env'
+import { academyE2eSkipReason, E2E_BASE_URL } from './academy-env'
 
 // Fictional password for fictional people on the local test database only.
 const PASSWORD = 'E2e-Fictional-Pass-1'
@@ -11,8 +11,6 @@ const API = 'https://www.youtube.com/iframe_api'
 const DURATION = 40
 
 test.skip(academyE2eSkipReason() !== null, academyE2eSkipReason() ?? '')
-// Lets the real player start without a click inside its frame (headless Chrome blocks that). Harmless for the stand-in.
-test.use({ launchOptions: { args: ['--autoplay-policy=no-user-gesture-required'] } })
 
 /**
  * A stand-in for YouTube's player, so the run needs no network and is the same every time. It plays
@@ -202,27 +200,38 @@ test('"Watch this part" on the quiz results opens Module 2 at that chapter', asy
 const REAL_ID = process.env.E2E_YOUTUBE_ID ?? 'wwIt5ZvROrs'
 const REAL_SECONDS = Number(process.env.E2E_YOUTUBE_SECONDS ?? 48)
 
-test('against the real YouTube player, a hire completes Module 1 by watching a public video', async ({ page, request }) => {
-  test.setTimeout(180_000)
-  const reachable = await request.get(API, { timeout: 8_000 }).then((r) => r.ok(), () => false)
-  test.skip(!reachable, 'YouTube is not reachable from this machine')
-  await prisma.onboardingConfig.update({
-    where: { id: 'singleton' },
-    data: {
-      videos: {
-        VIDEO_1: {
-          youtubeId: REAL_ID,
-          durationSeconds: REAL_SECONDS,
-          chapters: [{ key: 'start', label: 'The start', start: 0 }],
-          transcripts: { en: 'A fictional transcript for the test run.' },
+test.describe('real YouTube player', () => {
+  // Playwright refuses launchOptions inside a describe, so this test launches its own browser. Only this test
+  // gets the autoplay flag, which relaxes the browser: headless Chrome would otherwise block a start with no click
+  // inside the player's frame. So this test does not prove that a real user's first click starts the video.
+  test('against the real YouTube player, a hire completes Module 1 by watching a public video', async ({ request }) => {
+    test.setTimeout(180_000)
+    const reachable = await request.get(API, { timeout: 8_000 }).then((r) => r.ok(), () => false)
+    test.skip(!reachable, 'YouTube is not reachable from this machine')
+    await prisma.onboardingConfig.update({
+      where: { id: 'singleton' },
+      data: {
+        videos: {
+          VIDEO_1: {
+            youtubeId: REAL_ID,
+            durationSeconds: REAL_SECONDS,
+            chapters: [{ key: 'start', label: 'The start', start: 0 }],
+            transcripts: { en: 'A fictional transcript for the test run.' },
+          },
         },
       },
-    },
+    })
+    const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] })
+    try {
+      const page = await (await browser.newContext({ baseURL: E2E_BASE_URL })).newPage()
+      await signIn(page)
+      await page.goto('/onboarding/welcome')
+      await page.getByRole('button', { name: 'Play video' }).click()
+      const next = page.getByRole('link', { name: 'Next: Module 2' })
+      await expect(next).toBeVisible({ timeout: 120_000 })
+      expect((await progressRow('welcome')).status).toBe('COMPLETED')
+    } finally {
+      await browser.close()
+    }
   })
-  await signIn(page)
-  await page.goto('/onboarding/welcome')
-  await page.getByRole('button', { name: 'Play video' }).click()
-  const next = page.getByRole('link', { name: 'Next: Module 2' })
-  await expect(next).toBeVisible({ timeout: 120_000 })
-  expect((await progressRow('welcome')).status).toBe('COMPLETED')
 })
