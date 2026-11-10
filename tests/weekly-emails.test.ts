@@ -10,7 +10,24 @@ test('the mapping email shows a C-suite evaluator to the people who have one, an
   assert.doesNotMatch(renderMappingEmail({ ...base, cSuite: [] }).html, /C-suite/)
   assert.doesNotMatch(renderMappingEmail(base).html, /C-suite/)
 })
-import { renderDueTodayEmail, renderRoundOpenedEmail } from '../lib/weekly/emails-round'
+import { renderDueTodayEmail, renderHrReminderEmail, renderRoundOpenedEmail } from '../lib/weekly/emails-round'
+
+test('HR’s reminder says in red that someone is overdue and that it counts at profit sharing', () => {
+  const email = renderHrReminderEmail({ name: 'Ana', openCount: 5, overdueCount: 3, appUrl: 'https://compass.example' })
+  assert.equal(email.subject, 'Overdue: 3 evaluation questions from earlier weeks')
+  assert.match(email.html, /5 open evaluation questions, 3 from earlier weeks/)
+  const banner = email.html.match(/<div[^>]*#dc2626[^>]*>([\s\S]*?)<\/div>/)
+  assert.ok(banner, 'a red notice')
+  assert.match(banner[1], /You are overdue on 3 evaluation questions/)
+  assert.match(banner[1], /This will be reflected at the time of profit sharing\./)
+  assert.match(renderHrReminderEmail({ name: 'Ana', openCount: 1, overdueCount: 1, appUrl: 'https://compass.example' }).html, /1 open evaluation question, all from earlier weeks/)
+})
+
+test('HR’s reminder has no overdue warning when only this week’s questions are open', () => {
+  const email = renderHrReminderEmail({ name: 'Ana', openCount: 2, overdueCount: 0, appUrl: 'https://compass.example' })
+  assert.equal(email.subject, 'Reminder from HR: 2 evaluation questions waiting')
+  assert.doesNotMatch(email.html, /#dc2626|profit sharing/)
+})
 
 test('the round-opened email says in red that evaluations are open and when they are due', () => {
   const email = renderRoundOpenedEmail({ name: 'Ana', periodName: 'Q4 2026', questionWeeks: 12, closesOn: '3 Jan 2027', firstDueOn: 'Sun 4 Oct', appUrl: 'https://compass.example' })

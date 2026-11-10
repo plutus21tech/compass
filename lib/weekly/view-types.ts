@@ -145,7 +145,9 @@ export interface ReviewQueueResponse { cycleId: string; counts: Record<AnswerSta
 export interface CoverageView { evaluatee: PersonRef; perspective: Perspective; satisfied: number; total: number; evaluatorsContributing: number; share: number; lowEvidence: boolean }
 export interface EvaluatorStatsView { evaluator: PersonRef; released: number; answered: number; notObserved: number; open: number; overdue: number; responseRate: number | null }
 export interface DriftView { evaluator: PersonRef; perspective: Perspective; difference: number; count: number }
-export interface WeekProgressView { week: number; asked: number; answered: number }
+/** Someone with questions from a week still unanswered; `remindedToday` once HR's reminder reached them today. */
+export interface PendingEvaluatorView { evaluator: PersonRef; open: number; remindedToday: boolean }
+export interface WeekProgressView { week: number; asked: number; answered: number; pending: PendingEvaluatorView[] }
 export interface DepartmentProgressView { department: string; evaluators: number; asked: number; answered: number }
 export interface DashboardResponse {
   cycle: CycleSummary
