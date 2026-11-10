@@ -1,6 +1,6 @@
 // Partners whose evaluations HR fills in on their behalf: they get no weekly questions and see no forms; every
-// evaluation mapped to them appears in HR's "Partner evaluations" table instead. Brad and Maryam stay as they are.
-const DEFAULT_PARTNERS = ['Hamiz Awan', 'Daniyal Awan']
+// evaluation mapped to them appears in HR's "Partner evaluations" table instead, filled in the last weeks of the quarter.
+const DEFAULT_PARTNERS = ['Hamiz Awan', 'Daniyal Awan', 'Brad Herman', 'Maryam Khalil']
 
 const normalize = (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ')
 
