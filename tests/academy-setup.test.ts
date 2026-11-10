@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getSetupReadiness,
+  isSetupComplete,
   leadInputDueAt,
   leadInputSchema,
   setupAccessGate,
@@ -36,30 +37,45 @@ test('leadInputDueAt is seven calendar days before joining', () => {
   assert.equal(leadInputDueAt(new Date('2026-11-16')).toISOString(), new Date('2026-11-09').toISOString())
 })
 
-test('a full snapshot is ready', () => {
-  assert.deepEqual(getSetupReadiness(fullSnapshot), { ready: true, missing: [] })
+test('a full snapshot is ready and complete', () => {
+  assert.deepEqual(getSetupReadiness(fullSnapshot), { ready: true, missing: [], optional: [] })
+  assert.equal(isSetupComplete(fullSnapshot), true)
 })
 
-test('missing fields carry human labels', () => {
+test('people, calls, core hours and lead input are optional: the course can still be released', () => {
+  const r = getSetupReadiness({
+    ...fullSnapshot, preferredName: null, department: null, companyWing: null, hrCallAt: null, teamCallAt: null,
+    teamLeadId: null, teamMemberIds: [], buddyId: null, coreHoursStart: null, coreHoursEnd: null, leadInputSubmitted: false,
+  })
+  assert.equal(r.ready, true)
+  assert.deepEqual(r.missing, [])
+  assert.deepEqual(r.optional.map((m) => m.key), [
+    'preferredName', 'department', 'companyWing', 'hrCallAt', 'teamCallAt', 'teamLeadId',
+    'teamMemberIds', 'buddyId', 'coreHoursStart', 'coreHoursEnd', 'leadInput',
+  ])
+  assert.equal(isSetupComplete({ ...fullSnapshot, buddyId: null }), false)
+})
+
+test('optional items carry human labels', () => {
   const r = getSetupReadiness({ ...fullSnapshot, buddyId: null, teamMemberIds: [] })
-  assert.equal(r.ready, false)
-  assert.deepEqual(r.missing, [
+  assert.equal(r.ready, true)
+  assert.deepEqual(r.optional, [
     { key: 'teamMemberIds', label: 'Team members' },
     { key: 'buddyId', label: 'Onboarding buddy' },
   ])
 })
 
-test('unlinked account and missing lead input are reported', () => {
+test('an unlinked account blocks the release; missing lead input does not', () => {
   const r = getSetupReadiness({ ...fullSnapshot, userLinked: false, leadInputSubmitted: false })
-  assert.deepEqual(r.missing, [
-    { key: 'account', label: 'No Compass account linked' },
-    { key: 'leadInput', label: 'Team lead input (role expectations, goals)' },
-  ])
+  assert.equal(r.ready, false)
+  assert.deepEqual(r.missing, [{ key: 'account', label: 'No Compass account linked' }])
+  assert.deepEqual(r.optional, [{ key: 'leadInput', label: 'Team lead input (role expectations, goals)' }])
 })
 
-test('missing attributes are reported', () => {
-  const r = getSetupReadiness({ ...fullSnapshot, attributes: { ...attributes, workMode: null } })
-  assert.deepEqual(r.missing, [{ key: 'workMode', label: 'Work mode' }])
+test('missing attributes and joining date block the release', () => {
+  const r = getSetupReadiness({ ...fullSnapshot, onboardingDate: null, attributes: { ...attributes, workMode: null } })
+  assert.equal(r.ready, false)
+  assert.deepEqual(r.missing, [{ key: 'onboardingDate', label: 'Joining date' }, { key: 'workMode', label: 'Work mode' }])
 })
 
 test('setupSchema accepts a valid setup', () => {

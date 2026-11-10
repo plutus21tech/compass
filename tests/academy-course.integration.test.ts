@@ -43,9 +43,15 @@ const contactCells = (blocks: Block[]) => {
 const openEverything = () =>
   prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID, status: 'LOCKED' }, data: { status: 'IN_PROGRESS' } })
 
-test('release with a missing field is 409 and names it', ACADEMY_DB_TEST, async () => {
-  await createReadyHire({ coreHoursStart: '', coreHoursEnd: '' })
-  await assert.rejects(releaseCourse(prisma, NEW_HIRE_ID, P.hr.id), fails(409, /Core hours start/))
+test('release without the optional setup goes ahead', ACADEMY_DB_TEST, async () => {
+  await createReadyHire({ coreHoursStart: '', coreHoursEnd: '', buddyId: '', teamLeadId: '', hrCallAt: '' })
+  const { releasedAt } = await releaseCourse(prisma, NEW_HIRE_ID, P.hr.id)
+  assert.ok(releasedAt)
+})
+
+test('release with a missing required field is 409 and names it', ACADEMY_DB_TEST, async () => {
+  await createReadyHire({ attributes: { officeLocation: 'KARACHI', workMode: null, contractType: 'PK_EMPLOYMENT', employmentStatus: 'PERMANENT' } })
+  await assert.rejects(releaseCourse(prisma, NEW_HIRE_ID, P.hr.id), fails(409, /Work mode/))
   const hire = await prisma.newHire.findUniqueOrThrow({ where: { id: NEW_HIRE_ID } })
   assert.equal(hire.academyReleasedAt, null)
   assert.equal(await prisma.onboardingProgress.count({ where: { userId: HIRE_ID } }), 0)

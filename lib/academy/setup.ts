@@ -182,26 +182,44 @@ type ScalarKey =
   | 'preferredName' | 'title' | 'department' | 'companyWing' | 'onboardingDate' | 'hrCallAt'
   | 'teamCallAt' | 'teamLeadId' | 'buddyId' | 'coreHoursStart' | 'coreHoursEnd'
 
-const LEADING_FIELDS: ScalarKey[] = [
-  'preferredName', 'title', 'department', 'companyWing', 'onboardingDate', 'hrCallAt', 'teamCallAt', 'teamLeadId',
-]
+/** Needed before the course can be released: they decide which modules and blocks the hire sees, and when. */
+const REQUIRED_FIELDS: ScalarKey[] = ['title', 'onboardingDate']
 
-const TRAILING_FIELDS: ScalarKey[] = ['buddyId', 'coreHoursStart', 'coreHoursEnd']
+/** Shown to HR as still to fill in, but never block the release; the hire's text shows them blank until then. */
+const OPTIONAL_LEADING: ScalarKey[] = ['preferredName', 'department', 'companyWing', 'hrCallAt', 'teamCallAt', 'teamLeadId']
+const OPTIONAL_TRAILING: ScalarKey[] = ['buddyId', 'coreHoursStart', 'coreHoursEnd']
 
-export function getSetupReadiness(input: SetupSnapshot): { ready: boolean; missing: MissingItem[] } {
+export interface SetupReadiness {
+  /** True when nothing in `missing` is left: the course can be released. */
+  ready: boolean
+  /** Blocks the release. */
+  missing: MissingItem[]
+  /** Still to fill in, but the course can go out without them. */
+  optional: MissingItem[]
+}
+
+export function getSetupReadiness(input: SetupSnapshot): SetupReadiness {
   const missing: MissingItem[] = []
-  const check = (key: ScalarKey) => {
-    if (!input[key]) missing.push({ key, label: SETUP_FIELD_LABELS[key] })
+  const optional: MissingItem[] = []
+  const check = (list: MissingItem[]) => (key: ScalarKey) => {
+    if (!input[key]) list.push({ key, label: SETUP_FIELD_LABELS[key] })
   }
   if (!input.userLinked) missing.push({ key: 'account', label: 'No Compass account linked' })
-  LEADING_FIELDS.forEach(check)
+  REQUIRED_FIELDS.forEach(check(missing))
   for (const key of missingAttributes(input.attributes)) missing.push({ key, label: ATTRIBUTE_LABELS[key] })
-  if (input.teamMemberIds.length === 0) missing.push({ key: 'teamMemberIds', label: SETUP_FIELD_LABELS.teamMemberIds })
-  TRAILING_FIELDS.forEach(check)
+  OPTIONAL_LEADING.forEach(check(optional))
+  if (input.teamMemberIds.length === 0) optional.push({ key: 'teamMemberIds', label: SETUP_FIELD_LABELS.teamMemberIds })
+  OPTIONAL_TRAILING.forEach(check(optional))
   if (!input.leadInputSubmitted) {
-    missing.push({ key: 'leadInput', label: 'Team lead input (role expectations, goals)' })
+    optional.push({ key: 'leadInput', label: 'Team lead input (role expectations, goals)' })
   }
-  return { ready: missing.length === 0, missing }
+  return { ready: missing.length === 0, missing, optional }
+}
+
+/** Everything filled in, optional items included: the checklist's "setup complete" item. */
+export function isSetupComplete(input: SetupSnapshot): boolean {
+  const { missing, optional } = getSetupReadiness(input)
+  return missing.length === 0 && optional.length === 0
 }
 
 /** With the Academy on, these belong to the setup section; the top new-hire form must not send them. */
