@@ -15,7 +15,6 @@ import { UserAvatar } from '@/components/composed/UserAvatar'
 import { EmptyState } from '@/components/composed/EmptyState'
 import { WeeklyQuestionsCard } from '@/components/weekly/WeeklyQuestionsCard'
 import { AssignedCard } from '@/components/academy/AssignedCard'
-import { LostEquipmentBox } from '@/components/academy/LostEquipmentBox'
 import type { AssignedCardView } from '@/lib/academy/view'
 import {
   ClipboardCheck,
@@ -304,8 +303,6 @@ export default function DashboardPage() {
       </motion.div>
 
       <AssignedCard items={assigned} />
-
-      <LostEquipmentBox />
 
       <WeeklyQuestionsCard />
 
