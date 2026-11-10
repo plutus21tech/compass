@@ -1,4 +1,4 @@
-// Pure rules for the hourly job. Server only because of the cron check, but free of data access.
+// Pure rules for the reminder job (three daily runs on the Hobby plan, see vercel.json). Server only because of the cron check, but free of data access.
 import { isCronAuthorized } from '@/lib/cron-auth'
 import type { AutoTickEvent } from './checklist'
 import { isAcademyEnabled } from './flag'

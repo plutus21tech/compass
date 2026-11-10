@@ -256,7 +256,7 @@ async function loadOwnerEmails(db: PrismaClient): Promise<Map<ChecklistOwnerRole
 }
 
 /**
- * The hourly job. Hires are the tracker's list: everyone not finished, in any status, plus those who
+ * The reminder job (three daily runs, see vercel.json). Hires are the tracker's list: everyone not finished, in any status, plus those who
  * finished lately, whose checklist can outlast the course. Finished hires get checklist notices only.
  * Runs may overlap or repeat: every notice goes through the once-only log.
  */
