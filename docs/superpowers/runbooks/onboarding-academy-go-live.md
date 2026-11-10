@@ -149,7 +149,9 @@ Do these on production, with fictional or the owner's own test accounts, in this
 
 ## 8. Rollback
 
-Because every Academy migration only adds, the schema never needs to be rolled back. The code can be rolled back or the flag turned off at any time.
+**Since cleanup PR A (2026-11-10) the flag no longer exists.** The Academy is unconditional and the legacy onboarding pages and routes are deleted, so "turn the flag off" is no longer a rollback. Roll back by restoring the Neon point from step 3a, by reverting the cleanup commits (which brings back the flag and the legacy code), or by promoting an earlier deployment in Vercel. The flag-off notes below apply only to a build from before PR A.
+
+Because every Academy migration only adds, the schema never needs to be rolled back. The code can be rolled back at any time.
 
 - **First choice, after the seed: restore the point from step 3a.** Restore the Neon branch (or the point-in-time timestamp) written down there. That puts the legacy rows back exactly as they were. It also discards anything written to the database since that point, including Academy progress, so use it only if nothing worth keeping has happened, or when the owner has decided what may be lost.
 - **Turn the flag off (Way A):** set `ONBOARDING_ACADEMY_ENABLED` to anything but `true` and redeploy. With the flag off the old onboarding flow behaves exactly as it did before the seed, the lockout stops applying, and the reminder cron answers `skipped`. After the seed that holds only once the legacy rows are reactivated or the Neon branch is restored. New tables and columns stay and are ignored.
@@ -185,7 +187,7 @@ Steps 3a to 6 belong to one release window. Check after each step before startin
 
 This is its own change, started only when the owner says the Academy is settled. Nothing in it is part of go-live.
 
-- Remove the legacy onboarding code and the flag branches it guards.
-- Remove dead columns the Academy left behind, for example `OnboardingConfig.maxQuizAttempts` (retakes are never capped, so it is unused) and `OnboardingModule.content` (the old text body; Academy content lives in versions).
+- Remove the legacy onboarding code and the flag branches it guards. **Done in PR A (2026-11-10):** `ONBOARDING_ACADEMY_ENABLED` and `lib/academy/flag.ts` are gone; the `Legacy*` onboarding pages and the legacy-only routes (`/api/onboarding/quiz`, `/quiz/attempts`, `/quiz/submit`, `/modules`, `/modules/[id]`, `/progress`) are deleted; code no longer reads or writes `maxQuizAttempts` or `OnboardingModule.content`. The variable can be removed from Vercel.
+- Remove dead columns the Academy left behind, for example `OnboardingConfig.maxQuizAttempts` (retakes are never capped, so it is unused) and `OnboardingModule.content` (the old text body; Academy content lives in versions). **PR B**, deployed only after PR A is live, so the build that drops them never runs beside code that still reads them.
 - Legacy rows (retired modules, retired questions, old progress and attempt rows) are **only deleted with the owner's say-so**, row set by row set, after a read-only count shows what would go. The default is to keep them.
 - Other minor items carried in the "After stage" sections of the stage plans can ride along if the owner wants.
