@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { ZodError } from 'zod'
 import { getSession } from '@/lib/auth'
@@ -18,6 +18,9 @@ import {
   getPersonAttributes,
   setPersonAttributes,
 } from '@/lib/academy/service/attributes'
+import { hireTitleFor, parseNewUserOnboarding, type NewUserOnboarding } from '@/lib/academy/new-user-onboarding'
+import { createHireForUser, startOnboarding, type StartOnboardingResult } from '@/lib/academy/service/new-user-onboarding'
+import { notifyCourseReleased } from '@/lib/academy/service/notify'
 import { checkAssignableTeamTag } from '@/lib/teams/load'
 
 const VALID_USER_ROLES = ['EMPLOYEE', 'HR', 'SECURITY', 'OA', 'EXECUTION'] as const
@@ -290,6 +293,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body: unknown = await request.json()
     const {
       name,
       email,
@@ -303,7 +307,7 @@ export async function POST(request: NextRequest) {
       benefitCategoryId,
       teamTag,
       payrollProfile,
-    } = (await request.json()) as {
+    } = body as {
       name?: string
       email?: string | null
       discordId?: string | null
@@ -344,17 +348,22 @@ export async function POST(request: NextRequest) {
     }
 
     let linkedNewHire: { id: string; email: string; userId: string | null } | null = null
+    // Ticked with no existing record: Compass creates the hire record and releases the course.
+    let newHireOnboarding: NewUserOnboarding | null = null
     if (shouldCreateAsNewHire) {
-      if (!normalizedNewHireId) {
-        return NextResponse.json({ error: 'newHireId is required for new hires' }, { status: 400 })
-      }
       if (!normalizedEmail) {
         return NextResponse.json({ error: 'Email is required for new hires' }, { status: 400 })
       }
       if (!isPlutusEmail(normalizedEmail)) {
         return NextResponse.json({ error: 'New hire email must be a plutus21.com address' }, { status: 400 })
       }
-
+    }
+    if (shouldCreateAsNewHire && !normalizedNewHireId) {
+      const parsed = parseNewUserOnboarding(body)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      newHireOnboarding = parsed.data
+    }
+    if (shouldCreateAsNewHire && normalizedNewHireId && normalizedEmail) {
       linkedNewHire = await prisma.newHire.findUnique({
         where: { id: normalizedNewHireId },
         select: { id: true, email: true, userId: true },
@@ -389,7 +398,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const newUser = await prisma.$transaction(async (tx) => {
+    const hireTitle = hireTitleFor(position)
+    const hireDepartment = normalizeOptionalString(department)
+    const { newUser, hireId } = await prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
         data: {
           name: normalizedName,
@@ -416,29 +427,33 @@ export async function POST(request: NextRequest) {
         })
 
         await copySetupToUser(tx, linkedNewHire.id, createdUser.id)
-
-        const modules = await tx.onboardingModule.findMany({
-          where: { isActive: true },
-          orderBy: { orderIndex: 'asc' },
-          select: { id: true },
-        })
-
-        if (modules.length > 0) {
-          const now = new Date()
-          await tx.onboardingProgress.createMany({
-            data: modules.map((module, index) => ({
-              userId: createdUser.id,
-              moduleId: module.id,
-              status: index === 0 ? 'IN_PROGRESS' : 'LOCKED',
-              startedAt: index === 0 ? now : null,
-              completedAt: null,
-            })),
-          })
-        }
+        return { newUser: createdUser, hireId: linkedNewHire.id }
       }
 
-      return createdUser
+      if (shouldCreateAsNewHire && newHireOnboarding && normalizedEmail) {
+        const createdHireId = await createHireForUser(tx, {
+          userId: createdUser.id,
+          name: normalizedName,
+          email: normalizedEmail,
+          title: hireTitle,
+          department: hireDepartment,
+          onboarding: newHireOnboarding,
+        })
+        return { newUser: createdUser, hireId: createdHireId }
+      }
+
+      return { newUser: createdUser, hireId: null }
     })
+
+    // Outside the user's transaction: the release takes its own lock, and a failure must not undo the user.
+    let onboarding: StartOnboardingResult | null = null
+    if (hireId) {
+      const firstSetup = newHireOnboarding
+        ? { title: hireTitle, department: hireDepartment, onboarding: newHireOnboarding }
+        : null
+      onboarding = await startOnboarding(prisma, hireId, user.id, firstSetup)
+      if (onboarding.released) after(() => notifyCourseReleased(prisma, hireId))
+    }
 
     if (payrollProfile) {
       await upsertPayrollProfileAndRevision({
@@ -448,7 +463,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, user: newUser })
+    return NextResponse.json({ success: true, user: newUser, onboarding })
   } catch (error) {
     if (error instanceof Error && 'code' in error && (error as any).code === 'P2002') {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400 })

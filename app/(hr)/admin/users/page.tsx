@@ -34,6 +34,7 @@ import { pickerTeams, teamLabel } from '@/lib/teams/catalog'
 import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { prefillFromTeamTag, type PersonAttributes } from '@/lib/academy/attributes'
 import { applyPrefill } from '@/lib/academy/profile-input'
+import { parseNewUserOnboarding } from '@/lib/academy/new-user-onboarding'
 import { AttributeFields } from './_components/AttributeFields'
 
 const MotionTableRow = motion(TableRow)
@@ -181,6 +182,7 @@ export default function UsersPage() {
     teamTag: '',
     isNewHire: false,
     newHireId: '',
+    joiningDate: '',
   })
   const [payrollMeta, setPayrollMeta] = useState<PayrollMeta>({
     departments: [],
@@ -260,6 +262,7 @@ export default function UsersPage() {
         teamTag: user.teamTag || '',
         isNewHire: false,
         newHireId: user.newHireRecord?.id || '',
+        joiningDate: '',
       })
       setPayrollForm({
         payrollDepartmentId: user.payrollProfile?.departmentId || '',
@@ -290,6 +293,7 @@ export default function UsersPage() {
         teamTag: '',
         isNewHire: false,
         newHireId: '',
+        joiningDate: '',
       })
       setPayrollForm({
         payrollDepartmentId: '',
@@ -355,11 +359,17 @@ export default function UsersPage() {
     setSalaryLineDrafts((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Ticked with no record picked: Compass creates the hire record, so the form carries what the course needs.
+  const startsNewOnboarding = !selectedUser && formData.isNewHire && !formData.newHireId
+  const onboardingCheck = startsNewOnboarding
+    ? parseNewUserOnboarding({ joiningDate: formData.joiningDate, ...attributeForm })
+    : null
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim()) { toast.error('Name is required'); return }
-    if (!selectedUser && formData.isNewHire && !formData.newHireId) {
-      toast.error('Please select a new hire record')
+    if (startsNewOnboarding && onboardingCheck && !onboardingCheck.ok) {
+      toast.error(onboardingCheck.error)
       return
     }
     if (!selectedUser && formData.isNewHire && !formData.email.trim()) {
@@ -425,12 +435,20 @@ export default function UsersPage() {
             teamTag: formData.teamTag || null,
             isNewHire: formData.isNewHire,
             newHireId: formData.isNewHire ? formData.newHireId || null : null,
+            ...(startsNewOnboarding ? { joiningDate: formData.joiningDate, ...attributeForm } : {}),
             payrollProfile,
           }
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
-      if (data.error) { toast.error(data.error) } 
-      else { toast.success(selectedUser ? 'User updated' : 'User created'); setIsModalOpen(false); loadUsers() }
+      if (data.error) { toast.error(data.error) }
+      else {
+        if (selectedUser) toast.success('User updated')
+        else if (data.onboarding?.released) toast.success("User created. They'll start the Onboarding Academy when they first sign in.")
+        else if (data.onboarding) toast.warning(`User created, but the course isn't released yet: ${data.onboarding.reason}`)
+        else toast.success('User created')
+        setIsModalOpen(false)
+        loadUsers()
+      }
     } catch (error) { toast.error('Failed to save user') }
     finally { setSaving(false) }
   }
@@ -889,7 +907,7 @@ export default function UsersPage() {
                 <div>
                   <p className="text-sm font-medium text-foreground">New hire (requires onboarding)</p>
                   <p className="text-xs text-muted-foreground">
-                    Locks the user to onboarding until quiz pass
+                    They&apos;ll start the Onboarding Academy when they first sign in.
                   </p>
                 </div>
                 <Switch
@@ -906,7 +924,7 @@ export default function UsersPage() {
 
               {formData.isNewHire && (
                 <div>
-                  <Label className="mb-1">Linked New Hire Record *</Label>
+                  <Label className="mb-1">Link an existing new-hire record (optional)</Label>
                   <Select
                     value={formData.newHireId || '__none__'}
                     onValueChange={handleSelectNewHire}
@@ -915,7 +933,7 @@ export default function UsersPage() {
                       <SelectValue placeholder="Select new hire record" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">Select...</SelectItem>
+                      <SelectItem value="__none__">None: create one for them</SelectItem>
                       {availableNewHires.map((hire) => (
                         <SelectItem key={hire.id} value={hire.id}>
                           {hire.name} - {hire.email}
@@ -923,6 +941,28 @@ export default function UsersPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {startsNewOnboarding && (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="new-hire-joining-date" className="mb-1">Joining date *</Label>
+                    <Input
+                      id="new-hire-joining-date"
+                      type="date"
+                      value={formData.joiningDate}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, joiningDate: e.target.value }))}
+                    />
+                  </div>
+                  <AttributeFields value={attributeForm} onChange={setAttributeForm} />
+                  <p className="text-xs text-muted-foreground">
+                    These decide which modules they see. Buddy, calls, team and core hours are optional; add them later on
+                    their new-hire page.
+                  </p>
+                  {onboardingCheck && !onboardingCheck.ok && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400" role="status">{onboardingCheck.error}</p>
+                  )}
                 </div>
               )}
             </div>

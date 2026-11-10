@@ -43,6 +43,7 @@ test.beforeEach(async () => {
 test.afterAll(async () => {
   // Never touch a database the guard refused.
   if (academyE2eSkipReason() !== null) return
+  await removeFormHire()
   await cleanCourse()
   await prisma.$disconnect()
 })
@@ -89,6 +90,63 @@ test('HR releases a course from the setup section', async ({ page }) => {
   await expect(page.getByText('Course released')).toBeVisible()
 
   expect(await prisma.onboardingProgress.count({ where: { userId: HIRE_ID } })).toBe(14)
+})
+
+// A fictional person on the company domain, which the create-user route requires for a new hire.
+const FORM_HIRE = { name: 'Dara Quill', email: 'act-e2e-dara@plutus21.com' }
+
+/** The form creates the user, hire and position with generated ids, so they are removed by email. */
+async function removeFormHire(): Promise<void> {
+  const hires = await prisma.newHire.findMany({ where: { email: FORM_HIRE.email }, select: { id: true, positionId: true } })
+  await prisma.newHire.deleteMany({ where: { id: { in: hires.map((h) => h.id) } } })
+  await prisma.position.deleteMany({ where: { id: { in: hires.map((h) => h.positionId) } } })
+  const users = await prisma.user.findMany({ where: { email: FORM_HIRE.email }, select: { id: true } })
+  await prisma.payrollEmployeeProfile.deleteMany({ where: { userId: { in: users.map((u) => u.id) } } })
+  await prisma.user.deleteMany({ where: { id: { in: users.map((u) => u.id) } } })
+}
+
+async function pick(page: Page, triggerId: string, option: string): Promise<void> {
+  await page.locator(`#${triggerId}`).click()
+  await page.getByRole('option', { name: option, exact: true }).click()
+}
+
+test('HR ticks "requires onboarding" on a new user, and that hire starts the course at first sign-in', async ({ page, browser }) => {
+  await removeFormHire()
+  await createReadyHire()
+  await giveLogins(P.hr.id)
+  try {
+    await signIn(page, P.hr.email)
+    await page.goto('/admin/users')
+    await page.getByRole('button', { name: 'Add User' }).click()
+    await page.locator('#name').fill(FORM_HIRE.name)
+    await page.locator('#email').fill(FORM_HIRE.email)
+    await page.getByRole('switch').first().click()
+    await expect(page.getByText('Link an existing new-hire record (optional)')).toBeVisible()
+    await page.locator('#new-hire-joining-date').fill('2027-01-18')
+    await pick(page, 'attr-office', 'Karachi')
+    await pick(page, 'attr-mode', 'Hybrid')
+    await pick(page, 'attr-contract', 'Pakistan employment contract')
+    await pick(page, 'attr-status', 'Permanent')
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    // The switch's caption says the same thing, so wait for the toast's own opening words.
+    await expect(page.getByText(/^User created. They'll start the Onboarding Academy/)).toBeVisible()
+
+    const user = await prisma.user.findFirstOrThrow({ where: { email: FORM_HIRE.email } })
+    expect(user.onboardingCompleted).toBe(false)
+    expect(await prisma.onboardingProgress.count({ where: { userId: user.id } })).toBe(14)
+    const hire = await prisma.newHire.findFirstOrThrow({ where: { userId: user.id } })
+    expect(hire.academyReleasedAt).not.toBeNull()
+
+    await giveLogins(user.id)
+    const hirePage = await (await browser.newContext()).newPage()
+    await signIn(hirePage, FORM_HIRE.email)
+    await hirePage.goto('/dashboard')
+    await hirePage.waitForURL((url) => url.pathname.startsWith('/onboarding'))
+    await expect(hirePage.getByRole('heading', { name: 'UP NEXT' })).toBeVisible()
+    await expect(hirePage.locator('a[href="/onboarding/welcome"]').first()).toBeVisible()
+  } finally {
+    await removeFormHire()
+  }
 })
 
 // The quiz and completion routes, through the real browser session: routes have no session seam for unit tests.

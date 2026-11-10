@@ -118,7 +118,7 @@ Spec section 3 lists the fields. Here is where each one lives:
 | Team members | New join table `NewHireTeamMember (newHireId, userId)` |
 | Buddy | `NewHire.buddyId` (exists) |
 | Core hours | `NewHire.coreHoursStart` / `coreHoursEnd` (new, "HH:mm" in the location's time zone). Defaults to the department's hours if Compass has them; otherwise HR types them. |
-| Course release | `NewHire.academyReleasedAt` (new). The spec says the course is released at the HR onboarding call. HR presses "Release course" in the tracker. Release is blocked until every required field and the lead input are complete. Compass lists what's missing. |
+| Course release | `NewHire.academyReleasedAt` (new). The spec says the course is released at the HR onboarding call. HR presses "Release course" in the tracker. Release is blocked until every required field and the lead input are complete. Compass lists what's missing. (Changed after go-live: only the account, title, joining date and four attributes block it; see "After go-live" in section 7.) |
 
 ### 5.2 Team lead input: extend `TeamLeadForm`
 
@@ -452,6 +452,12 @@ During the build, run the design pass with the project's frontend-design / impec
 - **"Watch this part"** on the quiz results opens Module 2 at the chapter, only when the video is ready and has that chapter. A `?chapter=` link never starts a first viewing past what has been watched.
 - **The bank letter** still waits for HR's text. Until then Module 11 says "HR will share your bank letter".
 - **The assign page** keeps its per-person active check, which makes it slower with many staff, because one query would have meant loosening the payroll guard.
+
+**After go-live (owner, 2026-11-10): starting onboarding from Admin › Users.** These replace the release rule in section 4's table and the "No new invite flow" bullet in section 14.
+- **Ticking "New hire (requires onboarding)" is enough.** With no existing record picked, Compass creates a closed Position and a NewHire for the user in the same transaction, saves a first setup (which creates the team lead form and the HR checklist), and releases the course at once with the tracker's own release service. Linking an existing record still works; that record is released too if it has what the release needs.
+- **The form asks only for what decides the course:** a joining date and the four attributes (office location, with the remote country when Remote, work mode, contract type, employment status). The job title comes from the user's position, or "New hire".
+- **Release needs only** a linked account, a job title, a joining date and the four attributes. Preferred name, department, wing, call times, team lead, team members, buddy, core hours and the team lead's input are optional: the setup page lists them under "Still to fill in (optional)", and the hire sees them blank or "to be confirmed" until HR adds them. The checklist's "setup complete" item still waits for everything.
+- **A release that can't happen yet** (no course content, or a linked record missing a required field) never undoes the user: HR is told why and releases later from the new-hire page.
 
 ## 8. Notifications and scheduled jobs
 
