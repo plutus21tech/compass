@@ -299,3 +299,31 @@ Rules:
   - `npx next build`
   - `prisma migrate diff`
 - [ ] **Step 6: Commit.** `test(academy): cover video and polish end to end; add the go-live runbook`
+
+
+## After stage 5
+
+Stage 5 is built behind `ONBOARDING_ACADEMY_ENABLED`, like the stages before it. The go-live steps are in `docs/superpowers/runbooks/onboarding-academy-go-live.md`; each production step there is marked "Needs the owner's go-ahead". Nothing has been run against production.
+
+**Needs the owner's go-ahead (the go-live push)**
+- Set `ONBOARDING_FIELD_ENCRYPTION_KEY` on every environment.
+- Check the lockout header (`x-compass-pathname`) and the hourly `/api/cron/onboarding` job on a preview build.
+- Dry-run, then run, `completeTestUsers`; mark legacy PENDING or ONBOARDING hires COMPLETED.
+- Run the seed once with `ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes`.
+- Turn the flag on, or remove the flag checks, in the same release. The flag stays in the code through stage 5 (ruling R1): deploying without the seed would lock hires out of an empty course.
+- Rolling back is the flag off or the previous deployment. The migrations only add. The seed deactivates legacy modules and questions rather than deleting them, so restoring the old flow after a seed needs those rows reactivated by hand.
+
+**Open product items (not blocking)**
+- **The bank letter download.** Module 11 still says "HR will share your bank letter" until HR sends the letter text. It needs a small build once the text exists.
+- **Videos.** HR enters each video's YouTube ID, length in seconds, chapters and transcripts. Until a video is ready, Modules 1 and 2 keep "Video coming soon" and scroll-to-end. A wrong typed length only shifts the 95% point (ruling R2), but one longer than the real video strands a hire on "Saving your progress".
+- **Key Contacts** are seeded empty; HR fills them in.
+- **The checklist draft** (design section 5.8) still needs HR's correction.
+
+**Cleanup push (separate, after the Academy is live)**
+- Remove the legacy onboarding code and the flag branches.
+- Remove dead columns: `OnboardingConfig.maxQuizAttempts` (retakes are never capped) and `OnboardingModule.content`.
+- Legacy rows (retired modules and questions, old progress and attempts) are deleted only with the owner's say-so.
+
+**Carried forward**
+- The real-YouTube E2E (`e2e/academy-video.spec.ts`) plays a third-party public video of about 48 seconds (`wwIt5ZvROrs`). It skips when YouTube is unreachable; if that video is removed, set `E2E_YOUTUBE_ID` and `E2E_YOUTUBE_SECONDS`.
+- Review minors deferred during stage 5 are in the stage's SDD ledger (`.superpowers/sdd/2026-11-09-onboarding-academy-stage-5-video-polish/progress.md`).

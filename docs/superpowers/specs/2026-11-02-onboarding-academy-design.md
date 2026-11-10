@@ -351,6 +351,16 @@ Completion is **validated on the server** against `state` (for example, the serv
 - **Videos not filmed yet:** while a video ID is missing, the module shows a branded "Video coming soon" card with a short text summary and switches to `SCROLL_END`. Hires are never blocked. Once HR adds the ID, hires who already completed the module are not reset.
 - **Quiz links to chapters:** quiz explanations open Module 2 at the chapter's timestamp. Chapter keys are stored with the video config, so the links survive when a new video replaces the old one.
 
+**Stage 5 decisions.** Where they differ from the bullets above, these are what the code does.
+- **HR enters the duration** in seconds with the video ID, because the server cannot ask YouTube without an API key. A wrong length only shifts the 95% point; one longer than the real video strands a hire on "Saving your progress". The video editor warns when the player's real length differs from the typed one.
+- **A video is ready** only with an ID, a duration and at least one chapter. Otherwise the module keeps the "Video coming soon" card and `SCROLL_END`. Adding a video later never resets a finished module.
+- **The server decides 95%.** A reported position cannot run further ahead than the real time since the last report allows, plus a small tolerance, and each report counts at most 30 seconds of real time, so an idle open tab cannot complete the video. The watch clock moves forward by the tolerance spent, so the tolerance does not compound. The client keeps sending end reports until the server says the module is complete.
+- **Chapters** are `{key, label, start}` rows. Module 2's keys come from the quiz bank, so quiz links work once matching chapters exist.
+- **Transcripts** are plain text per language (`en`, `fr`, `es`); an empty one hides that option. Captions come from YouTube's own tracks. The player embeds from `youtube-nocookie.com` and the API script loads only on a page with a ready video.
+- **The end screen** waits for the video's actual end and shows "Next: Module N".
+- **A ready video that will not load** is unblocked by HR with a logged "Mark watched" in the tracker drawer, not by reading the transcript. Who, when and why are stored on the progress row and copied to its history if the module is reopened.
+- **The flag stays through stage 5.** Removing it belongs to the go-live push with the seed and the cutover (see `docs/superpowers/runbooks/onboarding-academy-go-live.md`).
+
 ### 6.5 Quiz behaviour (spec section 5)
 
 - **Format:** 12 questions; pass mark 10/12 (driven by the config percentage). Questions and options are shuffled on every attempt. One question per screen, with a progress bar of 12 dots.
@@ -435,6 +445,13 @@ During the build, run the design pass with the project's frontend-design / impec
 - **Any Module 7 publish asks signers still in the course to sign again,** because the SOP text may change even when the statement does not. A re-read of the same version needs no new signature.
 - **With the flag on, the old `/admin/onboarding/modules` and `/admin/onboarding/quiz` pages redirect** to the new editors. Quiz attempts are cleared from the tracker drawer.
 - **The "If something is lost, stolen or damaged" box** on everyone's dashboard is Module 7's first warning box from its published version, so an HR edit reaches it. It fills in `{security contacts}` from Key Contacts and hides if the module has no such block.
+
+**Stage 5 decisions.**
+- **Preview as** renders the draft or live version for chosen facts: location, remote country, work mode, contract, status, wing and client account. People and per-hire data show as labelled samples. It uses its own `preview` flag rather than `readOnly` (which would show saved values), reports nothing and writes nothing.
+- **The most-missed report** is a tracker panel. It counts Academy attempts only, over all attempts and over each person's first, and shows "Not enough answers yet" for a question with too few answers.
+- **"Watch this part"** on the quiz results opens Module 2 at the chapter, only when the video is ready and has that chapter. A `?chapter=` link never starts a first viewing past what has been watched.
+- **The bank letter** still waits for HR's text. Until then Module 11 says "HR will share your bank letter".
+- **The assign page** keeps its per-person active check, which makes it slower with many staff, because one query would have meant loosening the payroll guard.
 
 ## 8. Notifications and scheduled jobs
 

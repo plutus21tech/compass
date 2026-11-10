@@ -12,6 +12,8 @@ import { syncChecklist } from '../lib/academy/service/checklist'
 import { verifyLinkedin } from '../lib/academy/service/tracker-actions'
 import { shouldBlockSession } from '../lib/academy/lockout'
 import type { Submission } from '../lib/academy/quiz'
+import type { VideoConfig } from '../lib/academy/video'
+import type { OnboardingCompletionRule } from '@prisma/client'
 import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
 import { CONTRACTOR_ATTRIBUTES, HIRE_ID, NEW_HIRE_ID, SLUGS, cleanCourse, createReleasedHire } from './helpers/academy-course-fixtures'
 import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
@@ -35,19 +37,56 @@ const benefitCounts = async () => ({
 
 type Payee = 'PK' | 'CONTRACTOR'
 
+const VIDEO_SECONDS = 100
+const REPORT_EVERY_SECONDS = 10
+
+/** Fictional ready videos for Modules 1 and 2; Module 2's chapter keys come from the quiz bank. */
+const readyVideo = (youtubeId: string, chapters: VideoConfig['chapters']): VideoConfig => ({
+  youtubeId, durationSeconds: VIDEO_SECONDS, chapters, transcripts: { en: 'A fictional transcript.' },
+})
+const READY_VIDEOS = {
+  VIDEO_1: readyVideo('AAAAAAAAAAA', [{ key: 'start', label: 'A fictional start', start: 0 }]),
+  VIDEO_2: readyVideo('BBBBBBBBBBB', [
+    { key: 'innovation', label: 'A fictional first value', start: 0 },
+    { key: 'integrity', label: 'A fictional second value', start: 50 },
+  ]),
+}
+
+/**
+ * Plays a ready video through the real service: a report every ten seconds of an injected clock,
+ * each one asking for the whole video, until the server itself counts 95%. The clock starts when the
+ * module was opened, so the server's pace limit is what holds the hire back.
+ */
+async function watchVideo(slug: string, startedAt: Date): Promise<void> {
+  for (let elapsed = REPORT_EVERY_SECONDS; elapsed <= VIDEO_SECONDS * 2; elapsed += REPORT_EVERY_SECONDS) {
+    const view = await recordEvent(
+      prisma, HIRE_ID, slug, { type: 'VIDEO_PROGRESS', seconds: VIDEO_SECONDS }, new Date(startedAt.getTime() + elapsed * 1000),
+    )
+    if (view.completion.met) return
+  }
+  throw new Error(slug + ': the server never counted 95% of the video')
+}
+
 /**
  * Does what the page does for one module, through the services only, then completes it. The step comes
  * from the rule the hire is actually held to, so a fallback to SCROLL_END is followed too.
  */
-async function finishModule(slug: string, payee: Payee): Promise<void> {
-  const view = await loadModule(prisma, HIRE_ID, slug)
+async function finishModule(slug: string, payee: Payee, videoStart?: Date): Promise<OnboardingCompletionRule> {
+  const view = await loadModule(prisma, HIRE_ID, slug, videoStart)
+  const rule = view.progress.effectiveRule
   const checklistKeys = view.blocks.flatMap((b) => (b.type === 'checklist' ? b.items.map((i) => i.key) : []))
   const check = (key: string) => recordEvent(prisma, HIRE_ID, slug, { type: 'CHECK', key, checked: true })
 
-  switch (view.progress.effectiveRule) {
+  switch (rule) {
     case 'SCROLL_END':
-    case 'VIDEO_95':
       await recordEvent(prisma, HIRE_ID, slug, { type: 'SCROLLED_END' })
+      break
+    case 'VIDEO_95':
+      assert.ok(videoStart, 'a video module needs the clock it was opened on')
+      // Scrolling to the end counts for nothing here; only the reported watching does.
+      await recordEvent(prisma, HIRE_ID, slug, { type: 'SCROLLED_END' })
+      await assert.rejects(completeModule(prisma, HIRE_ID, slug), (e: unknown) => (e as { status?: number }).status === 409)
+      await watchVideo(slug, videoStart)
       break
     case 'BUDDY_HELLO':
       await check('buddy-hello')
@@ -79,11 +118,19 @@ async function finishModule(slug: string, payee: Payee): Promise<void> {
       break
   }
   await completeModule(prisma, HIRE_ID, slug)
+  return rule
 }
 
-async function runWholeCourse(payee: Payee): Promise<void> {
+/** Runs all 14 modules. With ready videos, Modules 1 and 2 open on a clock in the past and are watched in injected time. */
+async function runWholeCourse(payee: Payee, withVideos = false): Promise<OnboardingCompletionRule[]> {
   assert.equal(SLUGS.length, 14)
-  for (const slug of SLUGS) await finishModule(slug, payee)
+  const rules: OnboardingCompletionRule[] = []
+  // Module 1 opens twenty minutes ago and Module 2 ten minutes later, so every report is in the past.
+  const opened = Date.now() - 20 * 60_000
+  for (const [i, slug] of SLUGS.entries()) {
+    const videoStart = withVideos && i < 2 ? new Date(opened + i * 10 * 60_000) : undefined
+    rules.push(await finishModule(slug, payee, videoStart))
+  }
 
   const home = await loadHome(prisma, HIRE_ID)
   assert.ok(home.released)
@@ -98,6 +145,7 @@ async function runWholeCourse(payee: Payee): Promise<void> {
   assert.equal(user.onboardingCompleted, false)
   await runQuizAndSign()
   await checkChecklistAfterCourse()
+  return rules
 }
 
 const itemFor = (key: string) =>
@@ -189,4 +237,14 @@ test('a contractor finishes all 14 modules; the payout is saved and no payroll p
   assert.equal(await profiles(), 0)
   assert.equal((await storedPayment()).method, 'WISE')
   assert.deepEqual(await benefitCounts(), before)
+})
+
+test('with ready videos, a hire completes Modules 1 and 2 by reported progress and finishes the course', ACADEMY_DB_TEST, async () => {
+  await createReleasedHire()
+  await prisma.onboardingConfig.update({ where: { id: 'singleton' }, data: { videos: READY_VIDEOS as object } })
+  const rules = await runWholeCourse('PK', true)
+  assert.deepEqual(rules.slice(0, 2), ['VIDEO_95', 'VIDEO_95'])
+  assert.ok(rules.slice(2).every((r) => r !== 'VIDEO_95'))
+  assert.equal(await profiles(), 0)
+  assert.equal((await storedPayment()).method, 'PK_BANK')
 })

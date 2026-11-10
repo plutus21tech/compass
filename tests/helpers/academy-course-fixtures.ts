@@ -2,6 +2,7 @@ import { prisma } from '../../lib/db'
 import { saveSetup } from '../../lib/academy/service/setup'
 import { recordEvent, completeModule } from '../../lib/academy/service/progress'
 import { releaseCourse } from '../../lib/academy/service/course'
+import { submitQuiz } from '../../lib/academy/service/quiz'
 import { ACADEMY_CARDS, ACADEMY_CHECKLIST, ACADEMY_MODULES } from '../../prisma/seed-academy-data'
 import { seedAcademy } from '../../prisma/seed-academy'
 import { P, resetAcademyFixtures } from './academy-test-db'
@@ -93,4 +94,24 @@ export async function openPaymentModule(userId: string = HIRE_ID): Promise<void>
 export async function scrollAndComplete(slug: string) {
   await recordEvent(prisma, HIRE_ID, slug, { type: 'SCROLLED_END' })
   return completeModule(prisma, HIRE_ID, slug)
+}
+
+/**
+ * Leaves the released hire at the quiz and records one failed attempt: every module done, the Security
+ * SOPs signed, then the first `wrong` questions answered wrongly. Goes through the real service.
+ */
+export async function failQuizAttempt(wrong = 3): Promise<void> {
+  await prisma.onboardingProgress.updateMany({ where: { userId: HIRE_ID }, data: { status: 'COMPLETED', completedAt: new Date() } })
+  await prisma.onboardingAcknowledgement.create({
+    data: { userId: HIRE_ID, kind: 'SECURITY_SOPS', statementText: 'Fictional SOPs statement', typedName: P.hire.name },
+  })
+  const questions = await prisma.onboardingQuizQuestion.findMany({
+    where: { isActive: true, retiredAt: null, explanation: { not: null } },
+    orderBy: { orderIndex: 'asc' },
+  })
+  const answers = questions.map((q, i) => {
+    const options = q.optionsJson as string[]
+    return { questionId: q.id, chosen: i < wrong ? (options.find((o) => o !== q.correctAnswer) as string) : q.correctAnswer }
+  })
+  await submitQuiz(prisma, HIRE_ID, { answers })
 }

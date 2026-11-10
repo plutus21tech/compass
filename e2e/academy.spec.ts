@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/db'
 import { P } from '../tests/helpers/academy-test-db'
-import { CONTRACTOR_ATTRIBUTES, HIRE_ID, NEW_HIRE_ID, cleanCourse, createReadyHire, createReleasedHire, openPaymentModule, scrollAndComplete } from '../tests/helpers/academy-course-fixtures'
+import { CONTRACTOR_ATTRIBUTES, HIRE_ID, NEW_HIRE_ID, cleanCourse, createReadyHire, createReleasedHire, failQuizAttempt, openPaymentModule, scrollAndComplete } from '../tests/helpers/academy-course-fixtures'
 import { completeModule, recordEvent } from '../lib/academy/service/progress'
 import { saveLinkedinUrl } from '../lib/academy/service/fields'
 import { unlockModule } from '../lib/academy/service/tracker-actions'
@@ -345,4 +345,73 @@ test('everyone on the dashboard sees the lost-or-stolen box, with the security c
   await expect(page.getByRole('heading', { name: 'If something is lost, stolen or damaged' })).toBeVisible()
   await expect(page.getByText(/in cc\./)).toBeVisible()
   await expect(page.getByText('{security contacts}')).toHaveCount(0)
+})
+
+test('Preview as renders the module for HR, and the facts can be changed', async ({ page }) => {
+  await createReleasedHire()
+  await giveLogins(P.hr.id)
+  const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'culture-values' } })
+  await signIn(page, P.hr.email)
+  await page.goto(`/admin/onboarding/academy/modules/${module.id}`)
+
+  await page.getByRole('button', { name: 'Preview as' }).click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByText(/Showing your saved draft\.|so this is live version \d+\.|Showing live version \d+\./)).toBeVisible({ timeout: 30_000 })
+  // The real header and blocks, inert.
+  await expect(sheet.getByText('Preview. Nothing here can be changed.')).toBeAttached()
+  await expect(sheet.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(sheet.locator('fieldset[disabled]')).toBeVisible()
+
+  // Changing a fact asks the server again and still renders.
+  const again = page.waitForResponse((r) => r.url().includes('/preview') && r.request().method() === 'POST' && r.ok())
+  await sheet.getByRole('combobox', { name: 'Work mode' }).click()
+  await page.getByRole('option', { name: 'Remote' }).click()
+  await again
+  await expect(sheet.locator('fieldset[disabled]')).toBeVisible()
+})
+
+test('the most-missed panel lists the questions hires answer wrongly', async ({ page }) => {
+  await createReleasedHire()
+  await giveLogins(P.hr.id)
+  await failQuizAttempt(3)
+
+  await signIn(page, P.hr.email)
+  await page.goto('/admin/onboarding/tracker')
+  await expect(page.getByRole('heading', { name: 'Most-missed questions' })).toBeVisible()
+  const panel = page.locator('section[aria-labelledby="most-missed-heading"]')
+  await expect(panel.getByRole('columnheader', { name: 'First attempts' })).toBeVisible()
+  // One person's attempt is too few answers to report a rate, and the panel says so.
+  expect(await panel.getByRole('row').count()).toBeGreaterThan(1)
+  await expect(panel.getByText('Not enough answers yet').first()).toBeVisible()
+})
+
+test('HR marks a video watched for a hire whose video will not load, with a reason on record', async ({ page }) => {
+  await createReleasedHire()
+  await giveLogins(P.hr.id)
+  await prisma.onboardingConfig.update({
+    where: { id: 'singleton' },
+    data: {
+      videos: {
+        VIDEO_1: {
+          youtubeId: 'AAAAAAAAAAA',
+          durationSeconds: 40,
+          chapters: [{ key: 'start', label: 'A fictional start', start: 0 }],
+          transcripts: { en: 'A fictional transcript for the test run.' },
+        },
+      },
+    },
+  })
+  const module = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'welcome' } })
+
+  await signIn(page, P.hr.email)
+  await openHireDrawer(page)
+  await page.getByRole('button', { name: `Mark watched: ${module.title}` }).click()
+  await page.getByLabel("Why the video couldn't be watched here").fill('Their network blocks YouTube')
+  await page.getByRole('button', { name: 'Mark watched', exact: true }).click()
+  await expect(page.getByText(/Marked watched by .* on .*: Their network blocks YouTube/)).toBeVisible()
+
+  const row = await prisma.onboardingProgress.findFirstOrThrow({ where: { userId: HIRE_ID, moduleId: module.id } })
+  expect(row.status).toBe('COMPLETED')
+  expect(row.markedWatchedById).toBe(P.hr.id)
+  expect(row.markedWatchedReason).toBe('Their network blocks YouTube')
 })
