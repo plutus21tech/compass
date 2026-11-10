@@ -337,14 +337,13 @@ test('a re-read leaves an existing employee unlocked and shows the module on the
   expect(user.onboardingCompleted).toBe(true)
 })
 
-test('everyone on the dashboard sees the lost-or-stolen box, with the security contacts filled in', async ({ page }) => {
+test('the dashboard no longer shows the lost-or-stolen box', async ({ page }) => {
   await createReadyHire()
   await giveLogins(P.staff.id)
   await signIn(page, P.staff.email)
   await page.goto('/dashboard')
-  await expect(page.getByRole('heading', { name: 'If something is lost, stolen or damaged' })).toBeVisible()
-  await expect(page.getByText(/in cc\./)).toBeVisible()
-  await expect(page.getByText('{security contacts}')).toHaveCount(0)
+  await page.getByRole('heading', { name: /Welcome back/ }).waitFor()
+  await expect(page.getByRole('heading', { name: 'If something is lost, stolen or damaged' })).toHaveCount(0)
 })
 
 test('Preview as renders the module for HR, and the facts can be changed', async ({ page }) => {
