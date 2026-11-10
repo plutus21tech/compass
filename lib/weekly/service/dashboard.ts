@@ -1,5 +1,7 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { categoryCoverage } from '../coverage'
+import { isHrFilledPartner } from '../partners'
 import { evaluatorDrift } from '../drift'
 import { renderHrReminderEmail } from '../emails-round'
 import type { CoverageView, DashboardResponse, DepartmentProgressView, EvaluatorStatsView, WeekProgressView } from '../view-types'
@@ -28,11 +30,26 @@ export async function lowEvidenceRows(cycleId: string): Promise<CoverageView[]> 
   return (await coverageRows(cycleId)).filter((row) => row.lowEvidence)
 }
 
-async function evaluatorStats(cycleId: string, currentWeek: number): Promise<EvaluatorStatsView[]> {
+type TrackedPrompt = { evaluatorId: string; status: string; weekIndex: number }
+
+/**
+ * The rated questions HR tracks on the Progress tab and reminds people about. The partners HR fills in for are left
+ * out, along with any weekly answers they gave before joining that list: they evaluate at the end of the quarter, so
+ * they are neither shown as behind nor emailed reminders.
+ */
+async function trackedPrompts(cycleId: string, where: Prisma.WeeklyPromptWhereInput): Promise<TrackedPrompt[]> {
   const prompts = await prisma.weeklyPrompt.findMany({
-    where: { cycleId, kind: { not: 'COMMENT' }, status: { notIn: ['CANCELLED', 'EXPIRED'] } },
+    where: { ...where, cycleId, kind: { not: 'COMMENT' } },
     select: { evaluatorId: true, status: true, weekIndex: true },
   })
+  const ids = [...new Set(prompts.map((p) => p.evaluatorId))]
+  const users = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })
+  const partners = new Set(users.filter((u) => isHrFilledPartner(u.name)).map((u) => u.id))
+  return prompts.filter((p) => !partners.has(p.evaluatorId))
+}
+
+async function evaluatorStats(cycleId: string, currentWeek: number): Promise<EvaluatorStatsView[]> {
+  const prompts = await trackedPrompts(cycleId, { status: { notIn: ['CANCELLED', 'EXPIRED'] } })
   const people = await loadPeople(prompts.map((p) => p.evaluatorId))
   const byEvaluator = new Map<string, EvaluatorStatsView>()
   for (const p of prompts) {
@@ -74,20 +91,20 @@ export async function dashboardView(actor: WeeklyActor, cycleId: string, now: Da
 const ANSWERED = new Set(['SUBMITTED', 'NOT_OBSERVED'])
 const OPEN = new Set(['OPEN', 'DRAFT'])
 
-/** The people HR's reminder has reached today (the bulk button and the per-person one share a key). */
+/**
+ * The people HR has reminded one by one today (the Remind button). The "Send reminders" button has its own daily limit
+ * and does not count here, so pressing it never hides the per-person buttons.
+ */
 async function remindedToday(evaluatorIds: readonly string[], now: Date): Promise<Set<string>> {
   if (evaluatorIds.length === 0) return new Set()
-  const keys = evaluatorIds.map((id) => weeklyDedupeKey('weekly-hr-reminder', id, now))
+  const keys = evaluatorIds.map((id) => weeklyDedupeKey('weekly-hr-reminder-person', id, now))
   const rows = await prisma.weeklyNotification.findMany({ where: { dedupeKey: { in: keys } }, select: { userId: true } })
   return new Set(rows.map((r) => r.userId))
 }
 
 /** UX spec, HR step 6: progress by week and by department, counting the questions still asked (not cancelled or expired). */
 async function progressBreakdown(cycleId: string, now: Date): Promise<{ byWeek: WeekProgressView[]; byDepartment: DepartmentProgressView[] }> {
-  const prompts = await prisma.weeklyPrompt.findMany({
-    where: { cycleId, kind: { not: 'COMMENT' }, status: { notIn: ['CANCELLED', 'EXPIRED'] } },
-    select: { evaluatorId: true, status: true, weekIndex: true },
-  })
+  const prompts = await trackedPrompts(cycleId, { status: { notIn: ['CANCELLED', 'EXPIRED'] } })
   const people = await loadPeople(prompts.map((p) => p.evaluatorId))
   const weeks = new Map<number, { week: number; asked: number; answered: number; open: Map<string, number> }>()
   const departments = new Map<string, DepartmentProgressView & { ids: Set<string> }>()
@@ -115,8 +132,9 @@ async function progressBreakdown(cycleId: string, now: Date): Promise<{ byWeek: 
 
 /**
  * HR's "Send reminders" (UX spec, HR step 6): everyone with an open question, or just `evaluatorId` (the Remind button
- * next to someone pending in a week). At most once a Karachi day per person, whichever button sent it. Anyone with
- * questions from an earlier week is told in red they are overdue.
+ * next to someone pending in a week). Each button reaches a person at most once a Karachi day, on its own limit; the
+ * bulk one skips anyone already reminded one by one today. Anyone with questions from an earlier week is told in red
+ * they are overdue.
  */
 export async function sendHrReminders(actor: WeeklyActor, cycleId: string, now: Date, send: WeeklySendMail, appUrl: string, evaluatorId?: string): Promise<WeeklySendResult> {
   assertHr(actor)
@@ -125,18 +143,17 @@ export async function sendHrReminders(actor: WeeklyActor, cycleId: string, now: 
   const period = await prisma.evaluationPeriod.findUnique({ where: { id: cycle.periodId }, select: { isLocked: true } })
   if (period?.isLocked) throw new WeeklyError('This round is locked, so nobody can answer', 409)
   const { currentWeek } = cycleSummary(cycle, now)
-  const open = await prisma.weeklyPrompt.findMany({
-    where: { cycleId, kind: { not: 'COMMENT' }, status: { in: ['OPEN', 'DRAFT'] }, ...(evaluatorId ? { evaluatorId } : {}) },
-    select: { evaluatorId: true, weekIndex: true },
-  })
+  const open = await trackedPrompts(cycleId, { status: { in: ['OPEN', 'DRAFT'] }, ...(evaluatorId ? { evaluatorId } : {}) })
   if (evaluatorId && open.length === 0) throw new WeeklyError('This person has no open questions', 409)
   const counts = new Map<string, { open: number; overdue: number }>()
   for (const p of open) {
     const row = counts.get(p.evaluatorId) ?? { open: 0, overdue: 0 }
     counts.set(p.evaluatorId, { open: row.open + 1, overdue: row.overdue + (p.weekIndex < currentWeek ? 1 : 0) })
   }
-  return deliverOnce([...counts].map(([userId, c]) => ({
-    userId, kind: 'weekly-hr-reminder' as const, dedupeKey: weeklyDedupeKey('weekly-hr-reminder', userId, now),
+  const kind = evaluatorId ? 'weekly-hr-reminder-person' as const : 'weekly-hr-reminder' as const
+  const already = evaluatorId ? new Set<string>() : await remindedToday([...counts.keys()], now)
+  return deliverOnce([...counts].filter(([userId]) => !already.has(userId)).map(([userId, c]) => ({
+    userId, kind, dedupeKey: weeklyDedupeKey(kind, userId, now),
     render: (name: string) => renderHrReminderEmail({ name, openCount: c.open, overdueCount: c.overdue, appUrl }),
   })), send)
 }

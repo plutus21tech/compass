@@ -65,6 +65,8 @@ test('HR reminds one pending person; the overdue copy goes out and the week show
     const mails: Array<{ to: string; subject: string; html: string }> = []
     const send = async (to: string, subject: string, html: string) => { mails.push({ to, subject, html }) }
     await assert.rejects(sendHrReminders(weeklyActor(W.ana), cycleId, at(2), send, 'https://compass.example', W.ben.id), (e: unknown) => e instanceof WeeklyError && e.status === 403)
+    // "Send reminders" earlier the same day must not use up the per-person button.
+    await sendHrReminders(HR_ACTOR, cycleId, at(2), async () => {}, 'https://compass.example')
     const result = await sendHrReminders(HR_ACTOR, cycleId, at(2), send, 'https://compass.example', W.ben.id)
     assert.equal(result.sent, 1)
     assert.deepEqual(mails.map((m) => m.to), [`${W.ben.id}@example.test`], 'only the person HR picked')
@@ -74,8 +76,34 @@ test('HR reminds one pending person; the overdue copy goes out and the week show
     const week = (await dashboardView(HR_ACTOR, cycleId, at(2))).byWeek[0]
     assert.deepEqual(week.pending.map((p) => [p.evaluator.id, p.remindedToday]).sort(), [[W.ana.id, false], [W.ben.id, true], [W.lead.id, false]].sort())
     assert.equal((await sendHrReminders(HR_ACTOR, cycleId, at(2, 1, 15), send, 'https://compass.example', W.ben.id)).sent, 0, 'once a day')
+    // The next day, "Send reminders" skips anyone already reminded one by one that day.
+    await sendHrReminders(HR_ACTOR, cycleId, at(2, 2), send, 'https://compass.example', W.ben.id)
+    const before = mails.length
+    await sendHrReminders(HR_ACTOR, cycleId, at(2, 2, 12), send, 'https://compass.example')
+    assert.deepEqual(mails.slice(before).map((m) => m.to).sort(), [`${W.ana.id}@example.test`, `${W.lead.id}@example.test`].sort())
     await answerAs((await prisma.weeklyPrompt.findFirstOrThrow({ where: { cycleId, evaluatorId: W.ana.id, kind: 'STANDARD' } })), 2)
     await assert.rejects(sendHrReminders(HR_ACTOR, cycleId, at(2), send, 'https://compass.example', W.ana.id), (e: unknown) => e instanceof WeeklyError && e.status === 409, 'nothing open')
+  } finally {
+    delete process.env.WEEKLY_SEND_EMAILS
+  }
+})
+
+test('partners are left out of progress and are never reminded', WEEKLY_DB_TEST, async () => {
+  process.env.WEEKLY_SEND_EMAILS = 'true'
+  try {
+    await releaseWeekOne(cycleId)
+    // A partner on the C-suite list (they evaluate at the end of the quarter).
+    await prisma.user.update({ where: { id: W.ben.id }, data: { name: 'Maryam Khalil' } })
+    const view = await dashboardView(HR_ACTOR, cycleId, at(2))
+    assert.deepEqual(view.byWeek.map(({ pending, ...w }) => w), [{ week: 1, asked: 2, answered: 0 }])
+    assert.ok(!view.byWeek[0].pending.some((p) => p.evaluator.id === W.ben.id))
+    assert.ok(!view.evaluators.some((e) => e.evaluator.id === W.ben.id))
+    assert.equal(view.byDepartment[0].evaluators, 2)
+    const sent: string[] = []
+    const send = async (to: string) => { sent.push(to) }
+    await sendHrReminders(HR_ACTOR, cycleId, at(2), send, 'https://compass.example')
+    assert.deepEqual(sent.sort(), [`${W.ana.id}@example.test`, `${W.lead.id}@example.test`].sort())
+    await assert.rejects(sendHrReminders(HR_ACTOR, cycleId, at(2), send, 'https://compass.example', W.ben.id), (e: unknown) => e instanceof WeeklyError && e.status === 409)
   } finally {
     delete process.env.WEEKLY_SEND_EMAILS
   }
