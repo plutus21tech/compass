@@ -32,7 +32,7 @@ interface SetupResponse {
     coreHoursStart: string | null
     coreHoursEnd: string | null
   }
-  readiness: { ready: boolean; missing: MissingItem[] }
+  readiness: { ready: boolean; missing: MissingItem[]; optional: MissingItem[] }
   releasedAt: string | null
 }
 
@@ -124,6 +124,7 @@ function TextField(props: { id: string; label: string; type?: string; value: str
 export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
   const [form, setForm] = useState<FormState | null>(null)
   const [missing, setMissing] = useState<MissingItem[]>([])
+  const [optional, setOptional] = useState<MissingItem[]>([])
   const [saving, setSaving] = useState(false)
   const [releasedAt, setReleasedAt] = useState<string | null>(null)
   const [releasing, setReleasing] = useState(false)
@@ -131,6 +132,7 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
   const apply = useCallback((data: SetupResponse) => {
     setForm(toForm(data.setup))
     setMissing(data.readiness.missing)
+    setOptional(data.readiness.optional)
     setReleasedAt(data.releasedAt)
   }, [])
 
@@ -200,7 +202,7 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
         {missing.length > 0 ? (
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm" role="status">
             <p className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="h-4 w-4" /> {missing.length} {missing.length === 1 ? 'item' : 'items'} missing
+              <AlertTriangle className="h-4 w-4" /> Needed before the course can be released
             </p>
             <ul className="mt-1 list-disc pl-6 text-muted-foreground">
               {missing.map((m) => <li key={m.key}>{m.label}</li>)}
@@ -208,8 +210,20 @@ export function OnboardingSetupSection({ newHireId, users, onSaved }: Props) {
           </div>
         ) : (
           <p className="flex items-center gap-2 text-sm text-emerald-600">
-            <CheckCircle2 className="h-4 w-4" /> Everything needed is in place.
+            <CheckCircle2 className="h-4 w-4" /> Everything needed for the release is in place.
           </p>
+        )}
+
+        {optional.length > 0 && (
+          <div className="rounded-lg border border-border p-3 text-sm">
+            <p className="font-medium text-foreground">Still to fill in (optional)</p>
+            <p className="text-xs text-muted-foreground">
+              The course can go out without these. Until they're filled in, the hire sees them as blank or &quot;to be confirmed&quot;.
+            </p>
+            <ul className="mt-1 list-disc pl-6 text-muted-foreground">
+              {optional.map((m) => <li key={m.key}>{m.label}</li>)}
+            </ul>
+          </div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

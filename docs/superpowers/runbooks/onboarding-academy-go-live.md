@@ -142,7 +142,7 @@ Do these on production, with fictional or the owner's own test accounts, in this
 2. HR: `/admin/onboarding/tracker` loads, shows the hires, and shows the "Most-missed questions" panel (it says there are no answers yet on day one).
 3. HR: open a module in the module editor and press "Preview as". It renders the module and nothing is saved.
 4. HR: `/admin/onboarding/academy/videos` shows two videos. If neither has a video yet, Modules 1 and 2 show "Video coming soon" and finish by scrolling to the end.
-5. A new hire made for the purpose: release the course from the new-hire page. The hire sees 14 modules, with Module 1 open and the rest locked. A locked hire cannot open `/dashboard` and can open `/onboarding`, `/profile` and `/handbook`.
+5. A new hire made for the purpose: in Admin › Users, create a user with "New hire (requires onboarding)" ticked, a joining date and the four attributes. The course is released at once. The hire sees 14 modules, with Module 1 open and the rest locked. A locked hire cannot open `/dashboard` and can open `/onboarding`, `/profile` and `/handbook`.
 6. Save fictional bank details in Module 11 for that hire. It must succeed (this proves the encryption key). Check no payroll profile appears.
 7. The reminder job (the real cron check; Vercel runs crons on production only). It runs daily at 05:00, 10:00 and 16:00 UTC; Hobby fires each one at some minute inside that hour. After the next of those hours, the log shows `/api/cron/onboarding` returning `success`.
 8. Delete nothing and leave the test hire for HR to close.

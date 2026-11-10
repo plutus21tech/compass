@@ -90,13 +90,14 @@ test('loadSetup reports readiness', ACADEMY_DB_TEST, async () => {
   await prisma.newHire.update({ where: { id: NEW_HIRE_ID }, data: { userId: P.hire.id } })
   await saveSetup(prisma, NEW_HIRE_ID, setup(), P.hr.id)
   const mid = await loadSetup(prisma, NEW_HIRE_ID)
-  assert.deepEqual(mid.readiness.missing.map((m) => m.key), ['leadInput'])
+  assert.equal(mid.readiness.ready, true)
+  assert.deepEqual(mid.readiness.optional.map((m) => m.key), ['leadInput'])
   await prisma.teamLeadForm.update({
     where: { newHireId: NEW_HIRE_ID },
     data: { ...completeLeadInput, submittedAt: new Date() },
   })
   const done = await loadSetup(prisma, NEW_HIRE_ID)
-  assert.deepEqual(done.readiness, { ready: true, missing: [] })
+  assert.deepEqual(done.readiness, { ready: true, missing: [], optional: [] })
 })
 
 test('a form submitted before the Academy, with null lead fields, is not ready', ACADEMY_DB_TEST, async () => {
@@ -104,7 +105,7 @@ test('a form submitted before the Academy, with null lead fields, is not ready',
   await prisma.teamLeadForm.update({ where: { newHireId: NEW_HIRE_ID }, data: { submittedAt: new Date() } })
   const { setup: snapshot, readiness } = await loadSetup(prisma, NEW_HIRE_ID)
   assert.equal(snapshot.leadInputSubmitted, false)
-  assert.ok(readiness.missing.some((m) => m.key === 'leadInput'))
+  assert.ok(readiness.optional.some((m) => m.key === 'leadInput'))
 })
 
 test('a draft that blanks a required goal after submit is not ready', ACADEMY_DB_TEST, async () => {
@@ -136,9 +137,10 @@ test('a mostly blank setup saves, readiness lists what is missing, and no lead i
   assert.equal(snapshot.companyWing, null)
   assert.deepEqual(snapshot.teamMemberIds, [])
   assert.ok(dueAt)
-  for (const key of ['preferredName', 'department', 'hrCallAt', 'teamLeadId', 'buddyId', 'workMode', 'teamMemberIds']) {
-    assert.ok(readiness.missing.some((m) => m.key === key), key)
+  for (const key of ['preferredName', 'department', 'hrCallAt', 'teamLeadId', 'buddyId', 'teamMemberIds']) {
+    assert.ok(readiness.optional.some((m) => m.key === key), key)
   }
+  assert.ok(readiness.missing.some((m) => m.key === 'workMode'))
 })
 
 test('blank saves can clear what an earlier save set', ACADEMY_DB_TEST, async () => {

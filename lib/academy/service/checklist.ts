@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { AcademyError } from '../errors'
-import { getSetupReadiness } from '../setup'
+import { isSetupComplete } from '../setup'
 import {
   checklistDueAt,
   eventsMet,
@@ -89,7 +89,7 @@ function factsFor(hire: SyncHire, signed: ReadonlySet<string>, paid: ReadonlySet
   const { userId } = hire
   return {
     leadInputSubmitted: setup.leadInputSubmitted,
-    setupReady: getSetupReadiness(setup).ready,
+    setupReady: isSetupComplete(setup),
     userLinked: setup.userLinked,
     courseReleased: hire.academyReleasedAt !== null,
     discordSaved: Boolean(hire.user?.discordUsername?.trim()),
