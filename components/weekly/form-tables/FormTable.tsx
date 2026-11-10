@@ -14,8 +14,11 @@ const STATUS_LABELS: Record<FormStatusValue, string> = {
 // The four levels the question bank describes; the picker also offers the quarter steps between them.
 const LEVELS = [1, 2, 3, 4] as const
 
-/** `periodId`: an earlier quarter HR is finishing; the running round's when left out. */
-interface FormTableProps { kind: FormTableKind; table: FormTableView; editable: boolean; periodId?: string }
+/**
+ * `periodId`: an earlier quarter HR is finishing; the running round's when left out.
+ * `endpoint`: where rows save; a partner filling their own tables uses /api/weekly/partner-tables.
+ */
+interface FormTableProps { kind: FormTableKind; table: FormTableView; editable: boolean; periodId?: string; endpoint?: string }
 
 const isComplete = (row: FormTableRow, questionIds: readonly string[]) => questionIds.every((id) => row.ratings[id] !== null)
 const totalOf = (row: FormTableRow) => {
@@ -24,7 +27,7 @@ const totalOf = (row: FormTableRow) => {
 }
 
 /** One row per person, a 1–4 picker (in quarter steps) per question, saved as HR goes. A submitted row re-submits on every change. */
-export function FormTable({ kind, table, editable, periodId }: FormTableProps) {
+export function FormTable({ kind, table, editable, periodId, endpoint = '/api/admin/weekly/form-tables' }: FormTableProps) {
   const [rows, setRowsState] = useState<FormTableRow[]>(table.rows)
   const [busy, setBusyState] = useState<Set<string>>(new Set())
   // Refs hold the latest rows and in-flight saves, so a long "Submit all" never sends a row's older ratings.
@@ -46,7 +49,7 @@ export function FormTable({ kind, table, editable, periodId }: FormTableProps) {
   async function save(row: FormTableRow, submit: boolean, previous: FormTableRow): Promise<boolean> {
     setBusy(row.evaluateeId, true)
     try {
-      const result = await weeklyRequest<{ status: FormStatusValue }>('/api/admin/weekly/form-tables', {
+      const result = await weeklyRequest<{ status: FormStatusValue }>(endpoint, {
         method: 'POST',
         body: {
           kind, evaluatorId: table.evaluator.id, relationshipType: table.relationshipType, evaluateeId: row.evaluateeId, submit,
@@ -138,6 +141,7 @@ export function FormTable({ kind, table, editable, periodId }: FormTableProps) {
                     ) : (
                       <Button size="sm" variant="outline" disabled={locked || !isComplete(row, questionIds)} onClick={() => void save(row, true, row)}>Submit</Button>
                     )}
+                    {row.lastSavedBy && <span className="mt-1 block text-xs text-muted-foreground">Last saved by {row.lastSavedBy}</span>}
                   </td>
                 </tr>
               )

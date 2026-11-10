@@ -80,6 +80,17 @@ export function renderHrReminderEmail(input: { name: string; openCount: number; 
   }
 }
 
+/** A partner hears once that their end-of-quarter tables are open; HR can fill the same rows. */
+export function renderPartnerTablesOpenEmail(input: { name: string; periodName: string; closesOn: string; appUrl: string }): Email {
+  return {
+    subject: `Your ${input.periodName} end-of-quarter evaluations are open`,
+    html: layout(input.name, [
+      escapeHtml(`Your ${input.periodName} evaluations are open: one table per group, scored 1 to 4 per question. Rows save as you go; submit a row when it is complete.`),
+      escapeHtml(`HR sees the same tables and can help fill them in. Please finish by ${input.closesOn}, when the round closes.`),
+    ], `${base(input.appUrl)}${MY_PAGE}`, 'Open my evaluations'),
+  }
+}
+
 export function renderBehindEmail(input: { name: string; openCount: number; appUrl: string }): Email {
   return {
     subject: `You have ${plural(input.openCount, 'unanswered evaluation question')}`,

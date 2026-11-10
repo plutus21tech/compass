@@ -86,7 +86,7 @@ const OWN_FORM_TYPES = (a: { relationshipType: string }) => a.relationshipType !
 
 export async function formsView(actor: WeeklyActor, now: Date): Promise<FormsResponse> {
   const cycle = await findRunningCycle()
-  if (!cycle || isHrFilledPartner(actor.name)) return { cycle: cycle ? cycleSummary(cycle, now) : null, open: false, opensAt: null, forms: [] }
+  if (!cycle || isHrFilledPartner(actor.name)) return { cycle: cycle ? cycleSummary(cycle, now) : null, open: false, opensAt: null, forms: [], partner: isHrFilledPartner(actor.name) }
   const units = formUnits((await getResolvedEvaluationAssignments(cycle.periodId, { evaluatorId: actor.id, includeUsers: true })).filter(OWN_FORM_TYPES))
   const statuses = await formStatuses(cycle.periodId, actor.id, units)
   return {

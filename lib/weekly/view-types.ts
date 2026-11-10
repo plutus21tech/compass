@@ -163,7 +163,8 @@ export interface DashboardResponse {
 export type FormRelationshipTypeValue = 'C_LEVEL' | 'DEPT' | 'HR'
 export type FormStatusValue = 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'CLOSED_BY_OTHER'
 export interface FormSummaryView { relationshipType: FormRelationshipTypeValue; evaluatee: PersonRef; department: string | null; memberCount: number; status: FormStatusValue }
-export interface FormsResponse { cycle: CycleSummary | null; open: boolean; opensAt: string | null; forms: FormSummaryView[] }
+/** `partner`: the person fills their evaluations in tables (shared with HR) instead of these forms. */
+export interface FormsResponse { cycle: CycleSummary | null; open: boolean; opensAt: string | null; forms: FormSummaryView[]; partner?: boolean }
 export interface FormQuestionView {
   id: string
   source: 'GLOBAL' | 'LEAD'
@@ -185,6 +186,8 @@ export interface FormTableRow {
   status: FormStatusValue
   ratings: Record<string, number | null>
   total: number | null
+  /** A partner's row: who saved it last, the partner or someone in HR (both fill the same row). */
+  lastSavedBy: string | null
 }
 export interface FormTableView {
   evaluator: PersonRef
