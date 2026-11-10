@@ -470,9 +470,19 @@ All notifications are email, using the existing `lib/email.ts` / `EmailQueue` pa
 | Module assigned / re-read requested | Each assignee |
 | HR checklist item due/overdue | Item owner (role or lead) |
 
-**Cron.** One endpoint, `/api/cron/onboarding`, does all of the scheduled work. It runs **hourly** and sends local-10-AM reminders to people whose location's local hour is 10. It is idempotent per person per day.
+**Cron.** One endpoint, `/api/cron/onboarding`, does all of the scheduled work. It runs **three times a day** (see the fallback below) and sends reminders to people whose local time is inside the reminder window. It is idempotent per person per day.
 
 If the Vercel plan doesn't allow hourly crons, fall back to one run per time zone or a daily batch at 05:00 UTC (10:00 PKT), and record that in this document. Authentication uses the existing `lib/cron-auth.ts`.
+
+**Fallback taken (2026-11-10): the Vercel plan is Hobby, which allows only daily crons.** The first deploy refused `0 * * * *`. `vercel.json` now lists the same path three times, daily at 05:00, 10:00 and 16:00 UTC. Hobby fires a daily job at any minute inside its hour, so the times were chosen to put every Academy time zone inside the 10:00 to 17:59 window:
+
+| Run (UTC) | Serves | Local time |
+|---|---|---|
+| 05:xx | Karachi (and anyone with no known zone), Jakarta | 10:xx PKT, 12:xx WIB |
+| 10:xx | Casablanca | 11:xx, or 10:xx in Ramadan (UTC+0) |
+| 16:xx | Bogotá, Guayaquil, Dallas | 11:xx, 11:xx, 10:xx CST / 11:xx CDT |
+
+No code changed: the window and the once-only log already handle it. `tests/academy-reminders.test.ts` checks every zone at minutes 0, 30 and 59 of each run hour, in winter, summer and Ramadan. Karachi, Jakarta and Casablanca each fall in two runs, the Americas in one. The costs: a send that fails at a zone's last run of the day waits for the next day instead of the next hour, and something that falls due after a zone's last run goes the next day. Auto-ticks also run when the tracker loads, so the tracker itself is not delayed. On a Pro plan, `0 * * * *` works again with no other change.
 
 **Stage 4 decision: the reminder window is 10:00 to 17:59 local.** Reminders first go at 10:00, and the later runs of that working day stay open. A send that failed or a cron run that came late would otherwise have no later run, and a notice with one date, like the buddy's, would be lost. The notification log stops anyone hearing twice. Something that first falls due during the day goes at the next run.
 
@@ -596,6 +606,6 @@ The stages are built in order on the Academy branch, behind the flag. Nothing re
 - A missing video falls back to a text summary with scroll-to-complete.
 - A Day 1 goal is included as an optional field.
 - Quiz retakes are never capped. After 3 failed attempts, HR is told.
-- There is one hourly cron, with a documented fallback if the plan disallows it.
+- There is one cron endpoint. It was planned hourly; on the Hobby plan it runs three times a day (see section 8).
 - **No new invite flow.** HR keeps creating the account in Admin › Users and linking it to the NewHire, as today. "Release course" is blocked until a user is linked, and the setup page lists "No Compass account linked" among the missing items. Setup attributes are copied to the `User` at link time, and nothing is copied to payroll (D4).
 - **Holidays for due dates.** Use the hire's `teamTag` holidays (`PayrollPublicHoliday`) when a tag is set. Otherwise map the location: Karachi → PAKISTAN, Casablanca → MOROCCO, Bogotá → COLOMBIA. Dallas and unmapped remote countries skip holidays and count weekends only.

@@ -171,9 +171,30 @@ test('the owner panels show only with the flag on', () => {
   }
 })
 
-test('vercel runs the job hourly', () => {
+const onboardingSchedules = (): string[] => {
   const { crons } = JSON.parse(read('vercel.json')) as { crons: Array<{ path: string; schedule: string }> }
-  assert.deepEqual(crons.find((cron) => cron.path === '/api/cron/onboarding'), { path: '/api/cron/onboarding', schedule: '0 * * * *' })
+  return crons.filter((cron) => cron.path === '/api/cron/onboarding').map((cron) => cron.schedule)
+}
+
+test('vercel runs the job three times a day, each at most daily (Hobby plan limit)', () => {
+  assert.deepEqual(onboardingSchedules(), ['0 5 * * *', '0 10 * * *', '0 16 * * *'])
+})
+
+// Hobby fires a daily job at any minute inside its hour, so every minute of every run hour counts.
+// Dates cover winter and summer offsets (Chicago DST) and Ramadan, when Morocco moves to UTC+0.
+test('every Academy time zone falls in its reminder window during at least one daily run', () => {
+  const runHours = onboardingSchedules().map((schedule) => Number(schedule.split(' ')[1]))
+  const zones = [null, 'Asia/Karachi', 'Africa/Casablanca', 'America/Bogota', 'America/Chicago', 'Asia/Jakarta', 'America/Guayaquil']
+  for (const day of ['2027-01-15', '2027-02-20', '2027-07-15']) {
+    for (const minute of [0, 30, 59]) {
+      for (const zone of zones) {
+        const covered = runHours.some((hour) =>
+          isReminderWindow(at(`${day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`), zone),
+        )
+        assert.ok(covered, `${zone ?? 'default zone'} on ${day} at minute ${minute}`)
+      }
+    }
+  }
 })
 
 test('the cron route uses the gate and the long timeout', () => {

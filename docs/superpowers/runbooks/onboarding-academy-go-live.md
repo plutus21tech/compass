@@ -19,7 +19,7 @@ Tick every line before step 2.
 - [ ] `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url <a scratch database>` reports no difference.
 - [ ] The owner knows step 3a (restore point) comes before any data change.
 - [ ] The owner has chosen the release: which of the two ways in step 6 to use, and the day.
-- [ ] `CRON_SECRET` is set on Vercel (the hourly job refuses requests without it).
+- [ ] `CRON_SECRET` is set on Vercel (the reminder job refuses requests without it).
 - [ ] Academy emails link to the fixed address in `lib/compass-url.ts` (not an environment variable), so check that address is the live one.
 - [ ] HR knows the Academy is going live and who the legacy hires are (step 4).
 - [ ] The open product items (section 9) are understood. None of them blocks go-live; each has a fallback in the product.
@@ -45,7 +45,7 @@ The lockout reads the path from the `x-compass-pathname` header that the middlew
 1. Sign in on the preview as a user with `onboardingCompleted = false`. Open `/dashboard`. You must be sent to `/onboarding`. Open `/handbook` and `/profile`; both must open.
 2. Sign in as a finished user. `/dashboard` must open and nothing redirects.
 
-Vercel runs cron jobs only on production deployments, so the hourly job cannot be proven on a preview; its real check is in step 7. An optional proof of the route itself before production: call the preview's `/api/cron/onboarding` by hand with the header `Authorization: Bearer <CRON_SECRET>`. With the flag off it answers `{ "skipped": "The Onboarding Academy is off" }`; with it on it runs the job and answers `{ "success": true, ... }` (the job may send real reminder emails to hires on the shared database, so skip this proof if that is a worry). Without the secret it answers 401.
+Vercel runs cron jobs only on production deployments, so the reminder job cannot be proven on a preview; its real check is in step 7. An optional proof of the route itself before production: call the preview's `/api/cron/onboarding` by hand with the header `Authorization: Bearer <CRON_SECRET>`. With the flag off it answers `{ "skipped": "The Onboarding Academy is off" }`; with it on it runs the job and answers `{ "success": true, ... }` (the job may send real reminder emails to hires on the shared database, so skip this proof if that is a worry). Without the secret it answers 401.
 
 `ONBOARDING_ACADEMY_ENABLED=true` may stay on Preview afterwards, since Preview is for testing. Remember that Preview shares the production database, so a preview with the flag on reads the same hires and course as production.
 
@@ -144,7 +144,7 @@ Do these on production, with fictional or the owner's own test accounts, in this
 4. HR: `/admin/onboarding/academy/videos` shows two videos. If neither has a video yet, Modules 1 and 2 show "Video coming soon" and finish by scrolling to the end.
 5. A new hire made for the purpose: release the course from the new-hire page. The hire sees 14 modules, with Module 1 open and the rest locked. A locked hire cannot open `/dashboard` and can open `/onboarding`, `/profile` and `/handbook`.
 6. Save fictional bank details in Module 11 for that hire. It must succeed (this proves the encryption key). Check no payroll profile appears.
-7. The hourly job (the real cron check; Vercel runs crons on production only): within the hour, the log shows `/api/cron/onboarding` returning `success`.
+7. The reminder job (the real cron check; Vercel runs crons on production only). It runs daily at 05:00, 10:00 and 16:00 UTC; Hobby fires each one at some minute inside that hour. After the next of those hours, the log shows `/api/cron/onboarding` returning `success`.
 8. Delete nothing and leave the test hire for HR to close.
 
 ## 8. Rollback
@@ -152,7 +152,7 @@ Do these on production, with fictional or the owner's own test accounts, in this
 Because every Academy migration only adds, the schema never needs to be rolled back. The code can be rolled back or the flag turned off at any time.
 
 - **First choice, after the seed: restore the point from step 3a.** Restore the Neon branch (or the point-in-time timestamp) written down there. That puts the legacy rows back exactly as they were. It also discards anything written to the database since that point, including Academy progress, so use it only if nothing worth keeping has happened, or when the owner has decided what may be lost.
-- **Turn the flag off (Way A):** set `ONBOARDING_ACADEMY_ENABLED` to anything but `true` and redeploy. With the flag off the old onboarding flow behaves exactly as it did before the seed, the lockout stops applying, and the hourly cron answers `skipped`. After the seed that holds only once the legacy rows are reactivated or the Neon branch is restored. New tables and columns stay and are ignored.
+- **Turn the flag off (Way A):** set `ONBOARDING_ACADEMY_ENABLED` to anything but `true` and redeploy. With the flag off the old onboarding flow behaves exactly as it did before the seed, the lockout stops applying, and the reminder cron answers `skipped`. After the seed that holds only once the legacy rows are reactivated or the Neon branch is restored. New tables and columns stay and are ignored.
 - **Fallback: reactivate the legacy rows by hand (the seed's retirement of legacy modules needs care).** The seed does not delete the legacy modules or questions: it deactivates them and moves them to order index 1000 and above. Turning the flag off therefore does **not** bring the old modules back on its own. To restore the old flow after a seed, reactivate those rows (`isActive` true, original order index = current minus 1000, and `retiredAt` null on the legacy questions) with the owner's go-ahead, from a reviewed statement. Do that before telling anyone the old flow is back. Course modules cannot be switched off from the admin page, so the repair is a database change, not a click.
 - **Way B:** roll back with the previous deployment in Vercel. The same retirement caveat applies.
 - **Hires who started the Academy:** their progress rows, acknowledgements and quiz attempts stay in place. Turning the flag back on later picks them up where they were. Do not delete any of those rows.
