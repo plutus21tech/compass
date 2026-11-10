@@ -444,7 +444,7 @@ During the build, run the design pass with the project's frontend-design / impec
 - **The acknowledgement stays top-level** and payment stays in its contract branches. Other required blocks may sit in conditionals because they fall back.
 - **Any Module 7 publish asks signers still in the course to sign again,** because the SOP text may change even when the statement does not. A re-read of the same version needs no new signature.
 - **With the flag on, the old `/admin/onboarding/modules` and `/admin/onboarding/quiz` pages redirect** to the new editors. Quiz attempts are cleared from the tracker drawer.
-- **The "If something is lost, stolen or damaged" box** on everyone's dashboard is Module 7's first warning box from its published version, so an HR edit reaches it. It fills in `{security contacts}` from Key Contacts and hides if the module has no such block.
+- **The "If something is lost, stolen or damaged" box** lives in Module 7 only. It was also shown on everyone's dashboard at go-live; the owner had it removed there on 2026-11-10 as out of place.
 
 **Stage 5 decisions.**
 - **Preview as** renders the draft or live version for chosen facts: location, remote country, work mode, contract, status, wing and client account. People and per-hire data show as labelled samples. It uses its own `preview` flag rather than `readOnly` (which would show saved values), reports nothing and writes nothing.
