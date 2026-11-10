@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/db'
-import { formatCalendarDate, karachiCalendarDate } from '../calendar'
+import { cycleWeeks, formatCalendarDate, karachiCalendarDate, weekStartsAt } from '../calendar'
 import { renderFormsOpenEmail, renderLowEvidenceEmail, renderQuestionsEmail } from '../emails'
-import { renderDueTodayEmail, renderFinalWeekEmail } from '../emails-round'
+import { renderDueTodayEmail, renderFinalWeekEmail, renderPartnerTablesOpenEmail } from '../emails-round'
+import { formatKarachiDate } from '../format'
 import { areWeeklyEmailsEnabled } from '../flag'
 import { PERSPECTIVE_LABELS } from '../perspectives'
 import type { CycleWithPeriod } from './cycles'
@@ -134,14 +135,24 @@ export async function lowEvidenceMessages(cycleId: string, appUrl: string): Prom
   }))
 }
 
-/** Once the forms are open, everyone with an unfinished form hears about it once a day until they finish. */
+/**
+ * Once the forms are open, everyone with an unfinished form hears about it once a day until they finish. A partner
+ * with unfinished tables hears once a round instead: HR, reminded daily, can fill the same rows.
+ */
 export async function formsOpenMessages(cycle: CycleWithPeriod, now: Date, appUrl: string): Promise<WeeklyEmailMessage[]> {
-  const { pendingEvaluatorIds } = await formsProgress(cycle.periodId, now)
+  const { pendingEvaluatorIds, pendingPartnerIds } = await formsProgress(cycle.periodId, now)
   const hr = new Set(await hrUserIds())
-  return pendingEvaluatorIds.map((userId) => ({
-    userId, kind: 'weekly-forms-open' as const, dedupeKey: weeklyDedupeKey('weekly-forms-open', userId, now),
-    // HR's own HR evaluations and the partners' are on the quarter-end page.
-    render: (name: string) => renderFormsOpenEmail({ name, appUrl, path: hr.has(userId) ? '/admin/evaluation-round?tab=forms' : '/evaluations/weekly' }),
-  }))
+  const closesOn = formatKarachiDate(new Date(weekStartsAt(cycle.weekOneStartsOn, cycleWeeks(cycle) + 1).getTime() - 1).toISOString())
+  return [
+    ...pendingEvaluatorIds.map((userId) => ({
+      userId, kind: 'weekly-forms-open' as const, dedupeKey: weeklyDedupeKey('weekly-forms-open', userId, now),
+      // HR's own HR evaluations and the partners' are on the quarter-end page.
+      render: (name: string) => renderFormsOpenEmail({ name, appUrl, path: hr.has(userId) ? '/admin/evaluation-round?tab=forms' : '/evaluations/weekly' }),
+    })),
+    ...pendingPartnerIds.filter((userId) => !hr.has(userId)).map((userId) => ({
+      userId, kind: 'weekly-forms-open' as const, dedupeKey: weeklyDedupeKey('weekly-forms-open', userId, now, `partner:${cycle.id}`),
+      render: (name: string) => renderPartnerTablesOpenEmail({ name, periodName: cycle.period.name, closesOn, appUrl }),
+    })),
+  ]
 }
 

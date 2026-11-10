@@ -13,7 +13,7 @@ import type { FormInput } from '../schemas'
 import { isTableScore } from '../table-scores'
 import type { FormStatusValue, FormTableKind, FormTableQuestion, FormTableRow, FormTablesResponse, FormTableView, PersonRef } from '../view-types'
 import { recordAudit } from './audit'
-import { assertHr, loadPeople, type WeeklyActor } from './context'
+import { assertHr, isHrActor, loadPeople, type WeeklyActor } from './context'
 import { cycleSummary, findRunningCycle, loadCycle, roundOpensAt, type CycleWithPeriod } from './cycles'
 import { WeeklyError } from './errors'
 import { assertFourRatingQuota, HR_SLOT_CLOSED, writeFormRows } from './form-submit'
@@ -119,8 +119,32 @@ async function rowsFor(periodId: string, evaluatorId: string, type: Relationship
     return {
       evaluateeId: unit.evaluateeId, name: unit.name, designation: unit.position, department: unit.department,
       memberCount: unit.evaluateeIds.length, status, ratings, total: scored.length ? scored.reduce((a, b) => a + b, 0) : null,
+      lastSavedBy: null,
     }
   })
+}
+
+const TABLE_WRITES = ['TABLE_SAVE', 'TABLE_SUBMIT']
+
+/**
+ * Who last saved each of a partner's rows: the partner or someone in HR, who both fill the same row. Read from the
+ * audit trail, which records every save with the evaluator and relationship it was for.
+ */
+async function lastSavers(scope: TableScope, evaluatorId: string, type: RelationshipType, evaluateeIds: readonly string[]): Promise<Map<string, string>> {
+  if (!scope.cycle || evaluateeIds.length === 0) return new Map()
+  const events = await prisma.weeklyAuditEvent.findMany({
+    where: { cycleId: scope.cycle.id, action: { in: TABLE_WRITES }, objectType: 'User', objectId: { in: [...evaluateeIds] } },
+    orderBy: { createdAt: 'desc' },
+    select: { actorId: true, objectId: true, after: true },
+  })
+  const latest = new Map<string, string>()
+  for (const e of events) {
+    const after = (e.after ?? {}) as { evaluatorId?: string; relationshipType?: string }
+    if (!e.objectId || !e.actorId || latest.has(e.objectId) || after.evaluatorId !== evaluatorId || after.relationshipType !== type) continue
+    latest.set(e.objectId, e.actorId)
+  }
+  const people = await loadPeople(latest.values())
+  return new Map([...latest].map(([evaluateeId, actorId]) => [evaluateeId, people.get(actorId)?.name ?? 'Someone']))
 }
 
 async function tablesFor(scope: TableScope, evaluator: PersonRef, types: readonly RelationshipType[], now: Date): Promise<FormTableView[]> {
@@ -130,7 +154,9 @@ async function tablesFor(scope: TableScope, evaluator: PersonRef, types: readonl
     const units = tableUnits(type, assignments, evaluated)
     if (units.length === 0) return null
     const questions = await tableQuestions(scope.periodId, evaluator.id, type, units[0].evaluateeId)
-    return { evaluator, relationshipType: type, questions, rows: await rowsFor(scope.periodId, evaluator.id, type, units, questions) }
+    const rows = await rowsFor(scope.periodId, evaluator.id, type, units, questions)
+    const savers = type === 'HR' ? new Map<string, string>() : await lastSavers(scope, evaluator.id, type, rows.map((r) => r.evaluateeId))
+    return { evaluator, relationshipType: type, questions, rows: rows.map((r) => ({ ...r, lastSavedBy: savers.get(r.evaluateeId) ?? null })) }
   }))
   return tables.filter((t): t is FormTableView => t !== null)
 }
@@ -153,6 +179,23 @@ export async function formTables(actor: WeeklyActor, kind: FormTableKind, now: D
   }
 }
 
+const PARTNER_TYPES = TABLE_ORDER.filter((t) => t !== 'HR')
+
+/**
+ * A partner's own end-of-quarter evaluations: the same tables HR sees on the "Partner evaluations" tab, for the running
+ * round. What either of them saves is the same row, so it shows on both at once. 404 for anyone who is not a partner.
+ */
+export async function myPartnerTables(actor: WeeklyActor, now: Date): Promise<FormTablesResponse> {
+  if (!isHrFilledPartner(actor.name)) throw new WeeklyError(NOT_FOUND, 404)
+  const scope = await scopeFor(undefined, now)
+  if (!scope) return { cycle: null, quarter: null, open: false, locked: false, opensAt: null, tables: [] }
+  return {
+    cycle: scope.cycle ? cycleSummary(scope.cycle, now) : null, quarter: { periodId: scope.periodId, name: scope.name, earlier: false },
+    open: scope.open, locked: await isLocked(scope.periodId), opensAt: scope.opensAt,
+    tables: await tablesFor(scope, { id: actor.id, name: actor.name, position: actor.position }, PARTNER_TYPES, now),
+  }
+}
+
 export interface TableRowInput {
   kind: FormTableKind
   evaluatorId: string
@@ -164,7 +207,22 @@ export interface TableRowInput {
   periodId?: string
 }
 
-async function checkEvaluator(actor: WeeklyActor, input: TableRowInput): Promise<void> {
+/**
+ * HR fills its own HR rows and any partner's rows; a partner fills only their own, in the running round. Returns the
+ * role the save is recorded under.
+ */
+async function checkEvaluator(actor: WeeklyActor, input: TableRowInput): Promise<'HR' | 'PARTNER'> {
+  if (!isHrActor(actor)) {
+    if (!isHrFilledPartner(actor.name)) assertHr(actor)
+    const ownRow = input.kind === 'PARTNER' && input.evaluatorId === actor.id && input.relationshipType !== 'HR' && input.periodId === undefined
+    if (!ownRow) throw new WeeklyError(NOT_FOUND, 404)
+    return 'PARTNER'
+  }
+  await checkHrEvaluator(actor, input)
+  return 'HR'
+}
+
+async function checkHrEvaluator(actor: WeeklyActor, input: TableRowInput): Promise<void> {
   if (input.kind === 'HR') {
     if (input.evaluatorId !== actor.id || input.relationshipType !== 'HR') throw new WeeklyError(NOT_FOUND, 404)
     return
@@ -173,10 +231,12 @@ async function checkEvaluator(actor: WeeklyActor, input: TableRowInput): Promise
   if (!evaluator || !isHrFilledPartner(evaluator.name) || input.relationshipType === 'HR') throw new WeeklyError(NOT_FOUND, 404)
 }
 
-/** Saves one row as a draft, or submits it once every question is scored. A submitted row changes only by submitting again. */
+/**
+ * Saves one row as a draft, or submits it once every question is scored. A submitted row changes only by submitting
+ * again. HR saves any row of its tables; a partner saves their own (see checkEvaluator).
+ */
 export async function saveTableRow(actor: WeeklyActor, input: TableRowInput, now: Date): Promise<{ status: FormStatusValue }> {
-  assertHr(actor)
-  await checkEvaluator(actor, input)
+  const actorRole = await checkEvaluator(actor, input)
   const scope = await scopeFor(input.periodId, now)
   if (!scope) throw new WeeklyError('There is no weekly quarter running', 409)
   // Locked first: a closed earlier quarter says so, rather than that its forms are not open.
@@ -217,7 +277,7 @@ export async function saveTableRow(actor: WeeklyActor, input: TableRowInput, now
     }
     await writeFormRows(tx, input.evaluatorId, scope, unit, responses, input.submit ? now : null)
     await recordAudit(tx, {
-      cycleId: scope.cycle?.id, actorId: actor.id, actorRole: 'HR', action: input.submit ? 'TABLE_SUBMIT' : 'TABLE_SAVE', objectType: 'User', objectId: input.evaluateeId,
+      cycleId: scope.cycle?.id, actorId: actor.id, actorRole, action: input.submit ? 'TABLE_SUBMIT' : 'TABLE_SAVE', objectType: 'User', objectId: input.evaluateeId,
       after: { kind: input.kind, evaluatorId: input.evaluatorId, relationshipType: input.relationshipType },
     })
   }, { timeout: 30_000 })
@@ -226,9 +286,10 @@ export async function saveTableRow(actor: WeeklyActor, input: TableRowInput, now
 
 /**
  * Every unfinished end-of-quarter evaluation, for the close screen and the daily reminder. A partner's unfinished
- * evaluations make HR the ones to remind, since HR fills them in.
+ * evaluations keep HR on the daily reminder (HR can fill them in), and list the partner in `pendingPartnerIds`, who
+ * hear once that their tables are open rather than every day.
  */
-export async function formsProgress(periodId: string, now: Date = new Date()): Promise<{ total: number; done: number; pendingEvaluatorIds: string[] }> {
+export async function formsProgress(periodId: string, now: Date = new Date()): Promise<{ total: number; done: number; pendingEvaluatorIds: string[]; pendingPartnerIds: string[] }> {
   const assignments = await getResolvedEvaluationAssignments(periodId, { includeUsers: true })
   const partners = await partnerEvaluators()
   const partnerIds = new Set(partners.map((p) => p.id))
@@ -245,7 +306,7 @@ export async function formsProgress(periodId: string, now: Date = new Date()): P
     if (finished < units.length) pending.add(evaluatorId)
   }
   const scope = partners.length ? await scopeFor(periodId, now) : null
-  let partnersPending = false
+  const pendingPartners = new Set<string>()
   if (scope) {
     for (const partner of partners) {
       const mine = assignments.filter((a) => a.evaluatorId === partner.id)
@@ -257,10 +318,10 @@ export async function formsProgress(periodId: string, now: Date = new Date()): P
         const finished = rows.filter((r) => r.status === 'SUBMITTED').length
         total += rows.length
         done += finished
-        if (finished < rows.length) partnersPending = true
+        if (finished < rows.length) pendingPartners.add(partner.id)
       }
     }
   }
-  if (partnersPending) for (const hr of await prisma.user.findMany({ where: { role: 'HR' }, select: { id: true } })) pending.add(hr.id)
-  return { total, done, pendingEvaluatorIds: [...pending] }
+  if (pendingPartners.size > 0) for (const hr of await prisma.user.findMany({ where: { role: 'HR' }, select: { id: true } })) pending.add(hr.id)
+  return { total, done, pendingEvaluatorIds: [...pending], pendingPartnerIds: [...pendingPartners] }
 }
