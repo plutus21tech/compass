@@ -21,16 +21,16 @@ export async function GET(request: NextRequest) {
   }
 }
 
-const remindSchema = z.object({ action: z.literal('remind'), cycleId: z.string().min(1) }).strict()
+const remindSchema = z.object({ action: z.literal('remind'), cycleId: z.string().min(1), evaluatorId: z.string().min(1).optional() }).strict()
 
-/** HR sends everyone with open questions a reminder (at most once a day). */
+/** HR sends everyone with open questions, or one pending person, a reminder (at most once a day each). */
 export async function POST(request: NextRequest) {
   try {
     const user = await requireWeeklySession({ admin: true })
     await guardWeeklyMutation(request, user.id)
-    const { cycleId } = remindSchema.parse(await request.json())
+    const { cycleId, evaluatorId } = remindSchema.parse(await request.json())
     const appUrl = COMPASS_URL
-    return NextResponse.json({ success: true, ...(await sendHrReminders(actorFromUser(user), cycleId, new Date(), sendMail, appUrl)) })
+    return NextResponse.json({ success: true, ...(await sendHrReminders(actorFromUser(user), cycleId, new Date(), sendMail, appUrl, evaluatorId)) })
   } catch (error) {
     return weeklyErrorResponse(error)
   }

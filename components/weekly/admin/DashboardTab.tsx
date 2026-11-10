@@ -5,26 +5,13 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { PERSPECTIVE_LABELS } from '@/lib/weekly/perspectives'
-import { cn } from '@/lib/utils'
-import type { CoverageView, DashboardResponse } from '@/lib/weekly/view-types'
+import type { CoverageView, DashboardResponse, PendingEvaluatorView } from '@/lib/weekly/view-types'
 import { errorMessage, weeklyRequest } from '../weekly-api'
 import { CyclePicker, NoRound, useCycles } from './PeopleTab'
+import { RateBar } from './RateBar'
+import { WeekProgressTable } from './WeekProgressTable'
 
-const percent = (value: number | null) => (value === null ? '—' : `${Math.round(value * 100)}%`)
-
-/** A rate as a short bar and its percentage; low rates read amber so they stand out in a long table. */
-function RateBar({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-muted-foreground">—</span>
-  const tone = value >= 0.75 ? 'bg-emerald-500' : value >= 0.5 ? 'bg-primary' : 'bg-amber-500'
-  return (
-    <span className="flex items-center gap-2">
-      <span className="h-1.5 w-16 overflow-hidden rounded-full bg-muted" aria-hidden>
-        <span className={cn('block h-full origin-left rounded-full transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)]', tone)} style={{ transform: `scaleX(${Math.min(1, value)})` }} />
-      </span>
-      <span className="w-10 tabular-nums">{percent(value)}</span>
-    </span>
-  )
-}
+type RemindResult = { sent: number; recorded: number; skipped: number; failed: number }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -74,17 +61,34 @@ export function DashboardTab() {
   const { cycles, cycleId, setCycleId, loaded } = useCycles()
   const [data, setData] = useState<DashboardResponse | null>(null)
   const [reminding, setReminding] = useState(false)
+  const [remindingId, setRemindingId] = useState<string | null>(null)
 
   async function remind() {
     setReminding(true)
     try {
-      const result = await weeklyRequest<{ sent: number; recorded: number; skipped: number }>('/api/admin/weekly/dashboard', { method: 'POST', body: { action: 'remind', cycleId } })
+      const result = await weeklyRequest<RemindResult>('/api/admin/weekly/dashboard', { method: 'POST', body: { action: 'remind', cycleId } })
       const reached = result.sent + result.recorded
       toast.success(reached ? `Reminder sent to ${reached} ${reached === 1 ? 'person' : 'people'} with open questions` : 'Nobody new to remind today')
+      void load()
     } catch (e) {
       toast.error(errorMessage(e, 'Could not send the reminders'))
     } finally {
       setReminding(false)
+    }
+  }
+
+  async function remindOne(person: PendingEvaluatorView) {
+    setRemindingId(person.evaluator.id)
+    try {
+      const result = await weeklyRequest<RemindResult>('/api/admin/weekly/dashboard', { method: 'POST', body: { action: 'remind', cycleId, evaluatorId: person.evaluator.id } })
+      if (result.sent + result.recorded > 0) toast.success(`Reminder sent to ${person.evaluator.name}`)
+      else if (result.failed > 0) toast.error(`Could not email ${person.evaluator.name}`)
+      else toast.info(`${person.evaluator.name} was already reminded today, or has no email on file`)
+      void load()
+    } catch (e) {
+      toast.error(errorMessage(e, 'Could not send the reminder'))
+    } finally {
+      setRemindingId(null)
     }
   }
 
@@ -123,7 +127,7 @@ export function DashboardTab() {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <Section title="By week">
-          <ProgressTable label="Week" rows={data.byWeek.map((w) => ({ key: String(w.week), name: `Week ${w.week}`, asked: w.asked, answered: w.answered }))} />
+          <WeekProgressTable rows={data.byWeek} currentWeek={data.cycle.currentWeek} remindingId={remindingId} onRemind={(p) => void remindOne(p)} />
         </Section>
         <Section title="By department">
           <ProgressTable label="Department" rows={data.byDepartment.map((d) => ({ key: d.department, name: `${d.department} (${d.evaluators})`, asked: d.asked, answered: d.answered }))} />
