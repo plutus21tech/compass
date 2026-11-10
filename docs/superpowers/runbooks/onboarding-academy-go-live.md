@@ -98,8 +98,10 @@ Check afterwards: the tracker shows no legacy hire without a checklist.
 The seed is `prisma/seed-academy.ts` (`npm run seed:academy`). It refuses to run unless both variables are set:
 
 ```
-ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
+DATABASE_URL='<production URL, supplied by the owner>' ONBOARDING_ACADEMY_ENABLED=true ONBOARDING_ACADEMY_SEED_CONFIRM=yes npm run seed:academy
 ```
+
+As in step 4a, give `DATABASE_URL` explicitly on the command line. Never rely on an ambient `.env`. The seed prints "Seeding the Academy into database host: …" and carries straight on without pausing. So check the host inside the URL before pressing Enter, and stop it at once (Ctrl+C) if the printed host is not the one you meant.
 
 What it does, all re-runnable:
 
