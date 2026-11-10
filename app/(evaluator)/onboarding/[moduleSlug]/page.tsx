@@ -2,10 +2,8 @@ import { redirect } from 'next/navigation'
 import { ModulePage } from '@/components/academy/ModulePage'
 import { getSession } from '@/lib/auth'
 import { AcademyError } from '@/lib/academy/errors'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { loadModule, type ModuleView } from '@/lib/academy/service/course'
 import { prisma } from '@/lib/db'
-import LegacyModulePage from './LegacyModulePage'
 
 interface PageProps {
   params: Promise<{ moduleSlug: string }>
@@ -22,8 +20,6 @@ async function readModule(userId: string, slug: string): Promise<ModuleView | nu
 }
 
 export default async function OnboardingModuleRoute({ params }: PageProps) {
-  if (!isAcademyEnabled()) return <LegacyModulePage />
-
   const user = await getSession()
   if (!user) redirect('/login')
 

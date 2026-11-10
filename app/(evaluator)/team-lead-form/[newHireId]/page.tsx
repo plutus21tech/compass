@@ -55,7 +55,6 @@ export default function TeamLeadFormPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [newHire, setNewHire] = useState<NewHireSummary | null>(null)
-  const [academyEnabled, setAcademyEnabled] = useState(false)
   const [leadInputComplete, setLeadInputComplete] = useState(false)
   const [leadInput, setLeadInput] = useState<LeadInputData>(EMPTY_LEAD_INPUT)
   const [form, setForm] = useState<TeamLeadFormData>({
@@ -77,7 +76,6 @@ export default function TeamLeadFormPage() {
         throw new Error(data.error || 'Failed to load team lead form')
       }
       setNewHire(data.newHire)
-      setAcademyEnabled(data.academyEnabled === true)
       setLeadInputComplete(isLeadInputSubmitted(data.form))
       setLeadInput({
         roleExpectations: data.form?.roleExpectations || '',
@@ -119,7 +117,7 @@ export default function TeamLeadFormPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          ...(academyEnabled ? leadInput : {}),
+          ...leadInput,
           submit,
         }),
       })
@@ -145,7 +143,7 @@ export default function TeamLeadFormPage() {
   }
 
   // A form submitted before the Academy, or blanked by a later draft, can be submitted again.
-  const submitted = !!form.submittedAt && (!academyEnabled || leadInputComplete)
+  const submitted = !!form.submittedAt && leadInputComplete
 
   return (
     <div className="p-6 sm:p-8 max-w-4xl mx-auto">
@@ -218,9 +216,7 @@ export default function TeamLeadFormPage() {
             </div>
           </div>
 
-          {academyEnabled && (
-            <LeadInputFields value={leadInput} onChange={setLeadInput} />
-          )}
+          <LeadInputFields value={leadInput} onChange={setLeadInput} />
 
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => saveForm(false)} disabled={saving}>
@@ -231,7 +227,7 @@ export default function TeamLeadFormPage() {
             </Button>
           </div>
 
-          {academyEnabled && newHireId && <MyChecklist newHireId={newHireId} />}
+          {newHireId && <MyChecklist newHireId={newHireId} />}
         </CardContent>
       </Card>
       </motion.div>

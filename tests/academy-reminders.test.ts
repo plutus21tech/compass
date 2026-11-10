@@ -82,17 +82,14 @@ test('oldestOverdue uses the same rule as the module cards', () => {
 })
 
 test('the cron gate refuses a missing or wrong secret with 401, before anything else', () => {
-  const env = { CRON_SECRET: 'fictional-secret', ONBOARDING_ACADEMY_ENABLED: 'true' }
+  const env = { CRON_SECRET: 'fictional-secret' }
   assert.deepEqual(onboardingCronGate(null, env), { action: 'refuse', status: 401 })
   assert.deepEqual(onboardingCronGate('Bearer wrong', env), { action: 'refuse', status: 401 })
   assert.deepEqual(onboardingCronGate('Bearer fictional-secret', { ...env, CRON_SECRET: undefined }), { action: 'refuse', status: 401 })
-  assert.deepEqual(onboardingCronGate(null, { ...env, ONBOARDING_ACADEMY_ENABLED: 'false' }), { action: 'refuse', status: 401 })
 })
 
-test('the cron gate skips with the flag off and runs with it on', () => {
-  const env = { CRON_SECRET: 'fictional-secret', ONBOARDING_ACADEMY_ENABLED: 'false' }
-  assert.deepEqual(onboardingCronGate('Bearer fictional-secret', env), { action: 'skip' })
-  assert.deepEqual(onboardingCronGate('Bearer fictional-secret', { ...env, ONBOARDING_ACADEMY_ENABLED: 'true' }), { action: 'run' })
+test('the cron gate runs with the right secret', () => {
+  assert.deepEqual(onboardingCronGate('Bearer fictional-secret', { CRON_SECRET: 'fictional-secret' }), { action: 'run' })
 })
 
 test('each notice names a person, escapes them, and links to Compass', () => {
@@ -165,9 +162,9 @@ test('owners are chased only for what they can clear', () => {
   assert.equal(isOwnerChasable(item('linkedin-update', 'LINKEDIN_VERIFIED'), true), true)
 })
 
-test('the owner panels show only with the flag on', () => {
+test('the owner panels show on the lead and security pages', () => {
   for (const page of ['app/(evaluator)/team-lead-form/[newHireId]/page.tsx', 'app/(security)/security/onboarding/[newHireId]/page.tsx']) {
-    assert.match(read(page), /academyEnabled && newHireId && <MyChecklist newHireId=\{newHireId\} \/>/, page)
+    assert.match(read(page), /newHireId && <MyChecklist newHireId=\{newHireId\} \/>/, page)
   }
 })
 

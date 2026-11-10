@@ -2,7 +2,6 @@ import { cookies, headers } from 'next/headers'
 import { getIronSession } from 'iron-session'
 import { prisma } from '@/lib/db'
 import { sessionOptions, SessionData } from '@/lib/session'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { readLockoutPath, shouldBlockSession } from '@/lib/academy/lockout'
 
 export type SafeUser = {
@@ -34,11 +33,10 @@ export type SafeUser = {
   avatarAccessories: unknown
 }
 
-/** Reads the request only for a hire still in onboarding with the Academy on; nobody else pays for it. */
+/** Reads the request only for a hire still in onboarding; nobody else pays for it. */
 async function isLockedOut(onboardingCompleted: boolean): Promise<boolean> {
-  const enabled = isAcademyEnabled()
-  if (!enabled || onboardingCompleted) return false
-  return shouldBlockSession({ enabled, onboardingCompleted, pathname: await readLockoutPath(headers) })
+  if (onboardingCompleted) return false
+  return shouldBlockSession({ onboardingCompleted, pathname: await readLockoutPath(headers) })
 }
 
 export async function getSession(): Promise<SafeUser | null> {

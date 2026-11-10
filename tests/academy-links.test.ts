@@ -116,9 +116,8 @@ const adminConfig: SidebarConfig = {
 const onboardingConfig: SidebarConfig = { items: [{ label: 'Onboarding', href: '/onboarding', icon }], groups: [] }
 const icons = { library: icon, contacts: icon, links: icon }
 
-test('withAcademyNav adds six items to the admin Onboarding group only when enabled', () => {
-  assert.equal(withAcademyNav(adminConfig, false, icons), adminConfig)
-  const next = withAcademyNav(adminConfig, true, icons)
+test('withAcademyNav adds six items to the admin Onboarding group', () => {
+  const next = withAcademyNav(adminConfig, icons)
   assert.deepEqual(
     next.groups[0].items.map((i) => i.href),
     [
@@ -131,21 +130,20 @@ test('withAcademyNav adds six items to the admin Onboarding group only when enab
       '/admin/onboarding/academy/videos',
     ],
   )
-  assert.equal(withAcademyNav(next, true, icons).groups[0].items.length, 7)
+  assert.equal(withAcademyNav(next, icons).groups[0].items.length, 7)
   assert.equal(adminConfig.groups[0].items.length, 1)
 })
 
 test('withAcademyNav leaves non-admin sidebars alone', () => {
-  assert.equal(withAcademyNav(onboardingConfig, true, icons), onboardingConfig)
+  assert.equal(withAcademyNav(onboardingConfig, icons), onboardingConfig)
 })
 
-test('withAcademyNav points the Modules item at the new editor, and off it stays', () => {
+test('withAcademyNav points the Modules item at the new editor', () => {
   const config: SidebarConfig = {
     items: [{ label: 'Dashboard', href: '/admin', icon }],
     groups: [{ label: 'Onboarding', items: [{ label: 'Modules', href: '/admin/onboarding/modules', icon }] }],
   }
-  assert.equal(withAcademyNav(config, false, icons), config)
-  const hrefs = withAcademyNav(config, true, icons).groups[0].items.map((i) => i.href)
+  const hrefs = withAcademyNav(config, icons).groups[0].items.map((i) => i.href)
   assert.equal(hrefs[0], '/admin/onboarding/academy/modules')
   assert.equal(hrefs.includes('/admin/onboarding/modules'), false)
   assert.equal(config.groups[0].items[0].href, '/admin/onboarding/modules')

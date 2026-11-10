@@ -10,9 +10,8 @@ import {
   encryptSensitivePayrollProfileFields,
 } from '@/lib/payroll/sensitive-fields'
 import { isPlutusEmail } from '@/lib/onboarding'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
-import { adminAttributeGate, formatZodIssues, mergeAttributePatch, shouldCopyNewHireSetup } from '@/lib/academy/profile-input'
+import { adminAttributeGate, formatZodIssues, mergeAttributePatch } from '@/lib/academy/profile-input'
 import {
   ATTRIBUTE_SELECT,
   copySetupToUser,
@@ -176,7 +175,6 @@ export async function GET(_request: NextRequest) {
     }
 
     await ensurePayrollMasterDefaults()
-    const academyEnabled = isAcademyEnabled()
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -190,7 +188,7 @@ export async function GET(_request: NextRequest) {
         benefitCategoryId: true,
         teamTag: true,
         createdAt: true,
-        ...(academyEnabled ? ATTRIBUTE_SELECT : {}),
+        ...ATTRIBUTE_SELECT,
         benefitCategory: {
           select: {
             id: true,
@@ -263,11 +261,10 @@ export async function GET(_request: NextRequest) {
     ])
 
     return NextResponse.json({
-      academyEnabled,
       users: users.map((entry) => ({
         ...entry,
         payrollProfile: decryptSensitivePayrollProfileFields(entry.payrollProfile),
-        ...(academyEnabled ? academyFields(entry) : {}),
+        ...academyFields(entry),
       })),
       payrollMeta: {
         departments: payrollDepartments,
@@ -418,9 +415,7 @@ export async function POST(request: NextRequest) {
           },
         })
 
-        if (shouldCopyNewHireSetup(isAcademyEnabled())) {
-          await copySetupToUser(tx, linkedNewHire.id, createdUser.id)
-        }
+        await copySetupToUser(tx, linkedNewHire.id, createdUser.id)
 
         const modules = await tx.onboardingModule.findMany({
           where: { isActive: true },
@@ -472,8 +467,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const body: unknown = await request.json()
-    // Off, the attribute keys are unknown keys and ignored, as before. On, only HR may send them.
-    const attributeGate = adminAttributeGate(isAcademyEnabled(), user.role, body)
+    // Only HR may send the attribute keys.
+    const attributeGate = adminAttributeGate(user.role, body)
     const attributeRequested = attributeGate === 'allow'
     if (attributeGate === 'forbidden') {
       return NextResponse.json({ error: 'Only HR can change onboarding attributes' }, { status: 403 })

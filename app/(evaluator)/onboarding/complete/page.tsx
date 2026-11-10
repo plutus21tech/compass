@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { CompletionScreen } from '@/components/academy/CompletionScreen'
 import { getSession } from '@/lib/auth'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { loadCompletion } from '@/lib/academy/service/completion'
 import { loadHireFacts } from '@/lib/academy/service/context'
 import { timeZoneFor } from '@/lib/academy/time'
@@ -11,8 +10,6 @@ const HOME_HREF = '/onboarding'
 
 /** Decided by loadCompletion alone: anyone who hasn't finished the Academy goes home. */
 export default async function OnboardingCompleteRoute() {
-  if (!isAcademyEnabled()) redirect(HOME_HREF)
-
   const user = await getSession()
   if (!user) redirect('/login')
 

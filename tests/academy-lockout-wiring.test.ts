@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // A source check: the lockout only works if getSession consults it and the middleware feeds it the path.
@@ -26,7 +26,6 @@ test('isLockedOut reads the forwarded path and applies shouldBlockSession', () =
   const body = bodyOf(read('lib/auth.ts'), 'async function isLockedOut(')
   assert.match(body, /readLockoutPath\(headers\)/)
   assert.match(body, /shouldBlockSession\(/)
-  assert.match(body, /isAcademyEnabled\(\)/)
 })
 
 test('the middleware sets the path header on every request it lets through', () => {
@@ -38,18 +37,15 @@ test('the middleware sets the path header on every request it lets through', () 
   assert.equal((source.match(/return nextWithPathname\(request\)/g) ?? []).length, 2)
 })
 
-test('the quiz reset clears attempts with the flag on and keeps the legacy path with it off', () => {
+test('the quiz reset only clears attempts, so it can never lock anyone out', () => {
   const source = read('app/api/admin/onboarding/quiz-attempts/reset/route.ts')
-  assert.match(source, /if \(academyEnabled\) \{\s*await clearQuizAttempts\(prisma, userId\)\s*return /)
-  assert.ok(source.indexOf('clearQuizAttempts(prisma') < source.indexOf('prisma.$transaction'), 'the Academy path returns before the legacy one')
-  assert.match(source, /data: quizResetUserData\(academyEnabled\)/)
+  assert.match(source, /await clearQuizAttempts\(prisma, userId\)/)
+  assert.doesNotMatch(source, /onboardingCompleted:/)
+  assert.doesNotMatch(source, /prisma\.\$transaction/)
 })
 
-test('with the flag on, the legacy progress route refuses, so an assigned module keeps its rule and signature', () => {
-  const source = read('app/api/onboarding/progress/route.ts')
-  const post = source.slice(source.indexOf('export async function POST'))
-  assert.match(post, /if \(isAcademyEnabled\(\)\) \{\s*return NextResponse\.json\(\{ error: [^}]+\}, \{ status: 409 \}\)/)
-  assert.ok(post.indexOf('isAcademyEnabled()') < post.indexOf('onboardingProgress.update'))
+test('the legacy progress route is gone, so an assigned module keeps its rule and signature', () => {
+  assert.equal(existsSync(join(__dirname, '..', 'app/api/onboarding/progress/route.ts')), false)
 })
 
 test('only a course row tells OA that payment setup is done', () => {

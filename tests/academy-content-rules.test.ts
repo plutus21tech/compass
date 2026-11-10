@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { OnboardingCompletionRule } from '@prisma/client'
 import { parseBlocks, type Block } from '../lib/academy/blocks'
@@ -13,7 +13,6 @@ import {
   newBlock,
   newItemKey,
   publishProblems,
-  withoutDraft,
 } from '../lib/academy/content-rules'
 import { ACADEMY_MODULES } from '../prisma/seed-academy-data'
 import { ACADEMY_MODULE_BLOCKS } from '../prisma/seed-academy-content'
@@ -175,20 +174,6 @@ test('a draft that changes or adds a fixed block is caught', () => {
   assert.equal(fixedBlocksChanged(live, [{ type: 'dashboardLink', label: 'Open' }]), true, 'added dashboard link')
 })
 
-test('the legacy module payload carries no draft', () => {
-  const stripped = withoutDraft({ id: 'a', title: 'B', draftBlocks: [], draftDetails: {} })
-  assert.deepEqual(stripped, { id: 'a', title: 'B' })
-})
-
-test('both legacy module routes strip the draft from everything they send', () => {
-  const list = readFileSync(join(__dirname, '..', 'app/api/onboarding/modules/route.ts'), 'utf8')
-  assert.match(list, /\.\.\.withoutDraft\(module\)/)
-  assert.doesNotMatch(list, /\.\.\.module,/)
-  const one = readFileSync(join(__dirname, '..', 'app/api/onboarding/modules/[id]/route.ts'), 'utf8')
-  assert.match(one, /module: withoutDraft\(module\)/)
-  assert.match(one, /module: withoutDraft\(updated\)/)
-})
-
 test('every kind of condition reads as plain words', () => {
   assert.equal(describeCondition({ clientAccountSet: true }), 'Only shown to people with a client account.')
   assert.equal(
@@ -233,22 +218,15 @@ test('module details need a title, sensible minutes and short headline parts', (
   assert.equal(moduleDetailsSchema.safeParse({ ...good, slug: 'moved' }).success, false)
 })
 
-test('with the flag on the legacy PUT refuses before it reads or writes, and off it is unchanged', () => {
-  const source = readFileSync(join(__dirname, '..', 'app/api/onboarding/modules/[id]/route.ts'), 'utf8')
-  const put = source.slice(source.indexOf('export async function PUT'))
-  const flag = put.indexOf('isAcademyEnabled()')
-  assert.ok(flag > 0)
-  assert.ok(flag > put.indexOf('canManageOnboarding'))
-  assert.ok(flag < put.indexOf('findModuleByIdOrSlug'))
-  assert.match(put, /Use the new module editor\./)
-  assert.match(put, /blocksModuleSwitch\(module, isActive\)/)
+test('the legacy module routes are gone, so nothing sends a module row with its draft', () => {
+  for (const file of ['app/api/onboarding/modules/route.ts', 'app/api/onboarding/modules/[id]/route.ts']) {
+    assert.equal(existsSync(join(__dirname, '..', file)), false, file)
+  }
 })
 
-test('with the flag on the old modules page redirects to the new editor', () => {
+test('the old modules page redirects to the new editor', () => {
   const source = readFileSync(join(__dirname, '..', 'app/(hr)/admin/onboarding/modules/page.tsx'), 'utf8')
-  assert.match(source, /isAcademyEnabled\(\)/)
   assert.match(source, /redirect\('\/admin\/onboarding\/academy\/modules'\)/)
-  assert.match(source, /force-dynamic/)
 })
 
 test('the publish route mails a re-read after the commit and has time to', () => {

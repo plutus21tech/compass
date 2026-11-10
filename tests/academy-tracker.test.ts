@@ -180,9 +180,9 @@ test('a checklist tick is guarded and goes through the permission check', () => 
   assert.equal(source.includes('tickItem('), false)
 })
 
-test('the legacy quiz reset is guarded only with the flag on', () => {
+test('the quiz reset is guarded', () => {
   const source = route('quiz-attempts/reset')
-  assert.match(source, /if \(academyEnabled\) await guardAcademyMutation\(request, user\.id\)/)
+  assert.match(source, /await guardAcademyMutation\(request, user\.id\)/)
   assert.match(source, /error instanceof SameOriginError/)
 })
 

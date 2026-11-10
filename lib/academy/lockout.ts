@@ -13,7 +13,6 @@ const ALLOWED_PREFIXES: readonly string[] = [
   '/api/handbook',
 ]
 
-// Legacy /api/onboarding/quiz, /progress and /modules stay out: a hire could finish onboarding through them.
 const ALLOWED_EXACT: readonly string[] = [
   '/api/onboarding/payout',
   '/api/users/me',
@@ -34,37 +33,22 @@ export function isPathAllowedWhileLocked(pathname: string): boolean {
 }
 
 export interface SessionBlockInput {
-  enabled: boolean
   onboardingCompleted: boolean
   pathname: string | null
 }
 
-export interface LockInput {
-  enabled: boolean
-  onboardingCompleted: boolean
-}
-
-/** Only a hire still in onboarding is ever locked, and only with the Academy on (D2). */
-export function isLockedUser({ enabled, onboardingCompleted }: LockInput): boolean {
-  return enabled && !onboardingCompleted
+/** Only a hire still in onboarding is ever locked (D2). */
+export function isLockedUser({ onboardingCompleted }: { onboardingCompleted: boolean }): boolean {
+  return !onboardingCompleted
 }
 
 /** An unknown path fails closed for a locked user. */
-export function shouldBlockSession({ enabled, onboardingCompleted, pathname }: SessionBlockInput): boolean {
-  if (!isLockedUser({ enabled, onboardingCompleted })) return false
+export function shouldBlockSession({ onboardingCompleted, pathname }: SessionBlockInput): boolean {
+  if (!isLockedUser({ onboardingCompleted })) return false
   return pathname === null || !isPathAllowedWhileLocked(pathname)
 }
 
-/**
- * The user update behind HR's quiz reset. With the Academy on it must not touch onboardingCompleted:
- * that would lock an existing employee out, and the legacy quiz that used to clear it is refused.
- */
-export function quizResetUserData(academyEnabled: boolean): { onboardingCompleted?: false } {
-  return academyEnabled ? {} : { onboardingCompleted: false }
-}
-
 export interface AnotherUserActionInput {
-  enabled: boolean
   onboardingCompleted: boolean
   actorId: string
   /** Unvalidated: it comes straight from the request. */
@@ -72,8 +56,8 @@ export interface AnotherUserActionInput {
 }
 
 /** For allowlisted routes that can also touch other accounts: a hire still in onboarding keeps to their own. */
-export function blocksActionOnAnotherUser({ enabled, onboardingCompleted, actorId, targetUserId }: AnotherUserActionInput): boolean {
-  return isLockedUser({ enabled, onboardingCompleted }) && targetUserId !== actorId
+export function blocksActionOnAnotherUser({ onboardingCompleted, actorId, targetUserId }: AnotherUserActionInput): boolean {
+  return isLockedUser({ onboardingCompleted }) && targetUserId !== actorId
 }
 
 /** Takes next/headers' `headers` as an argument so this file stays free of server imports. */
@@ -86,11 +70,8 @@ export async function readLockoutPath(readHeaders: () => Promise<Pick<Headers, '
   }
 }
 
-/**
- * The client redirect for a locked user, for pages. `academyEnabled` is null until the layout
- * has heard from the server: the handbook waits for that, or a hire would bounce off it.
- */
-export function shouldRedirectLockedPage(pathname: string, academyEnabled: boolean | null): boolean {
+/** The client redirect for a locked user, for pages: the course, the profile and the Company Dashboard stay open. */
+export function shouldRedirectLockedPage(pathname: string): boolean {
   if (pathname.startsWith('/onboarding') || pathname.startsWith('/profile')) return false
-  return !(isUnder(pathname, '/handbook') && academyEnabled !== false)
+  return !isUnder(pathname, '/handbook')
 }

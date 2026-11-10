@@ -70,7 +70,6 @@ export function SidebarLayout({
   // Security Checks entries appear only when the module is on.
   const [securityChecksAccess, setSecurityChecksAccess] = useState<SecurityChecksNavAccess>({ enabled: false, console: false })
   // Academy entries appear only when the flag is on. Null until /api/users/me answers.
-  const [academyEnabled, setAcademyEnabled] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -122,10 +121,6 @@ export function SidebarLayout({
             setSecurityChecksAccess({ enabled: Boolean(body?.data?.enabled), console: Boolean(body?.data?.capabilities?.console) }),
           )
           .catch(() => setSecurityChecksAccess({ enabled: false, console: false }))
-        fetch('/api/users/me')
-          .then((res) => (res.ok ? res.json() : null))
-          .then((body: { academyEnabled?: boolean } | null) => setAcademyEnabled(body?.academyEnabled === true))
-          .catch(() => setAcademyEnabled(false))
         setLoading(false)
       })
       .catch(() => router.push('/login'))
@@ -135,10 +130,10 @@ export function SidebarLayout({
     if (!user || loading) return
     if (user.onboardingCompleted !== false) return
 
-    if (shouldRedirectLockedPage(pathname, academyEnabled)) {
+    if (shouldRedirectLockedPage(pathname)) {
       router.push('/onboarding')
     }
-  }, [academyEnabled, loading, pathname, router, user])
+  }, [loading, pathname, router, user])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -199,10 +194,10 @@ export function SidebarLayout({
       : withSecurityChecksNav(sidebarConfigWithWeekly, securityChecksAccess, ShieldCheck)
   const finalSidebarConfig =
     baseSidebarConfig === onboardingSidebarConfig
-      ? withLockedHandbookNav(sidebarConfigWithSecurity, academyEnabled === true, BookOpen)
+      ? withLockedHandbookNav(sidebarConfigWithSecurity, BookOpen)
       : withOaPaymentNav(
-          withAcademyNav(sidebarConfigWithSecurity, academyEnabled === true, { library: BookOpen, contacts: Users, links: Link2, videos: Clapperboard }),
-          academyEnabled === true && user?.role === 'OA',
+          withAcademyNav(sidebarConfigWithSecurity, { library: BookOpen, contacts: Users, links: Link2, videos: Clapperboard }),
+          user?.role === 'OA',
           CreditCard,
         )
 

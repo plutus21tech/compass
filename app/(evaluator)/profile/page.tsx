@@ -246,7 +246,7 @@ export default function ProfilePage() {
     fetch('/api/users/me')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data || data.academyEnabled !== true || !data.user) return
+        if (cancelled || !data || !data.user) return
         setAcademy(data.user)
         setDiscordUsername(data.user.discordUsername || '')
         setLinkedinUrl(data.user.linkedinUrl || '')

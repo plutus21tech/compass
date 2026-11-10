@@ -1,14 +1,12 @@
 import { redirect } from 'next/navigation'
 import { QuizFlow } from '@/components/academy/quiz/QuizFlow'
 import { AcademyError } from '@/lib/academy/errors'
-import { isAcademyEnabled } from '@/lib/academy/flag'
 import { loadCompletion } from '@/lib/academy/service/completion'
 import { loadHireFacts } from '@/lib/academy/service/context'
 import { loadQuiz, type QuizView } from '@/lib/academy/service/quiz'
 import { timeZoneFor } from '@/lib/academy/time'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import LegacyQuizPage from './LegacyQuizPage'
 
 /** Null means no released course. Anything else is a real failure. */
 async function readQuiz(userId: string): Promise<QuizView | null> {
@@ -21,8 +19,6 @@ async function readQuiz(userId: string): Promise<QuizView | null> {
 }
 
 export default async function OnboardingQuizRoute() {
-  if (!isAcademyEnabled()) return <LegacyQuizPage />
-
   const user = await getSession()
   if (!user) redirect('/login')
 

@@ -71,9 +71,8 @@ test('withAcademyNav adds the quiz and checklist editors and replaces the old qu
     items: [{ label: 'Dashboard', href: '/admin', icon }],
     groups: [{ label: 'Onboarding', items: [{ label: 'Quiz', href: '/admin/onboarding/quiz', icon }] }],
   }
-  const hrefs = withAcademyNav(config, true, icons).groups[0].items.map((i) => i.href)
+  const hrefs = withAcademyNav(config, icons).groups[0].items.map((i) => i.href)
   assert.ok(hrefs.includes('/admin/onboarding/academy/quiz'))
   assert.ok(hrefs.includes('/admin/onboarding/academy/checklist'))
   assert.ok(!hrefs.includes('/admin/onboarding/quiz'))
-  assert.equal(withAcademyNav(config, false, icons), config)
 })

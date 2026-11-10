@@ -38,14 +38,6 @@ export type CourseModule = OnboardingModule & {
 export const isCourseModule = (m: OnboardingModule): m is CourseModule =>
   m.phase !== null && m.completionRule !== null && m.currentVersionId !== null
 
-/**
- * For the legacy module editor, whose page sends `isActive` on every save, so only a change counts.
- * Switching a course module off would open the quiz early, and back on would strand a hire on a locked row.
- */
-export function blocksModuleSwitch(module: OnboardingModule, isActive: boolean | undefined): boolean {
-  return isActive !== undefined && isActive !== module.isActive && isCourseModule(module)
-}
-
 /** Active modules with content, in order. Legacy modules have no rule or version and never count. */
 export async function listCourseModules(db: Db): Promise<CourseModule[]> {
   const modules = await db.onboardingModule.findMany({ where: { isActive: true }, orderBy: { orderIndex: 'asc' } })

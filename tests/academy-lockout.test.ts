@@ -10,7 +10,6 @@ import {
   blocksActionOnAnotherUser,
   isLockedUser,
   isPathAllowedWhileLocked,
-  quizResetUserData,
   readLockoutPath,
   shouldBlockSession,
   shouldRedirectLockedPage,
@@ -113,7 +112,7 @@ test('legacy onboarding routes are refused: a hire could otherwise finish the ol
     '/api/onboarding/config',
   ]) {
     assert.equal(isPathAllowedWhileLocked(path), false, path)
-    assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: path }), true, path)
+    assert.equal(shouldBlockSession({ onboardingCompleted: false, pathname: path }), true, path)
   }
 })
 
@@ -137,61 +136,45 @@ test('under /api/onboarding only academy and payout are open, for every route on
   }
 })
 
-test('shouldBlockSession: flag off never blocks', () => {
-  for (const pathname of ['/api/leave', '/dashboard', null]) {
-    assert.equal(shouldBlockSession({ enabled: false, onboardingCompleted: false, pathname }), false)
-  }
-})
 
 test('shouldBlockSession: a completed user is never blocked (staff assigned one module included)', () => {
   for (const pathname of ['/api/leave', '/dashboard', null]) {
-    assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: true, pathname }), false)
+    assert.equal(shouldBlockSession({ onboardingCompleted: true, pathname }), false)
   }
 })
 
 test('shouldBlockSession: a locked user', () => {
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '/api/leave' }), true)
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: null }), true)
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '' }), true)
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '/onboarding' }), false)
-  assert.equal(shouldBlockSession({ enabled: true, onboardingCompleted: false, pathname: '/api/auth/logout' }), false)
+  assert.equal(shouldBlockSession({ onboardingCompleted: false, pathname: '/api/leave' }), true)
+  assert.equal(shouldBlockSession({ onboardingCompleted: false, pathname: null }), true)
+  assert.equal(shouldBlockSession({ onboardingCompleted: false, pathname: '' }), true)
+  assert.equal(shouldBlockSession({ onboardingCompleted: false, pathname: '/onboarding' }), false)
+  assert.equal(shouldBlockSession({ onboardingCompleted: false, pathname: '/api/auth/logout' }), false)
 })
 
 test('blocksActionOnAnotherUser: a locked user can act only on their own account', () => {
-  const locked = { enabled: true, onboardingCompleted: false, actorId: 'hire' }
+  const locked = { onboardingCompleted: false, actorId: 'hire' }
   assert.equal(blocksActionOnAnotherUser({ ...locked, targetUserId: 'someone-else' }), true)
   assert.equal(blocksActionOnAnotherUser({ ...locked, targetUserId: 'hire' }), false)
 })
 
 test('blocksActionOnAnotherUser: a missing or malformed target is not treated as the user themselves', () => {
-  const locked = { enabled: true, onboardingCompleted: false, actorId: 'hire' }
+  const locked = { onboardingCompleted: false, actorId: 'hire' }
   for (const targetUserId of [undefined, null, '', ['hire'], { id: 'hire' }]) {
     assert.equal(blocksActionOnAnotherUser({ ...locked, targetUserId }), true)
   }
 })
 
 test('blocksActionOnAnotherUser: a completed user is unaffected', () => {
-  assert.equal(blocksActionOnAnotherUser({ enabled: true, onboardingCompleted: true, actorId: 'hr', targetUserId: 'someone-else' }), false)
+  assert.equal(blocksActionOnAnotherUser({ onboardingCompleted: true, actorId: 'hr', targetUserId: 'someone-else' }), false)
 })
 
-test('blocksActionOnAnotherUser: flag off changes nothing', () => {
-  assert.equal(blocksActionOnAnotherUser({ enabled: false, onboardingCompleted: false, actorId: 'hr', targetUserId: 'someone-else' }), false)
-})
 
 test('isLockedUser: decides the password DELETE, which is refused for a locked user whatever the target', () => {
-  assert.equal(isLockedUser({ enabled: true, onboardingCompleted: false }), true)
-  assert.equal(isLockedUser({ enabled: true, onboardingCompleted: true }), false)
-  assert.equal(isLockedUser({ enabled: false, onboardingCompleted: false }), false)
-  assert.equal(isLockedUser({ enabled: false, onboardingCompleted: true }), false)
+  assert.equal(isLockedUser({ onboardingCompleted: false }), true)
+  assert.equal(isLockedUser({ onboardingCompleted: true }), false)
 })
 
-test('quizResetUserData: flag on leaves onboardingCompleted out, so a reset can never lock anyone', () => {
-  assert.equal('onboardingCompleted' in quizResetUserData(true), false)
-})
 
-test('quizResetUserData: flag off keeps the legacy reset', () => {
-  assert.deepEqual(quizResetUserData(false), { onboardingCompleted: false })
-})
 
 test('readLockoutPath returns the header, and null when it is absent or unreadable', async () => {
   const withHeader = async () => new Headers({ [ACADEMY_PATH_HEADER]: '/onboarding' })
@@ -236,27 +219,17 @@ test('middleware still refuses requests with no session cookie', () => {
   assert.equal(new URL(page.headers.get('location') ?? '').pathname, '/login')
 })
 
-test('the client redirect: flag off behaves as today', () => {
-  assert.equal(shouldRedirectLockedPage('/onboarding', false), false)
-  assert.equal(shouldRedirectLockedPage('/onboarding/welcome', false), false)
-  assert.equal(shouldRedirectLockedPage('/profile', false), false)
-  assert.equal(shouldRedirectLockedPage('/handbook', false), true)
-  assert.equal(shouldRedirectLockedPage('/handbook/leave-policy', false), true)
-  assert.equal(shouldRedirectLockedPage('/dashboard', false), true)
+
+test('the client redirect: the course, profile and handbook stay open, whole segment only', () => {
+  assert.equal(shouldRedirectLockedPage('/onboarding'), false)
+  assert.equal(shouldRedirectLockedPage('/onboarding/welcome'), false)
+  assert.equal(shouldRedirectLockedPage('/profile'), false)
+  assert.equal(shouldRedirectLockedPage('/handbook'), false)
+  assert.equal(shouldRedirectLockedPage('/handbook/leave-policy'), false)
+  assert.equal(shouldRedirectLockedPage('/handbookish'), true)
+  assert.equal(shouldRedirectLockedPage('/dashboard'), true)
 })
 
-test('the client redirect: flag on allows the handbook, whole segment only', () => {
-  assert.equal(shouldRedirectLockedPage('/handbook', true), false)
-  assert.equal(shouldRedirectLockedPage('/handbook/leave-policy', true), false)
-  assert.equal(shouldRedirectLockedPage('/handbookish', true), true)
-  assert.equal(shouldRedirectLockedPage('/dashboard', true), true)
-})
-
-test('the client redirect: while the flag is unknown it waits on the handbook and nowhere else', () => {
-  assert.equal(shouldRedirectLockedPage('/handbook/leave-policy', null), false)
-  assert.equal(shouldRedirectLockedPage('/dashboard', null), true)
-  assert.equal(shouldRedirectLockedPage('/onboarding', null), false)
-})
 
 const icon = (() => null) as unknown as NavItem['icon']
 const onboardingSidebar: SidebarConfig = {
@@ -267,9 +240,8 @@ const onboardingSidebar: SidebarConfig = {
   groups: [],
 }
 
-test('the onboarding sidebar gains Company Dashboard only when the flag is on', () => {
-  assert.equal(withLockedHandbookNav(onboardingSidebar, false, icon), onboardingSidebar)
-  const next = withLockedHandbookNav(onboardingSidebar, true, icon)
+test('the onboarding sidebar gains Company Dashboard', () => {
+  const next = withLockedHandbookNav(onboardingSidebar, icon)
   assert.deepEqual(next.items.map((item) => [item.label, item.href]), [
     ['Onboarding', '/onboarding'],
     ['Company Dashboard', '/handbook'],

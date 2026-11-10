@@ -17,7 +17,6 @@ import {
   contactFieldError,
   formatZodIssues,
   selfAttributeGate,
-  shouldCopyNewHireSetup,
   hasAttributeKeys,
   mergeAttributePatch,
   selfContactExtrasShape,
@@ -88,26 +87,18 @@ test('discordUsername is trimmed, tag-stripped and empty clears', () => {
   assert.throws(() => extras.parse({ discordUsername: 'x'.repeat(101) }), ZodError)
 })
 
-test('adminAttributeGate: off or no keys ignored; HR allowed; others forbidden', () => {
+test('adminAttributeGate: no keys ignored; HR allowed; others forbidden', () => {
   const body = { name: 'x', workMode: 'OFFICE' }
-  assert.equal(adminAttributeGate(false, 'EMPLOYEE', body), 'ignore')
-  assert.equal(adminAttributeGate(false, 'HR', body), 'ignore')
-  assert.equal(adminAttributeGate(true, 'HR', { name: 'x' }), 'ignore')
-  assert.equal(adminAttributeGate(true, 'HR', body), 'allow')
-  for (const role of ['OA', 'EMPLOYEE', 'SECURITY', 'EXECUTION']) assert.equal(adminAttributeGate(true, role, body), 'forbidden', role)
+  assert.equal(adminAttributeGate('HR', { name: 'x' }), 'ignore')
+  assert.equal(adminAttributeGate('HR', body), 'allow')
+  for (const role of ['OA', 'EMPLOYEE', 'SECURITY', 'EXECUTION']) assert.equal(adminAttributeGate(role, body), 'forbidden', role)
 })
 
-test('selfAttributeGate: 403 on any attribute key only when the flag is on', () => {
+test('selfAttributeGate: 403 on any attribute key', () => {
   for (const key of ATTRIBUTE_KEYS) {
-    assert.equal(selfAttributeGate(true, { [key]: null }), 'forbidden', key)
-    assert.equal(selfAttributeGate(false, { [key]: null }), 'ignore', key)
+    assert.equal(selfAttributeGate({ [key]: null }), 'forbidden', key)
   }
-  assert.equal(selfAttributeGate(true, { discordUsername: 'a', linkedinUrl: null }), 'ignore')
-})
-
-test('shouldCopyNewHireSetup follows the flag', () => {
-  assert.equal(shouldCopyNewHireSetup(true), true)
-  assert.equal(shouldCopyNewHireSetup(false), false)
+  assert.equal(selfAttributeGate({ discordUsername: 'a', linkedinUrl: null }), 'ignore')
 })
 
 test('formatZodIssues joins path and message', () => {

@@ -114,7 +114,7 @@ test('a draft that blanks a required goal after submit is not ready', ACADEMY_DB
     data: { ...completeLeadInput, submittedAt: new Date() },
   })
   assert.equal((await loadSetup(prisma, NEW_HIRE_ID)).setup.leadInputSubmitted, true)
-  const draft = buildLeadDraftData(true, { week1Goal: '' })
+  const draft = buildLeadDraftData({ week1Goal: '' })
   assert.ok(draft.ok)
   if (draft.ok) await prisma.teamLeadForm.update({ where: { newHireId: NEW_HIRE_ID }, data: draft.data })
   assert.equal((await loadSetup(prisma, NEW_HIRE_ID)).setup.leadInputSubmitted, false)
