@@ -21,6 +21,7 @@ import { addWorkingDays } from '../working-days'
 import { recordAudit } from './audit'
 import { assertHr, loadPeople, personRef, type WeeklyActor } from './context'
 import { WeeklyError } from './errors'
+import { decisionBellForOther, decisionBellForRequester } from './bell-notices'
 import { deliverOnce, deliverSafely, hrUserIds, type WeeklyEmailMessage, type WeeklySendMail, type WeeklySendResult } from './notifications'
 import { periodRoundStage } from './round'
 
@@ -326,10 +327,12 @@ async function decide(request: PeerChangeRequest, approved: boolean, note: strin
   await deliverSafely('mapping decision', () => [
     {
       userId: request.requesterId, kind: 'peer-request-outcome', dedupeKey: `peer-request-outcome:${request.id}`,
+      bell: decisionBellForRequester({ requestId: request.id, approved, action: request.action, relation: request.relation, otherName: name(request.peerId) }),
       render: (to) => renderPeerOutcomeEmail({ name: to, peerName: name(request.peerId), action: request.action, relation: request.relation, approved, note, appUrl }),
     },
     ...(tellOther ? [{
       userId: request.peerId, kind: 'peer-request-outcome' as const, dedupeKey: `peer-request-outcome:${request.id}:other`,
+      bell: decisionBellForOther({ requestId: request.id, approved, requesterName: name(request.requesterId) }),
       render: (to: string) => renderChangeForOtherEmail({ name: to, requesterName: name(request.requesterId), periodName: period?.name ?? 'this quarter', action: request.action, relation: request.relation, approved, note, appUrl }),
     }] : []),
   ], send)

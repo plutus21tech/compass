@@ -3,14 +3,10 @@
 import { UserAvatar } from '@/components/composed/UserAvatar'
 import { Circle, CheckCircle2, Clock, Flag, MessageSquare, Calendar, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { calculateTaskVariance, PROJECT_TASK_TIME_ZONE } from '@/lib/project-progress'
+import { calculateTaskVariance } from '@/lib/project-progress'
 import type { PanelTask } from './TaskDetailPanel'
+import { formatShortDue } from './workspace-utils'
 
-const TASK_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  timeZone: PROJECT_TASK_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-})
 
 const STATUS_ICON: Record<string, { icon: typeof Circle; color: string }> = {
   TODO: { icon: Circle, color: 'text-slate-400' },
@@ -122,7 +118,7 @@ export function TaskRow({ task, onClick, showProject }: TaskRowProps) {
             isOverdue ? 'font-semibold text-red-500' : 'text-muted-foreground'
           )}>
             <Calendar className="w-3 h-3" />
-            {TASK_DATE_FORMATTER.format(new Date(task.dueDate))}
+            {formatShortDue(task.dueDate)}
           </span>
         )}
 

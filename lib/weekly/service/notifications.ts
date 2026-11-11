@@ -1,9 +1,11 @@
 import { prisma } from '@/lib/db'
+import { recordNotificationsSafely, type NewNotification, type NotificationKind } from '@/lib/notifications/service'
 import { cycleWeeks, formatCalendarDate, karachiCalendarDate, weekStartsAt } from '../calendar'
 import { renderFormsOpenEmail, renderLowEvidenceEmail, renderQuestionsEmail } from '../emails'
 import { renderDueTodayEmail, renderFinalWeekEmail, renderPartnerTablesOpenEmail } from '../emails-round'
 import { formatKarachiDate } from '../format'
 import { areWeeklyEmailsEnabled } from '../flag'
+import { formsOpenBell } from './bell-notices'
 import { PERSPECTIVE_LABELS } from '../perspectives'
 import type { CycleWithPeriod } from './cycles'
 import { lowEvidenceRows } from './dashboard'
@@ -59,10 +61,19 @@ export async function questionRecipients(cycleId: string, week: number): Promise
   return open.map((row) => ({ userId: row.evaluatorId, openCount: row._count._all, newCount: freshBy.get(row.evaluatorId) ?? 0 }))
 }
 
+/** The bell row that sits beside an email. The recipient's id is added to its key when it is recorded. */
+export interface WeeklyBellNotice {
+  kind: Extract<NotificationKind, 'WEEKLY_LIST_DECISION' | 'WEEKLY_LIST_CHANGED' | 'WEEKLY_FORMS_OPEN'>
+  title: string
+  link: string
+  dedupeKey: string
+}
+
 export interface WeeklyEmailMessage {
   userId: string
   kind: WeeklyEmailKind
   dedupeKey: string
+  bell?: WeeklyBellNotice
   render: (name: string) => { subject: string; html: string }
 }
 
@@ -74,6 +85,14 @@ export async function deliverOnce(messages: readonly WeeklyEmailMessage[], send:
   })
   const byId = new Map(users.map((user) => [user.id, user]))
   const result: WeeklySendResult = { sent: 0, recorded: 0, skipped: 0, failed: 0 }
+  // Bells do not depend on an email address, the emails flag or a duplicate email key; their own keys dedupe them.
+  // The recipient is part of every key: the key is unique across all notifications.
+  const bells: NewNotification[] = messages.flatMap((m) => {
+    const user = byId.get(m.userId)
+    if (!m.bell || !user || user.payrollProfile?.isPayrollActive === false) return []
+    return [{ userId: m.userId, kind: m.bell.kind, title: m.bell.title, link: m.bell.link, dedupeKey: `${m.bell.dedupeKey}:${m.userId}` }]
+  })
+  if (bells.length) await recordNotificationsSafely('weekly', bells)
   for (const message of messages) {
     const user = byId.get(message.userId)
     if (!user?.email || user.payrollProfile?.isPayrollActive === false) {
@@ -146,11 +165,13 @@ export async function formsOpenMessages(cycle: CycleWithPeriod, now: Date, appUr
   return [
     ...pendingEvaluatorIds.map((userId) => ({
       userId, kind: 'weekly-forms-open' as const, dedupeKey: weeklyDedupeKey('weekly-forms-open', userId, now),
+      bell: formsOpenBell({ userId, cycleId: cycle.id, href: hr.has(userId) ? '/admin/evaluation-round?tab=forms' : '/evaluations/weekly', partner: false }),
       // HR's own HR evaluations and the partners' are on the quarter-end page.
       render: (name: string) => renderFormsOpenEmail({ name, appUrl, path: hr.has(userId) ? '/admin/evaluation-round?tab=forms' : '/evaluations/weekly' }),
     })),
     ...pendingPartnerIds.filter((userId) => !hr.has(userId)).map((userId) => ({
       userId, kind: 'weekly-forms-open' as const, dedupeKey: weeklyDedupeKey('weekly-forms-open', userId, now, `partner:${cycle.id}`),
+      bell: formsOpenBell({ userId, cycleId: cycle.id, href: '/evaluations/weekly', partner: true }),
       render: (name: string) => renderPartnerTablesOpenEmail({ name, periodName: cycle.period.name, closesOn, appUrl }),
     })),
   ]

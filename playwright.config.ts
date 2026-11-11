@@ -30,6 +30,14 @@ export default defineConfig({
           SESSION_SECRET: process.env.SESSION_SECRET ?? 'e2e-throwaway-session-secret-at-least-32-chars',
           ONBOARDING_FIELD_ENCRYPTION_KEY:
             process.env.ONBOARDING_FIELD_ENCRYPTION_KEY ?? '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff',
+          // Blank on purpose: a developer shell with real credentials must never mail or book
+          // calendar events from a test run. The env loader keeps keys that are already present.
+          GMAIL_USER: '',
+          GMAIL_APP_PASSWORD: '',
+          GOOGLE_CALENDAR_CLIENT_ID: '',
+          GOOGLE_CALENDAR_CLIENT_SECRET: '',
+          GOOGLE_CALENDAR_REFRESH_TOKEN: '',
+          GOOGLE_CALENDAR_ID: '',
         },
       },
 })

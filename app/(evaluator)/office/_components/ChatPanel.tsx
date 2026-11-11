@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { Send } from 'lucide-react'
 import type { ChatChannel } from '@/lib/office-config'
+import { formatTime as formatClockTime } from '@/lib/format-date'
 
 interface ChatMessage {
   id: string
@@ -41,8 +42,7 @@ export function ChatPanel({ messages, onSendMessage }: ChatPanelProps) {
   }
 
   const formatTime = (ts: number) => {
-    const d = new Date(ts)
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    return formatClockTime(new Date(ts))
   }
 
   return (

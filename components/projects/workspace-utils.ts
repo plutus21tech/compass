@@ -16,18 +16,10 @@ import type {
   WorkspaceTaskItem,
   WorkspaceTaskStatus,
 } from './workspace-types'
-import {
-  PROJECT_TASK_TIME_ZONE,
-  projectTaskCalendarDayKey,
-} from '@/lib/project-progress'
+import { projectTaskCalendarDayKey } from '@/lib/project-progress'
+import { formatDate } from '@/lib/format-date'
 
 const DAY_MS = 86_400_000
-const PROJECT_TASK_DISPLAY_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  timeZone: PROJECT_TASK_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 export const PRIORITY_ORDER: Record<WorkspacePriority, number> = {
   URGENT: 0,
@@ -218,29 +210,16 @@ export function relativeDueDate(value: string | null | undefined, now: Date = ne
 
 export function displayDueDate(value: string | null | undefined) {
   if (!value) return 'No due date'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'No due date'
-  return PROJECT_TASK_DISPLAY_FORMATTER.format(date)
+  const dayKey = projectTaskCalendarDayKey(value)
+  if (dayKey === null) return 'No due date'
+  return formatDate(new Date(dayKey))
 }
 
-const SHORT_DUE_FORMATTER = new Intl.DateTimeFormat('en-US', {
-  timeZone: PROJECT_TASK_TIME_ZONE,
-  month: 'short',
-  day: 'numeric',
-})
-
-function calendarYear(value: string | Date) {
-  const key = projectTaskCalendarDayKey(value)
-  return key === null ? null : new Date(key).getUTCFullYear()
-}
-
-// "Oct 24", or "Oct 24, 2027" when the year is not the current one (project time zone).
+// "Sat 24 Oct", or "Tue 5 Jan 2027" when the year is not the current one (project time zone).
 export function formatShortDue(value: string, now: Date = new Date()) {
   const dayKey = projectTaskCalendarDayKey(value)
   if (dayKey === null) return 'No date'
-  const short = SHORT_DUE_FORMATTER.format(new Date(dayKey))
-  const year = calendarYear(value)
-  return year === calendarYear(now) ? short : `${short}, ${year}`
+  return formatDate(new Date(dayKey), { now })
 }
 
 export type DueStateKind = 'none' | 'normal' | 'soon' | 'overdue' | 'done'

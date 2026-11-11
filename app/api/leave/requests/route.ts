@@ -11,6 +11,7 @@ import {
 import { restoreCancelledLeaveBalance } from '@/lib/leave-balance'
 import { chargeableLeaveDays, withLeaveDays } from '@/lib/leave-holiday-store'
 import { stripHtml } from '@/lib/sanitize'
+import { notifyLeaveFor } from '@/lib/notifications/leave'
 import { normalizeLeaveTimeZone } from '@/lib/leave-timezone'
 import { isAdminRole } from '@/lib/permissions'
 import { removeLeaveCalendarEvent, syncLeaveCalendarEvent } from '@/lib/google-calendar'
@@ -797,6 +798,10 @@ export async function DELETE(request: NextRequest) {
         await removeLeaveCalendarEvent(requestId)
       } catch (e) {
         console.error('Failed to remove leave event from Google Calendar:', e)
+      }
+
+      if (active && leaveRequest.employeeId !== user.id) {
+        await notifyLeaveFor(leaveRequest, 'LEAVE_CANCELLED', { link: '/leave' })
       }
 
       return NextResponse.json({ success: true })

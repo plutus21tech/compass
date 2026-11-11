@@ -16,6 +16,7 @@ import { formsProgress } from './form-tables'
 import { lateJoiners, roundClosesOn } from './round-notices'
 import type { RoundStage } from '../round-stage'
 import type { CycleWithPeriod } from './cycles'
+import { FYI_NOTICE_KINDS, type CardNotice, type CardNoticeKind } from '../card-notice-kinds'
 
 export type EvaluationsCardState = 'CHECK_LISTS' | 'THIS_WEEK' | 'CAUGHT_UP' | 'CLOSED'
 export interface EvaluationsCardView {
@@ -31,9 +32,13 @@ export interface EvaluationsCardView {
    * changes to review or about them, recent outcomes and HR changes, late joiners, open forms, and for HR what waits on HR.
    */
   notices: CardNotice[]
+  /** ISO instant the thing on the card is due: the list check's date, or this week's Friday; otherwise null. */
+  dueAt: string | null
+  /** This week's progress, the same numbers as in the message; THIS_WEEK only. */
+  counts: { done: number; total: number } | null
 }
-export interface CardNotice { text: string; href: string }
-
+export { FYI_NOTICE_KINDS }
+export type { CardNotice, CardNoticeKind }
 const HREF = '/evaluations/weekly'
 const HR_ROUND = '/admin/evaluation-round'
 /** Outcomes and HR's changes stay on the card for a week. */
@@ -60,27 +65,27 @@ async function cardNotices(actor: WeeklyActor, cycle: CycleWithPeriod, stage: Ro
   const people = await loadPeople([...toReview, ...aboutMe, ...decided].flatMap((r) => [r.requesterId, r.peerId]))
   const name = (id: string) => people.get(id)?.name ?? 'Someone'
   const notices: CardNotice[] = [
-    ...toReview.map((r) => ({ text: `${name(r.requesterId)} asked to change their evaluation lists: review it`, href: HREF })),
-    ...aboutMe.map((r) => ({ text: `${name(r.requesterId)} asked to ${r.action === 'ADD' ? 'add you as a peer' : 'remove you as a peer'}`, href: HREF })),
-    ...decided.map((r) => ({ text: `${r.status === 'APPROVED' ? 'Approved' : 'Not approved'}: your request about ${name(r.peerId)}`, href: HREF })),
-    ...(hrChanges > 0 ? [{ text: 'HR changed your evaluation lists', href: HREF }] : []),
-    ...selfReviews.items.filter((i) => !i.readAt).map((i) => ({ text: `${i.person.name} has submitted their self-evaluation for ${i.monthName}`, href: HREF })),
+    ...toReview.map((r) => ({ text: `${name(r.requesterId)} asked to change their evaluation lists: review it`, href: HREF, kind: 'LIST_CHANGE_TO_REVIEW' as const })),
+    ...aboutMe.map((r) => ({ text: `${name(r.requesterId)} asked to ${r.action === 'ADD' ? 'add you as a peer' : 'remove you as a peer'}`, href: HREF, kind: 'PEER_CHANGE_ABOUT_YOU' as const })),
+    ...decided.map((r) => ({ text: `${r.status === 'APPROVED' ? 'Approved' : 'Not approved'}: your request about ${name(r.peerId)}`, href: HREF, kind: 'LIST_DECISION' as const })),
+    ...(hrChanges > 0 ? [{ text: 'HR changed your evaluation lists', href: HREF, kind: 'HR_CHANGED_LISTS' as const }] : []),
+    ...selfReviews.items.filter((i) => !i.readAt).map((i) => ({ text: `${i.person.name} has submitted their self-evaluation for ${i.monthName}`, href: HREF, kind: 'TEAM_SELF_REVIEW' as const })),
   ]
   if (stage === 'OPEN') {
     for (const { joiner, leads } of await lateJoiners(cycle, now)) {
-      if (leads.includes(actor.id)) notices.push({ text: `${joiner.name} isn’t in this round; give feedback in person`, href: HREF })
+      if (leads.includes(actor.id)) notices.push({ text: `${joiner.name} isn’t in this round; give feedback in person`, href: HREF, kind: 'LATE_JOINER' })
     }
     if (formsOpenFor(cycle, now) && (await hasOpenForms(actor, periodId, now))) {
-      notices.push({ text: 'Your quarter-end forms are open', href: isHrActor(actor) ? `${HR_ROUND}?tab=forms` : HREF })
+      notices.push({ text: 'Your quarter-end forms are open', href: isHrActor(actor) ? `${HR_ROUND}?tab=forms` : HREF, kind: 'FORMS_OPEN' })
     }
   }
   if (isHrActor(actor)) {
     const open = await prisma.peerChangeRequest.findMany({ where: { periodId, status: 'PENDING' }, select: { approverId: true, approverVote: true } })
     const forHr = open.filter((r) => !r.approverId || r.approverVote !== 'PENDING').length
-    if (forHr) notices.push({ text: `${plural(forHr, 'list change', 'list changes')} waiting for your decision`, href: `${HR_ROUND}?tab=people` })
+    if (forHr) notices.push({ text: `${plural(forHr, 'list change', 'list changes')} waiting for your decision`, href: `${HR_ROUND}?tab=people`, kind: 'HR_LIST_CHANGES' })
     if (stage === 'OPEN') {
       const waiting = (await loadAnswerRecords({ cycleId: cycle.id })).filter((r) => r.state === 'NEEDS_REVIEW' || r.state === 'FAILED').length
-      if (waiting) notices.push({ text: `${plural(waiting, 'answer', 'answers')} waiting for your review`, href: `${HR_ROUND}?tab=review` })
+      if (waiting) notices.push({ text: `${plural(waiting, 'answer', 'answers')} waiting for your review`, href: `${HR_ROUND}?tab=review`, kind: 'HR_ANSWERS' })
     }
   }
   return notices
@@ -95,13 +100,13 @@ export async function evaluationsCard(actor: WeeklyActor, now: Date): Promise<Ev
   const period = await prisma.evaluationPeriod.findUniqueOrThrow({ where: { id: cycle.periodId }, select: { name: true, preEvaluationTriggeredAt: true } })
   const stage = roundStage({ cycleStatus: cycle.status, reviewOpenedAt: period.preEvaluationTriggeredAt, resultsPublishedAt: cycle.resultsPublishedAt })
   if (stage === 'DRAFT') return null
-  const base = { href: HREF, selfReview: null, notices: await cardNotices(actor, cycle, stage, now) }
+  const base = { href: HREF, selfReview: null, dueAt: null, counts: null, notices: await cardNotices(actor, cycle, stage, now) }
   if (stage === 'CLOSED' || stage === 'RELEASED') return { ...base, state: 'CLOSED', message: 'Round closed. HR will share your report.', detail: null }
   if (stage === 'REVIEW') {
     const confirmed = await prisma.mappingConfirmation.findUnique({ where: { periodId_userId: { periodId: cycle.periodId, userId: actor.id } } })
     if (!confirmed) {
       const by = cycle.reviewDeadline ?? cycle.weekOneStartsOn
-      return { ...base, state: 'CHECK_LISTS', message: `Check your ${cycle.period.name} evaluation lists by ${shortDate(by)}`, detail: null }
+      return { ...base, state: 'CHECK_LISTS', message: `Check your ${cycle.period.name} evaluation lists by ${shortDate(by)}`, detail: null, dueAt: by.toISOString() }
     }
     return { ...base, state: 'CAUGHT_UP', message: `All caught up. Questions start ${shortDate(cycle.weekOneStartsOn)}`, detail: null }
   }
@@ -114,6 +119,7 @@ export async function evaluationsCard(actor: WeeklyActor, now: Date): Promise<Ev
   if (progress.open === 0) return { ...base, selfReview, state: 'CAUGHT_UP', message: 'All caught up. Next questions Monday', detail: null }
   return {
     ...base, selfReview, state: 'THIS_WEEK',
+    dueAt: weekDueAt(cycle.weekOneStartsOn, week).toISOString(), counts: { done: progress.done, total: progress.total },
     message: `This week: ${progress.done} of ${progress.total} done, due ${longDay(weekDueAt(cycle.weekOneStartsOn, week))}`,
     detail: week === total
       ? `Last week of the round: ${progress.open} ${progress.open === 1 ? 'question' : 'questions'} left before ${roundClosesOn(cycle)}`

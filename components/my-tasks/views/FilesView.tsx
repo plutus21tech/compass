@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { ExternalLink, Pencil, Trash2 } from 'lucide-react'
+import { formatTimestampDate } from '@/lib/format-date'
 
 interface ProjectOption {
   id: string
@@ -225,7 +226,7 @@ export function MyTasksFilesView({ projects, selectedProjectId }: MyTasksFilesVi
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium">{reference.title}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {reference.project.name} • Updated {new Date(reference.updatedAt).toLocaleDateString()}
+                        {reference.project.name} • Updated {formatTimestampDate(reference.updatedAt)}
                       </p>
                       {reference.note && (
                         <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{reference.note}</p>

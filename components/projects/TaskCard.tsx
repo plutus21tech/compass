@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { PeopleStack } from './PeopleStack'
 import type { PanelTask } from './TaskDetailPanel'
 import { dueState, formatShortDue, PRIORITY_ICON, PRIORITY_LABEL, type DueStateKind } from './workspace-utils'
+import { formatCountOf } from '@/lib/format-count'
 
 interface TaskCardProps {
   task: PanelTask
@@ -152,7 +153,7 @@ export function TaskCard({ task, overdue, done, project, onOpen, dragHandleProps
           {children.length > 0 && (
             <span className="inline-flex items-center gap-1" title="Subtasks done">
               <ListChecks aria-hidden className="h-3.5 w-3.5" />
-              {childrenDone}/{children.length}
+              {formatCountOf(childrenDone, children.length)}
             </span>
           )}
           {comments > 0 && (

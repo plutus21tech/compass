@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { SMART_BUCKET_LABELS, groupTasksByBucket } from '@/lib/my-tasks/buckets'
 import type { MyTaskRecord, SmartBucket } from '@/lib/my-tasks/types'
 import { CalendarDays, MessageSquare, Users } from 'lucide-react'
+import { formatDate, formatDateRange } from '@/lib/format-date'
 
 interface MyTasksListViewProps {
   tasks: MyTaskRecord[]
@@ -28,12 +29,8 @@ function statusTone(status: string): string {
 }
 
 function formatRange(startDate: string | null, dueDate: string | null): string {
-  if (startDate && dueDate) {
-    return `${new Date(startDate).toLocaleDateString()} - ${new Date(dueDate).toLocaleDateString()}`
-  }
-  if (dueDate) return new Date(dueDate).toLocaleDateString()
-  if (startDate) return new Date(startDate).toLocaleDateString()
-  return 'No date'
+  if (startDate && dueDate) return formatDateRange(startDate, dueDate)
+  return formatDate(dueDate ?? startDate, { fallback: 'No date' })
 }
 
 export function MyTasksListView({ tasks, onTaskClick }: MyTasksListViewProps) {

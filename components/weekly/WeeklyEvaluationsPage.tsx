@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { Reveal } from '@/components/motion/Reveal'
 import type { EvaluationsCardView } from '@/lib/weekly/service/dashboard-card'
 import { weeklyRequest } from './weekly-api'
@@ -21,13 +23,12 @@ export function WeeklyEvaluationsPage() {
       .catch(() => setCheckingLists(false))
   }, [])
   return (
-    <div className="mx-auto max-w-4xl space-y-8 p-6 sm:p-8">
-      <header>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Evaluations</h1>
-        <p className="mt-2 max-w-2xl leading-relaxed text-muted-foreground">
-          A few short questions each week about the people you work with. Pick the statement that best fits what you have seen; if you have not worked with them on it, say so.
-        </p>
-      </header>
+    <PageContainer className="space-y-8">
+      <PageHeader
+        title="Evaluations"
+        subtitle="A few short questions each week about the people you work with. Pick the statement that best fits what you have seen; if you have not worked with them on it, say so."
+        className="mb-0"
+      />
       {/* An earlier quarter HR reopened comes first: it is overdue. */}
       <Reveal><LateFormsSection /></Reveal>
       {checkingLists && <Reveal><MyMappingCard /></Reveal>}
@@ -40,6 +41,6 @@ export function WeeklyEvaluationsPage() {
       <Reveal><TeamSelfReviewsCard /></Reveal>
       {!checkingLists && <Reveal><MyMappingCard /></Reveal>}
       <Reveal><FormsSection /></Reveal>
-    </div>
+    </PageContainer>
   )
 }

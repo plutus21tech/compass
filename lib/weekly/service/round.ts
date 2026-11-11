@@ -16,6 +16,7 @@ import { checkQuestionWeeks, checkWeekOne, createCycle, loadCycle, roundOpensAt,
 import { WeeklyError } from './errors'
 import { loadAnswerRecords } from './answer-states'
 import { formsProgress } from './form-tables'
+import { expiredBell } from './bell-notices'
 import { deliverSafely, type WeeklySendMail } from './notifications'
 import { roundHealth, roundOpenedMessages } from './round-notices'
 import { formsOpenDate, formsOpenFor } from './forms'
@@ -281,11 +282,13 @@ export async function openRound(actor: WeeklyActor, periodId: string, now: Date,
   await deliverSafely('round opened', async () => [
     ...pending.map((r) => ({
       userId: r.requesterId, kind: 'peer-request-outcome' as const, dedupeKey: `peer-request-expired:${r.id}`,
+      bell: expiredBell({ requestId: r.id, otherName: name(r.peerId), forPeer: false }),
       render: (to: string) => renderRequestExpiredEmail({ name: to, otherName: name(r.peerId), appUrl }),
     })),
     // In a peer change the peer was told about it, so they hear it lapsed too.
     ...pending.filter((r) => r.relation === 'PEER').map((r) => ({
       userId: r.peerId, kind: 'peer-request-outcome' as const, dedupeKey: `peer-request-expired:${r.id}:peer`,
+      bell: expiredBell({ requestId: r.id, otherName: name(r.requesterId), forPeer: true }),
       render: (to: string) => renderRequestExpiredEmail({ name: to, otherName: name(r.requesterId), requestedBy: name(r.requesterId), appUrl }),
     })),
     ...(await roundOpenedMessages(await loadCycle(cycle.id), now, appUrl)),

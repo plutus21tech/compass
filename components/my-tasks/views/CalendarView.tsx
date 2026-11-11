@@ -8,6 +8,7 @@ import type { MyTaskRecord } from '@/lib/my-tasks/types'
 import { addDays, toStartOfDay } from '@/lib/my-tasks/dates'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDateRange, formatMonthYear, localDayKey } from '@/lib/format-date'
 
 interface MyTasksCalendarViewProps {
   tasks: MyTaskRecord[]
@@ -98,8 +99,10 @@ export function MyTasksCalendarView({
         </div>
         <p className="text-sm text-muted-foreground">
           {view === 'month'
-            ? currentMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-            : `${days[0]?.toLocaleDateString()} - ${days[days.length - 1]?.toLocaleDateString()}`}
+            ? formatMonthYear(localDayKey(currentMonth))
+            : days.length > 0
+              ? formatDateRange(localDayKey(days[0]), localDayKey(days[days.length - 1]))
+              : ''}
         </p>
       </CardHeader>
       <CardContent>

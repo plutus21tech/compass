@@ -5,6 +5,7 @@ import { leaveHasStarted } from '@/lib/leave-utils'
 import { removeLeaveCalendarEvent } from '@/lib/google-calendar'
 import { sendLeaveCancellationNotification } from '@/lib/email'
 import { safeRecordLeaveAuditEvent } from '@/lib/leave-audit'
+import { notifyLeave } from '@/lib/notifications/leave'
 
 /**
  * Cancelling a leave that never got a transition plan.
@@ -147,6 +148,8 @@ export async function autoCancelLeaveForMissingTransitionPlan(
   } catch (error) {
     console.error('Failed to send cancellation notice for auto-cancelled leave', { requestId }, error)
   }
+
+  await notifyLeave(requestId, 'LEAVE_CANCELLED', { dedupeKey: `leave-auto-cancel:${requestId}` })
 
   return outcome
 }

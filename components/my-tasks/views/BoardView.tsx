@@ -20,6 +20,7 @@ import { SMART_BUCKET_LABELS, groupTasksByBucket } from '@/lib/my-tasks/buckets'
 import type { MyTaskRecord, SmartBucket } from '@/lib/my-tasks/types'
 import { CalendarDays, MessageSquare, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDate } from '@/lib/format-date'
 
 interface MyTasksBoardViewProps {
   tasks: MyTaskRecord[]
@@ -63,7 +64,7 @@ function TaskCard({
       <div className="mt-2 flex items-center justify-between">
         <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
           <CalendarDays className="w-3.5 h-3.5" />
-          {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No due date'}
+          {formatDate(task.dueDate, { fallback: 'No due date' })}
         </span>
         <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
           <MessageSquare className="w-3.5 h-3.5" />

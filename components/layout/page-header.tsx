@@ -1,83 +1,35 @@
-'use client'
+import { cn } from '@/lib/utils'
 
-import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { LogOut, ArrowLeft } from 'lucide-react'
-import { ThemeToggle } from '@/components/ui/theme-toggle'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { CompanyBrandLockup } from '@/components/brand/CompanyBrandLockup'
-import { useCompanyBranding } from '@/components/providers/company-branding-provider'
-
-interface PageHeaderProps {
-  backHref: string
-  backLabel?: string
-  showLogout?: boolean
-  onLogout?: () => void
-  badge?: string
+export interface PageHeaderProps {
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  dateLine?: React.ReactNode
+  actions?: React.ReactNode
+  className?: string
 }
 
-export function PageHeader({
-  backHref,
-  backLabel = 'Back',
-  showLogout = false,
-  onLogout,
-  badge,
-}: PageHeaderProps) {
-  const { branding } = useCompanyBranding()
-
+export function PageHeader({ title, subtitle, dateLine, actions, className }: PageHeaderProps) {
+  const classes = cn('mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between', className)
   return (
-    <motion.nav
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass border-b border-border sticky top-0 z-50"
-    >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16 items-center">
-          <div className="flex items-center gap-4">
-            <Link
-              href={backHref}
-              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">{backLabel}</span>
-            </Link>
-            <Separator orientation="vertical" className="h-6 hidden sm:block" />
-            <div className="flex items-center gap-3">
-              <CompanyBrandLockup size={28} className="text-[#2F80ED] dark:text-foreground" />
-              <Separator orientation="vertical" className="h-6 hidden sm:block" />
-              <div className="hidden sm:flex items-center gap-2 min-w-0">
-                <span className="text-lg font-display tracking-tight text-foreground">
-                  {branding.platformName}
-                </span>
-                <Badge variant="secondary" className="text-[10px] uppercase tracking-[0.18em]">
-                  {branding.companyName}
-                </Badge>
-              </div>
-              {badge && (
-                <Badge variant="secondary" className="text-xs">
-                  {badge}
-                </Badge>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <ThemeToggle />
-            {showLogout && onLogout && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onLogout}
-                className="gap-2"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Logout</span>
-              </Button>
-            )}
-          </div>
-        </div>
+    <header className={classes}>
+      <div>
+        {dateLine ? (
+          <p data-slot="date-line" className="text-sm text-muted-foreground">
+            {dateLine}
+          </p>
+        ) : null}
+        <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">{title}</h1>
+        {subtitle ? (
+          <p data-slot="subtitle" className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            {subtitle}
+          </p>
+        ) : null}
       </div>
-    </motion.nav>
+      {actions ? (
+        <div data-slot="actions" className="flex shrink-0 flex-wrap items-center gap-2">
+          {actions}
+        </div>
+      ) : null}
+    </header>
   )
 }

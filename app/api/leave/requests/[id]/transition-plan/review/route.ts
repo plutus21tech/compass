@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth'
 import { isAdminRole } from '@/lib/permissions'
 import { prisma } from '@/lib/db'
 import { sendTransitionPlanDisapprovedNotification } from '@/lib/email'
+import { notifyLeave } from '@/lib/notifications/leave'
 
 // POST - team lead approves or disapproves a submitted transition plan.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -66,6 +67,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     } catch (err) {
       console.error('Transition plan disapproved notification failed:', err)
     }
+    await notifyLeave(id, 'PLAN_DISAPPROVED')
   }
 
   return NextResponse.json({ success: true, leadStatus: action === 'APPROVE' ? 'APPROVED' : 'DISAPPROVED' })

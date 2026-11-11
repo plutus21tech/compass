@@ -343,6 +343,7 @@ model User {
   // Leave management relations
   leaveRequests       LeaveRequest[]     @relation("LeaveEmployee")
   leaveCovering       LeaveRequest[]     @relation("LeaveCover")
+  notifications       UserNotification[]
   leaveAuditEvents    LeaveAuditEvent[]  @relation("LeaveAuditActor")
   wfhRequests         WfhRequest[]       @relation("WfhEmployee")
   
@@ -3487,4 +3488,20 @@ model OnboardingPaymentChangeLog {
   createdAt   DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+model UserNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String
+  title     String
+  link      String
+  dedupeKey String?   @unique
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }
