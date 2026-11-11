@@ -1,7 +1,7 @@
 'use client'
 
 import { SidebarLayout } from '@/components/layout/SidebarLayout'
-import { SECURITY_SIDEBAR } from '@/components/layout/AppSidebar'
+import { SECURITY_SIDEBAR } from '@/components/layout/sidebar-config'
 
 export default function SecurityLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -1,7 +1,7 @@
 'use client'
 
 import { SidebarLayout } from '@/components/layout/SidebarLayout'
-import { ADMIN_SIDEBAR } from '@/components/layout/AppSidebar'
+import { ADMIN_SIDEBAR } from '@/components/layout/sidebar-config'
 
 export default function HRLayout({ children }: { children: React.ReactNode }) {
   return (

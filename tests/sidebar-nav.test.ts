@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { NavItem, SidebarConfig } from '../components/layout/AppSidebar'
-import { withGroupItem, withItemAfter, withItemPatched, withSecurityChecksNav } from '../components/layout/sidebar-nav'
+import { withGroupItem, withItemAfter, withItemPatched, withItemReplaced, withSecurityChecksNav } from '../components/layout/sidebar-nav'
 
 const icon = (() => null) as unknown as NavItem['icon']
 const item = (href: string): NavItem => ({ label: href, href, icon })
@@ -72,4 +72,12 @@ test('the admin console gets Security under Operations only with console access'
   assert.deepEqual(hrefs(next), ['/admin'])
   assert.deepEqual(next.groups[0].items.map((i) => i.href), ['/admin/leave', '/security-checks'])
   assert.equal(withSecurityChecksNav(adminSidebar, { enabled: true, console: false }, icon), adminSidebar)
+})
+
+test('helpers reach group and pinned items', () => {
+  const grouped: SidebarConfig = { items: [], groups: [{ label: 'Work', items: [item('/my-tasks'), item('/projects')] }], pinned: [item('/device-support')] }
+  assert.deepEqual(withItemAfter(grouped, item('/clientele'), '/projects').groups[0].items.map((i) => i.href), ['/my-tasks', '/projects', '/clientele'])
+  assert.equal(withItemPatched(grouped, '/device-support', { badge: 1 }).pinned?.[0].badge, 1)
+  assert.equal(withItemReplaced(grouped, '/device-support', item('/security-checks')).pinned?.[0].href, '/security-checks')
+  assert.equal(withItemAfter(withItemAfter(grouped, item('/clientele'), '/projects'), item('/clientele'), '/projects').groups[0].items.length, 3)
 })
