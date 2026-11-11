@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { formatDays } from '@/lib/format-count'
 import { formatDateRange } from '@/lib/format-date'
 import { validateTransitionTasks, type TransitionTask } from '@/lib/leave-transition-plan'
+import { beginRow, endRow } from '@/lib/time-off/row-guard'
 import { decideLeave, reviewTransitionPlan } from '@/lib/time-off/api'
 import { approvalActions, decisionToast, planReviewState, requestDays } from '@/lib/time-off/request-rules'
 import type { ApprovalRequest } from '@/lib/time-off/types'
@@ -33,10 +34,15 @@ interface ApprovalQueueProps {
 }
 
 export function ApprovalQueue({ requests, highlightedId, onChanged }: ApprovalQueueProps) {
-  const [processingId, setProcessingId] = useState<string | null>(null)
-  const inFlight = useRef(false)
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set())
+  const busyRef = useRef<ReadonlySet<string>>(new Set())
   const [disapproveLeave, setDisapproveLeave] = useState<ApprovalRequest | null>(null)
   const [disapprovePlan, setDisapprovePlan] = useState<ApprovalRequest | null>(null)
+  // Last selections, so dialog titles stay filled while the close animation runs.
+  const lastLeave = useRef<ApprovalRequest | null>(null)
+  const lastPlan = useRef<ApprovalRequest | null>(null)
+  if (disapproveLeave) lastLeave.current = disapproveLeave
+  if (disapprovePlan) lastPlan.current = disapprovePlan
 
   useEffect(() => {
     if (!highlightedId) return
@@ -48,16 +54,19 @@ export function ApprovalQueue({ requests, highlightedId, onChanged }: ApprovalQu
     return () => window.cancelAnimationFrame(frame)
   }, [highlightedId])
 
-  /** Runs one decision at a time; a second click while one is running is ignored. */
-  const guarded = async (id: string, run: () => Promise<boolean>) => {
-    if (inFlight.current) return
-    inFlight.current = true
-    setProcessingId(id)
+  /** One decision per row at a time; other rows are unaffected. Resolves true on success. */
+  const guarded = async (id: string, run: () => Promise<boolean>): Promise<boolean> => {
+    const next = beginRow(busyRef.current, id)
+    if (!next) return false
+    busyRef.current = next
+    setBusyIds(next)
     try {
-      if (await run()) await onChanged()
+      const ok = await run()
+      if (ok) await onChanged()
+      return ok
     } finally {
-      inFlight.current = false
-      setProcessingId(null)
+      busyRef.current = endRow(busyRef.current, id)
+      setBusyIds(busyRef.current)
     }
   }
 
@@ -99,7 +108,7 @@ export function ApprovalQueue({ requests, highlightedId, onChanged }: ApprovalQu
           const actions = approvalActions(r)
           const plan = planReviewState(r)
           const highlighted = highlightedId === r.id
-          const busy = processingId === r.id
+          const busy = busyIds.has(r.id)
           return (
             <div
               key={r.id}
@@ -207,20 +216,19 @@ export function ApprovalQueue({ requests, highlightedId, onChanged }: ApprovalQu
         onConfirm={() => {
           if (disapproveLeave) void decide(disapproveLeave, 'reject')
         }}
-        title={`Disapprove ${firstName(disapproveLeave?.employee.name ?? '')}'s approved leave?`}
+        title={`Disapprove ${firstName((disapproveLeave ?? lastLeave.current)?.employee.name ?? '')}'s approved leave?`}
         message="It is cancelled, the days go back to their balance and it comes off the calendar."
         confirmText="Disapprove"
         variant="danger"
       />
       <PlanDisapproveDialog
         open={disapprovePlan !== null}
-        employeeName={disapprovePlan?.employee.name ?? ''}
+        employeeName={(disapprovePlan ?? lastPlan.current)?.employee.name ?? ''}
         onCancel={() => setDisapprovePlan(null)}
         onSubmit={async (reason) => {
           const target = disapprovePlan
           if (!target) return
-          await reviewPlan(target, 'DISAPPROVE', reason)
-          setDisapprovePlan(null)
+          if (await reviewPlan(target, 'DISAPPROVE', reason)) setDisapprovePlan(null)
         }}
       />
     </section>

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ApprovalQueue } from '@/components/leave/time-off/ApprovalQueue'
 import { OutTodayCard } from '@/components/leave/time-off/OutTodayCard'
 import { PlanDisapproveForm } from '@/components/leave/time-off/PlanDisapproveDialog'
+import { beginRow, endRow } from '@/lib/time-off/row-guard'
 import type { ApprovalRequest, CalendarEvent } from '@/lib/time-off/types'
 
 const day = (offset: number): string => {
@@ -129,4 +130,16 @@ test('OutTodayCard shows type and half-day session', () => {
 
 test('OutTodayCard renders nothing when empty', () => {
   assert.equal(renderToStaticMarkup(createElement(OutTodayCard, { events: [] })), '')
+})
+
+test('row guard blocks only the busy row', () => {
+  const a = beginRow(new Set(), 'a')
+  assert.ok(a)
+  assert.equal(beginRow(a, 'a'), null)
+  const ab = beginRow(a, 'b')
+  assert.ok(ab && ab.has('a') && ab.has('b'))
+  const afterA = endRow(ab, 'a')
+  assert.equal(afterA.has('a'), false)
+  assert.ok(beginRow(afterA, 'a'))
+  assert.equal(a.size, 1)
 })
