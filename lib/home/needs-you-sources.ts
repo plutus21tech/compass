@@ -1,4 +1,5 @@
-import { FYI_NOTICE_KINDS, type CardNoticeKind, type EvaluationsCardView } from '@/lib/weekly/service/dashboard-card'
+import { FYI_NOTICE_KINDS, type CardNoticeKind } from '@/lib/weekly/card-notice-kinds'
+import type { EvaluationsCardView } from '@/lib/weekly/service/dashboard-card'
 import type { LateFormsResponse } from '@/lib/weekly/view-types'
 import type { AssignedCardView } from '@/lib/academy/view'
 import type { TaskListItem } from '@/lib/security-checks/service/task-views'

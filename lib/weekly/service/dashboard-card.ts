@@ -16,6 +16,7 @@ import { formsProgress } from './form-tables'
 import { lateJoiners, roundClosesOn } from './round-notices'
 import type { RoundStage } from '../round-stage'
 import type { CycleWithPeriod } from './cycles'
+import { FYI_NOTICE_KINDS, type CardNotice, type CardNoticeKind } from '../card-notice-kinds'
 
 export type EvaluationsCardState = 'CHECK_LISTS' | 'THIS_WEEK' | 'CAUGHT_UP' | 'CLOSED'
 export interface EvaluationsCardView {
@@ -36,13 +37,8 @@ export interface EvaluationsCardView {
   /** This week's progress, the same numbers as in the message; THIS_WEEK only. */
   counts: { done: number; total: number } | null
 }
-export type CardNoticeKind =
-  | 'LIST_CHANGE_TO_REVIEW' | 'PEER_CHANGE_ABOUT_YOU' | 'LIST_DECISION' | 'HR_CHANGED_LISTS' | 'TEAM_SELF_REVIEW'
-  | 'LATE_JOINER' | 'FORMS_OPEN' | 'HR_LIST_CHANGES' | 'HR_ANSWERS'
-export interface CardNotice { text: string; href: string; kind: CardNoticeKind }
-/** Notices that only inform; the rest ask the person to do something. */
-export const FYI_NOTICE_KINDS: ReadonlySet<CardNoticeKind> = new Set<CardNoticeKind>(['LIST_DECISION', 'HR_CHANGED_LISTS'])
-
+export { FYI_NOTICE_KINDS }
+export type { CardNotice, CardNoticeKind }
 const HREF = '/evaluations/weekly'
 const HR_ROUND = '/admin/evaluation-round'
 /** Outcomes and HR's changes stay on the card for a week. */
