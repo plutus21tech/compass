@@ -16,7 +16,8 @@ export interface HomeTask {
 
 export function pickOpenTasks(tasks: readonly HomeTask[]): { shown: HomeTask[]; more: number } {
   const open = tasks.filter((t) => t.status !== 'DONE')
-  const ordered = [...open.filter((t) => t.dueDate), ...open.filter((t) => !t.dueDate)]
+  const dated = open.filter((t) => t.dueDate).sort((a, b) => Date.parse(a.dueDate as string) - Date.parse(b.dueDate as string))
+  const ordered = [...dated, ...open.filter((t) => !t.dueDate)]
   return { shown: ordered.slice(0, OPEN_TASKS_SHOWN), more: Math.max(0, ordered.length - OPEN_TASKS_SHOWN) }
 }
 

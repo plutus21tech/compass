@@ -80,3 +80,13 @@ export function summariseOutToday(
 
   return { people, departmentOutToday }
 }
+
+/** One row of GET /api/leave/requests?scope=team-upcoming, as Home reads it. */
+export interface TeamUpcomingRow {
+  id: string
+  leaveType: LeaveTypeValue
+  status: string
+  startDate: string
+  endDate: string
+  employee: { id: string; name: string; department: string | null }
+}
