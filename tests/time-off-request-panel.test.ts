@@ -8,7 +8,9 @@ import { HandoverStep } from '@/components/leave/time-off/HandoverStep'
 import { PeopleReviewStep } from '@/components/leave/time-off/PeopleReviewStep'
 import { MemberMultiSelect } from '@/components/leave/MemberMultiSelect'
 import { RequestPanel } from '@/components/leave/time-off/RequestPanel'
-import { SMALL_SCREEN_QUERY, shouldTrapFocus, wrapFocusIndex } from '@/components/leave/time-off/panel-modal'
+import {
+  SMALL_SCREEN_QUERY, shouldTrapFocus, trapTabKey, wrapFocusIndex, type TrapKeyEvent,
+} from '@/components/leave/time-off/panel-modal'
 import { TransitionPlanTable } from '@/components/leave/TransitionPlanTable'
 import { summarizeLeaveRequest, type LeaveSummary } from '@/lib/time-off/request-summary'
 import { EMPTY_REQUEST_FORM, type RequestForm } from '@/lib/time-off/request-form'
@@ -289,4 +291,50 @@ test('Tab wraps at the ends of the panel and nowhere else', () => {
   assert.equal(wrapFocusIndex(5, 2, false), null)
   assert.equal(wrapFocusIndex(5, 2, true), null)
   assert.equal(wrapFocusIndex(0, 0, false), null)
+})
+
+function fakeTrap() {
+  const focused: string[] = []
+  const item = (name: string) => ({ name, getAttribute: () => null, focus: () => { focused.push(name) } })
+  const items = [item('close'), item('reason'), item('next')]
+  const inside = new Set<unknown>(items)
+  const container = {
+    contains: (node: unknown) => inside.has(node),
+    querySelectorAll: () => items,
+  } as unknown as HTMLElement
+  const outside = { name: 'select-option' }
+  const event = (o: Partial<TrapKeyEvent> = {}) => {
+    const calls = { prevented: 0 }
+    const e: TrapKeyEvent = {
+      key: 'Tab', shiftKey: false, defaultPrevented: false, target: items[2] as unknown as EventTarget,
+      preventDefault: () => { calls.prevented += 1 },
+      ...o,
+    } as TrapKeyEvent
+    return { e, calls }
+  }
+  return { focused, items, container, outside, event }
+}
+
+test('the trap wraps Tab from the last item inside the panel', () => {
+  const t = fakeTrap()
+  const { e, calls } = t.event()
+  trapTabKey(e, t.container, { activeElement: t.items[2] as unknown as Element })
+  assert.equal(calls.prevented, 1)
+  assert.deepEqual(t.focused, ['close'])
+})
+
+test('the trap leaves Tab alone when another layer already handled it', () => {
+  const t = fakeTrap()
+  const { e, calls } = t.event({ defaultPrevented: true })
+  trapTabKey(e, t.container, { activeElement: t.outside as unknown as Element })
+  assert.equal(calls.prevented, 0)
+  assert.deepEqual(t.focused, [])
+})
+
+test('the trap leaves Tab alone for portalled content outside the panel (open Select)', () => {
+  const t = fakeTrap()
+  const { e, calls } = t.event({ target: t.outside as unknown as EventTarget })
+  trapTabKey(e, t.container, { activeElement: t.outside as unknown as Element })
+  assert.equal(calls.prevented, 0)
+  assert.deepEqual(t.focused, [])
 })

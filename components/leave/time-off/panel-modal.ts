@@ -24,14 +24,29 @@ export function wrapFocusIndex(count: number, index: number, backwards: boolean)
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-/** Tab / Shift+Tab handler that keeps focus cycling inside `container`. */
-export function trapTabKey(e: KeyboardEvent<HTMLElement>, container: HTMLElement | null): void {
-  if (e.key !== 'Tab' || !container || typeof document === 'undefined') return
+/** Node.DOCUMENT_POSITION_FOLLOWING, spelled out so this module also loads outside a browser. */
+const POSITION_FOLLOWING = 4
+
+/** The parts of a keydown event the trap reads (a React KeyboardEvent fits). */
+export type TrapKeyEvent = Pick<KeyboardEvent<HTMLElement>, 'key' | 'shiftKey' | 'defaultPrevented' | 'target' | 'preventDefault'>
+
+/**
+ * Tab / Shift+Tab handler that keeps focus cycling inside `container`. It leaves alone keys
+ * another layer already handled and keys from portalled content (e.g. an open Radix Select),
+ * whose events bubble through React but whose DOM target is outside the panel.
+ */
+export function trapTabKey(
+  e: TrapKeyEvent,
+  container: HTMLElement | null,
+  doc: Pick<Document, 'activeElement'> | undefined = typeof document === 'undefined' ? undefined : document
+): void {
+  if (e.key !== 'Tab' || !container || !doc) return
+  if (e.defaultPrevented || !container.contains(e.target as Node)) return
   const items = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
     (el) => el.getAttribute('aria-hidden') !== 'true'
   )
   if (items.length === 0) return
-  const active = document.activeElement as HTMLElement | null
+  const active = doc.activeElement as HTMLElement | null
   if (!active || !container.contains(active)) {
     e.preventDefault()
     items[0].focus()
@@ -40,7 +55,7 @@ export function trapTabKey(e: KeyboardEvent<HTMLElement>, container: HTMLElement
   const index = items.indexOf(active)
   if (index === -1) {
     // Focus is on a non-tabbable element (heading, step body); only wrap when it sits before every item.
-    const beforeFirst = Boolean(active.compareDocumentPosition(items[0]) & Node.DOCUMENT_POSITION_FOLLOWING)
+    const beforeFirst = Boolean(active.compareDocumentPosition(items[0]) & POSITION_FOLLOWING)
     if (!beforeFirst) return
   }
   const target = wrapFocusIndex(items.length, index, e.shiftKey)
