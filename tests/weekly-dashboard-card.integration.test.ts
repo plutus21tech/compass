@@ -1,7 +1,8 @@
 import test, { after, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
-import { evaluationsCard } from '../lib/weekly/service/dashboard-card'
+import { formatTimestampDate } from '../lib/format-date'
+import { evaluationsCard, FYI_NOTICE_KINDS } from '../lib/weekly/service/dashboard-card'
 import { confirmMyLists, decidePeerRequest, requestPeerChange } from '../lib/weekly/service/peer-requests'
 import { changeRoundMapping } from '../lib/weekly/service/round-people'
 import { releaseWeek } from '../lib/weekly/service/release'
@@ -106,4 +107,29 @@ test('"HR changed your evaluation lists" shows after a repeat change, and not fo
   assert.ok(!(await texts(weeklyActor(W.cara), at(0, 2))).includes('HR changed your evaluation lists'), 'an import is the round’s draft')
   await prisma.evaluationPeriodAssignmentOverride.updateMany({ where: { periodId, evaluatorId: W.cara.id }, data: { note: 'HR: Same client' } })
   assert.ok((await texts(weeklyActor(W.cara), at(0, 2))).includes('HR changed your evaluation lists'))
+})
+
+const kinds = async (who: typeof ana, now: Date) => (await evaluationsCard(who, now))?.notices.map((n) => [n.kind, n.text]) ?? []
+
+test('notices carry a kind; outcomes and HR changes are the FYI ones', WEEKLY_DB_TEST, async () => {
+  const request = await requestPeerChange(ana, { peerId: W.ben.id, action: 'REMOVE', reasonCode: 'WRONG_PERSON' }, at(0, 1), send, 'https://compass.example')
+  assert.deepEqual(await kinds(weeklyActor(W.lead), at(0, 2)), [['LIST_CHANGE_TO_REVIEW', 'Ana Torvik asked to change their evaluation lists: review it']])
+  assert.ok((await kinds(weeklyActor(W.ben), at(0, 2))).some(([k]) => k === 'PEER_CHANGE_ABOUT_YOU'))
+  await decidePeerRequest(HR_ACTOR, request.id, 'APPROVE', null, at(0, 3), send, 'https://compass.example')
+  assert.ok((await kinds(ana, at(0, 4))).some(([k, t]) => k === 'LIST_DECISION' && t === 'Approved: your request about Ben Okafor'))
+  assert.deepEqual([...FYI_NOTICE_KINDS].sort(), ['HR_CHANGED_LISTS', 'LIST_DECISION'])
+})
+
+test('the card says when the week and the list check are due', WEEKLY_DB_TEST, async () => {
+  const check = await evaluationsCard(ana, at(0))
+  assert.equal(check?.dueAt, new Date('2026-10-02T00:00:00.000Z').toISOString())
+  assert.equal(check?.counts, null)
+  await start()
+  await releaseWeek(cycleId, 1, at(1))
+  const week = await evaluationsCard(weeklyActor(W.lead), at(1, 2))
+  assert.equal(week?.state, 'THIS_WEEK')
+  assert.ok(week?.dueAt, 'a due instant')
+  assert.match(formatTimestampDate(week!.dueAt!), /^Fri /)
+  const m = /: (\d+) of (\d+) done/.exec(week?.message ?? '')
+  assert.deepEqual(week?.counts, { done: Number(m?.[1]), total: Number(m?.[2]) })
 })
