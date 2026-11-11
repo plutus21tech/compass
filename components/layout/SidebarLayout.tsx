@@ -4,15 +4,15 @@ import { useState, useEffect, createContext, useContext } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { AppSidebar, type SidebarConfig } from '@/components/layout/AppSidebar'
 import { TopBar } from '@/components/layout/TopBar'
-import { LoadingScreen } from '@/components/composed/LoadingScreen'
+import { SidebarSkeleton, PageSkeleton } from '@/components/layout/ShellSkeleton'
 import {
   Sheet,
   SheetContent,
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { BookOpen, CalendarCheck, Clapperboard, CreditCard, Handshake, Link2, ShieldCheck, Users } from 'lucide-react'
-import { withAcademyNav, withGroupItem, withOaPaymentNav, withItemPatched, withLockedHandbookNav, withSecurityChecksNav, type SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
+import type { SecurityChecksNavAccess } from '@/components/layout/sidebar-nav'
+import { resolveSidebarConfig, resolveLockedSidebarConfig, searchablePages, type MenuContext } from '@/components/layout/sidebar-config'
 import { shouldRedirectLockedPage } from '@/lib/academy/lockout'
 
 // Context so child pages can access user info
@@ -144,62 +144,36 @@ export function SidebarLayout({
   }
 
   if (loading) {
-    return <LoadingScreen message="Loading..." />
+    return (
+      <div className="flex h-screen overflow-hidden bg-background">
+        <div className="hidden lg:block shrink-0">
+          <SidebarSkeleton collapsed={collapsed} />
+        </div>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TopBar user={null} showMenuButton onMenuClick={() => setMobileOpen(true)} />
+          <main className="flex-1 overflow-y-auto">
+            <PageSkeleton />
+          </main>
+        </div>
+      </div>
+    )
   }
 
   const roleSidebarConfig = (user?.role && sidebarConfigByRole?.[user.role]) || sidebarConfig
-  const baseSidebarConfig =
-    user?.onboardingCompleted === false && onboardingSidebarConfig
-      ? onboardingSidebarConfig
-      : roleSidebarConfig
+  const isLockedMenu = user?.onboardingCompleted === false && Boolean(onboardingSidebarConfig)
+  const baseSidebarConfig = isLockedMenu && onboardingSidebarConfig ? onboardingSidebarConfig : roleSidebarConfig
 
-  // The admin console has its own Clients page and must not get the employee
-  // link: its only top-level item is the dashboard, so an injected entry landed
-  // above it and sent HR to the employee view.
-  const isAdminConsole =
-    baseSidebarConfig.items.some((item) => item.href.startsWith('/admin')) ||
-    baseSidebarConfig.groups.some((group) => group.items.some((item) => item.href.startsWith('/admin')))
-
-  // Slotted next to Projects, the other client-facing work item. Left out during
-  // onboarding, where the sidebar is deliberately stripped back.
-  const effectiveSidebarConfig =
-    hasClientele && !isAdminConsole && baseSidebarConfig !== onboardingSidebarConfig
-      ? {
-          ...baseSidebarConfig,
-          items: baseSidebarConfig.items.some((item) => item.href === '/clientele')
-            ? baseSidebarConfig.items
-            : (() => {
-                const items = [...baseSidebarConfig.items]
-                const anchor = items.findIndex((item) => item.href === '/projects')
-                const entry = { label: 'Clientele', href: '/clientele', icon: Handshake }
-                // Append when there is no Projects item rather than guessing an
-                // index, which previously put it above the dashboard.
-                if (anchor >= 0) items.splice(anchor + 1, 0, entry)
-                else items.push(entry)
-                return items
-              })(),
-        }
-      : baseSidebarConfig
-
-  const weeklyBadge = weeklyMe.openCount > 0 ? { badge: weeklyMe.openCount } : {}
-  const sidebarConfigWithWeekly =
-    !weeklyMe.enabled || baseSidebarConfig === onboardingSidebarConfig
-      ? effectiveSidebarConfig
-      : isAdminConsole
-        ? withGroupItem(effectiveSidebarConfig, 'Performance', { label: 'Evaluation round', href: '/admin/evaluation-round', icon: CalendarCheck }, 'start')
-        : withItemPatched(effectiveSidebarConfig, '/evaluations/weekly', weeklyBadge)
-  const sidebarConfigWithSecurity =
-    baseSidebarConfig === onboardingSidebarConfig
-      ? sidebarConfigWithWeekly
-      : withSecurityChecksNav(sidebarConfigWithWeekly, securityChecksAccess, ShieldCheck)
-  const finalSidebarConfig =
-    baseSidebarConfig === onboardingSidebarConfig
-      ? withLockedHandbookNav(sidebarConfigWithSecurity, BookOpen)
-      : withOaPaymentNav(
-          withAcademyNav(sidebarConfigWithSecurity, { library: BookOpen, contacts: Users, links: Link2, videos: Clapperboard }),
-          user?.role === 'OA',
-          CreditCard,
-        )
+  const menuContext: MenuContext = {
+    role: user?.role,
+    hasClientele,
+    weekly: { enabled: weeklyMe.enabled, openCount: weeklyMe.openCount },
+    securityChecks: securityChecksAccess,
+  }
+  const finalSidebarConfig = isLockedMenu
+    ? resolveLockedSidebarConfig(baseSidebarConfig)
+    : resolveSidebarConfig(baseSidebarConfig, menuContext)
+  const pages = searchablePages(finalSidebarConfig, menuContext)
+  const locked = user?.onboardingCompleted === false
 
   return (
     <LayoutUserContext.Provider value={user}>
@@ -232,6 +206,8 @@ export function SidebarLayout({
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar
             user={user}
+            pages={pages}
+            locked={locked}
             showMenuButton
             onMenuClick={() => setMobileOpen(true)}
           />

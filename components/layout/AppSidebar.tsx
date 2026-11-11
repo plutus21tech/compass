@@ -130,6 +130,34 @@ function SidebarNavGroup({
   )
 }
 
+// Always-open section with a plain heading (no chevron, no button).
+function SidebarStaticGroup({
+  group,
+  collapsed,
+  pathname,
+}: {
+  group: NavGroup
+  collapsed: boolean
+  pathname: string
+}) {
+  return (
+    <div>
+      {collapsed ? (
+        <div className="mx-auto my-1 h-px w-6 bg-border" />
+      ) : (
+        <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+          {group.label}
+        </div>
+      )}
+      <div className="space-y-0.5 py-0.5">
+        {group.items.map((item) => (
+          <SidebarNavItem key={item.href} item={item} collapsed={collapsed} pathname={pathname} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Sidebar ────────────────────────────────────────────────────────────
 
 interface AppSidebarProps {
@@ -143,22 +171,6 @@ interface AppSidebarProps {
 export function AppSidebar({ config, collapsed, onToggle, userRole, className }: AppSidebarProps) {
   const pathname = usePathname()
   const { branding } = useCompanyBranding()
-  const topLevelItems = [...config.items]
-
-  if (userRole === 'EXECUTION' && !topLevelItems.some((item) => item.href === '/execution/subscriptions')) {
-    const executionItem: NavItem = {
-      label: 'Subscription Management',
-      href: '/execution/subscriptions',
-      icon: Wallet,
-    }
-    const profileIndex = topLevelItems.findIndex((item) => item.href === '/profile')
-    if (profileIndex >= 0) {
-      topLevelItems.splice(profileIndex, 0, executionItem)
-    } else {
-      topLevelItems.push(executionItem)
-    }
-  }
-
   return (
     <aside
       className={cn(
@@ -190,9 +202,9 @@ export function AppSidebar({ config, collapsed, onToggle, userRole, className }:
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+      <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-3 space-y-1">
         {/* Top-level items */}
-        {topLevelItems.map((item) => (
+        {config.items.map((item) => (
           <SidebarNavItem
             key={item.href}
             item={item}
@@ -202,14 +214,22 @@ export function AppSidebar({ config, collapsed, onToggle, userRole, className }:
         ))}
 
         {/* Grouped items */}
-        {config.groups.map((group) => (
-          <SidebarNavGroup
-            key={group.label}
-            group={group}
-            collapsed={collapsed}
-            pathname={pathname}
-          />
-        ))}
+        {config.groups.map((group) =>
+          group.collapsible === false ? (
+            <SidebarStaticGroup key={group.label} group={group} collapsed={collapsed} pathname={pathname} />
+          ) : (
+            <SidebarNavGroup key={group.label} group={group} collapsed={collapsed} pathname={pathname} />
+          ),
+        )}
+
+        {/* Pinned items sit at the bottom of the menu, above the footer */}
+        {config.pinned && config.pinned.length > 0 && (
+          <div className="mt-auto space-y-0.5 border-t border-border pt-2">
+            {config.pinned.map((item) => (
+              <SidebarNavItem key={item.href} item={item} collapsed={collapsed} pathname={pathname} />
+            ))}
+          </div>
+        )}
       </nav>
 
       {/* Footer: role switcher + collapse toggle */}

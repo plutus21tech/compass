@@ -7,9 +7,15 @@ import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { UserAvatar } from '@/components/composed/UserAvatar'
 import { useCompanyBranding } from '@/components/providers/company-branding-provider'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
+import type { SearchPage } from '@/components/layout/sidebar-config'
 
 interface TopBarProps {
   user?: { name: string; role: string; department?: string } | null
+  /** Pages the person can search for (consumed by the search box in a later task). */
+  pages?: SearchPage[]
+  /** True while the person is still in onboarding. */
+  locked?: boolean
   onMenuClick?: () => void
   showMenuButton?: boolean
   className?: string
@@ -50,6 +56,13 @@ export function TopBar({ user, onMenuClick, showMenuButton = false, className }:
       {/* Right: user info + actions */}
       <div className="flex items-center gap-3 ml-auto">
         <ThemeToggle />
+
+        {!user && (
+          <div className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-border" aria-hidden="true">
+            <Skeleton className="h-8 w-8 rounded-full" />
+            <Skeleton className="hidden h-4 w-24 md:block" />
+          </div>
+        )}
 
         {user && (
           <div className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-border">
