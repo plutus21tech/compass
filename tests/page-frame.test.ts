@@ -22,3 +22,12 @@ test('the header renders one h1 and only the slots it is given', () => {
   assert.match(full, /data-slot="subtitle"[^>]*>Two things need you</)
   assert.match(full, /data-slot="actions"[^>]*><button>Request leave<\/button>/)
 })
+
+test('caller classes override the defaults', () => {
+  const header = renderToStaticMarkup(createElement(PageHeader, { title: 'x', className: 'mb-0' }))
+  assert.doesNotMatch(header, /mb-6/)
+  assert.match(header, /mb-0/)
+  const container = renderToStaticMarkup(createElement(PageContainer, { className: 'py-2' }, 'x'))
+  assert.doesNotMatch(container, /py-6/)
+  assert.match(container, /py-2/)
+})
