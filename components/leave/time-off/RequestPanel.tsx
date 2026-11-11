@@ -34,6 +34,8 @@ export interface RequestPanelProps {
   holidayKeysFor: (startKey: string, endKey: string) => Promise<Set<string>>
   onClose: () => void
   onSaved: () => void
+  /** Told whenever the open form starts or stops differing from how it opened. */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 const STEPS: ReadonlyArray<{ step: RequestStep; label: string }> = [
@@ -186,11 +188,15 @@ export function RequestPanel(props: RequestPanelProps) {
     bodyRef.current?.focus()
   }, [open, step, session])
 
+  // Untouched since opening (including dates that came from a drag) closes without asking.
+  const dirty = open && !sameForm(form, baseline)
+  const onDirtyChangeRef = useRef(props.onDirtyChange)
+  onDirtyChangeRef.current = props.onDirtyChange
+  useEffect(() => { onDirtyChangeRef.current?.(dirty) }, [dirty])
+
   if (!open) return null
 
   const isEdit = mode.kind === 'edit'
-  // Untouched since opening (including dates that came from a drag) closes without asking.
-  const dirty = !sameForm(form, baseline)
 
   const change = (next: RequestForm) => { setForm(next); setError(null) }
   const goTo = (next: RequestStep) => { setStep(next); setError(null) }

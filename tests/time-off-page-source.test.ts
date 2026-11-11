@@ -61,3 +61,14 @@ test('the page uses the shared frame and handles both deep links', () => {
 test('no slash counts in time off copy', () => {
   for (const f of files) assert.doesNotMatch(read(f), /\{[^}]+\}\s*\/\s*\{[^}]+\}\s*days/, f)
 })
+
+test('fix round 1: mode switches confirm, cancel closes its edit, actions wait for the first load', () => {
+  const page = read(PAGE)
+  assert.ok(read('components/leave/time-off/RequestPanel.tsx').includes('onDirtyChange'), 'panel reports dirtiness')
+  assert.ok(page.includes('onDirtyChange='), 'page listens for dirtiness')
+  assert.ok(page.includes('panelSwitchAction('), 'mode changes go through panelSwitchAction')
+  assert.ok(page.includes('title="Discard this request?"'), 'switch asks with the discard dialog')
+  assert.match(page, /mode\.kind === 'edit' && \w+\.mode\.request\.id === r\.id/, 'cancel closes the panel editing that request')
+  assert.ok((page.match(/disabled=\{loading\}/g) ?? []).length >= 2, 'Request leave and Request WFH wait for loading')
+  assert.match(page, /loading \? \(\s*<Skeleton[^>]*\/>\s*\) : \(\s*<TeamCalendar/, 'calendar selection waits for loading')
+})
