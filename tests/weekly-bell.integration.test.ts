@@ -28,7 +28,7 @@ beforeEach(async () => {
   await prisma.userNotification.deleteMany({ where: { userId: { startsWith: 'wkt-' } } })
 })
 after(async () => {
-  await prisma.userNotification.deleteMany({ where: { userId: { startsWith: 'wkt-' } } })
+  if (WEEKLY_DB_READY) await prisma.userNotification.deleteMany({ where: { userId: { startsWith: 'wkt-' } } })
   await prisma.$disconnect()
 })
 
