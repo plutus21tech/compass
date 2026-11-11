@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { buildDayCells, buildMonthGrid, type DayCell } from '@/lib/time-off/calendar-grid'
 import { CalendarDayCell } from '@/components/leave/time-off/CalendarDayCell'
-import { TeamCalendar } from '@/components/leave/time-off/TeamCalendar'
+import { TeamCalendar, shouldCancelRange } from '@/components/leave/time-off/TeamCalendar'
 import { DayLeaveDialog } from '@/components/leave/time-off/DayLeaveDialog'
 import type { CalendarEvent } from '@/lib/time-off/types'
 
@@ -93,6 +93,9 @@ test('past days and padding days are not focusable', () => {
 
 test('a selected day is highlighted and today gets the pill', () => {
   assert.match(renderCell(cellWith([]), true), /bg-primary\/10[^"]*ring-primary/)
+  const selectedHtml = renderCell(cellWith([]), true)
+  assert.doesNotMatch(selectedHtml, /bg-card/)
+  assert.doesNotMatch(selectedHtml, /bg-muted\/40/)
   const today = buildDayCells(buildMonthGrid(2026, 10), [], '2026-11-19').find((c) => c.key === '2026-11-19') as DayCell
   assert.match(renderCell(today), /bg-foreground text-background rounded-full/)
 })
@@ -158,4 +161,15 @@ test('the day dialog renders nothing while closed', () => {
     createElement(DayLeaveDialog, { open: false, dayKey: '2026-11-19', events: [event()], onClose: () => {} })
   )
   assert.equal(html, '')
+})
+
+test('Escape cancels a range in progress and is ignored when idle', () => {
+  assert.equal(shouldCancelRange('Escape', 'picking-end'), true)
+  assert.equal(shouldCancelRange('Escape', 'dragging'), true)
+  assert.equal(shouldCancelRange('Escape', 'idle'), false)
+  assert.equal(shouldCancelRange('Enter', 'dragging'), false)
+})
+
+test('the hint sits in a polite live region', () => {
+  assert.match(renderCalendar(), /aria-live="polite"/)
 })

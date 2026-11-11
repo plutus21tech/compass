@@ -45,9 +45,8 @@ export function CalendarDayCell({ cell, holidays, birthdays, selected, onMoreCli
     'flex min-h-[7rem] flex-col gap-1 border-b border-r border-border p-1.5 text-left outline-none',
     'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
     cell.selectable ? 'cursor-pointer select-none' : '',
-    cell.isWeekend ? 'bg-muted/40' : 'bg-card',
+    selected ? 'bg-primary/10 ring-2 ring-inset ring-primary' : cell.isWeekend ? 'bg-muted/40' : 'bg-card',
     cell.isPast || !cell.inMonth ? 'opacity-50' : '',
-    selected ? 'bg-primary/10 ring-2 ring-inset ring-primary' : '',
   ]
   const outClass = cell.busy
     ? 'font-semibold text-amber-700 dark:text-amber-300'

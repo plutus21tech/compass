@@ -38,6 +38,11 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const IDLE: RangeState = { phase: 'idle' }
 const SEGMENT = 'rounded-md px-3 py-1 text-sm transition-colors'
 
+/** Escape abandons a range in progress; it does nothing when idle. */
+export function shouldCancelRange(key: string, phase: RangeState['phase']): boolean {
+  return key === 'Escape' && phase !== 'idle'
+}
+
 function dayKeyOf(target: EventTarget | null): string | null {
   if (!(target instanceof Element)) return null
   return target.closest<HTMLElement>('[data-day]')?.dataset.day ?? null
@@ -190,6 +195,16 @@ export function TeamCalendar(props: TeamCalendarProps) {
     }
   }, [dragging, dispatch])
 
+  const active = range.phase !== 'idle'
+  useEffect(() => {
+    if (!active) return undefined
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (shouldCancelRange(e.key, rangeRef.current.phase)) dispatch({ type: 'cancel' })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, dispatch])
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     const key = dayKeyOf(e.target)
@@ -241,7 +256,9 @@ export function TeamCalendar(props: TeamCalendarProps) {
           viewerDepartment={viewerDepartment}
           departments={departments}
         />
-        <Hint phase={range.phase} panelOpen={panelOpen} onCancel={() => dispatch({ type: 'cancel' })} />
+        <div aria-live="polite">
+          <Hint phase={range.phase} panelOpen={panelOpen} onCancel={() => dispatch({ type: 'cancel' })} />
+        </div>
       </div>
       <Legend />
 
