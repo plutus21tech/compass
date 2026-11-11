@@ -109,7 +109,7 @@ export function renderPeerOutcomeEmail(input: { name: string; peerName: string; 
 
 type Change = { action: 'ADD' | 'REMOVE'; relation: 'PEER' | 'LEAD' | 'REPORT' }
 /** "add Cara Lindqvist to your team", from the requester's side. */
-const yourChange = (c: Change, other: string) => `${ACTION_WORDS[c.action]} ${other} ${RELATION_WORDS[c.relation][c.action === 'ADD' ? 0 : 1]}`
+export const yourChange = (c: Change, other: string) => `${ACTION_WORDS[c.action]} ${other} ${RELATION_WORDS[c.relation][c.action === 'ADD' ? 0 : 1]}`
 /** "add Cara Lindqvist to their team", about the requester. */
 const theirChange = (c: Change, other: string) => `${ACTION_WORDS[c.action]} ${other} ${LIST_WORDS[c.relation][c.action === 'ADD' ? 0 : 1]}`
 const HR_REQUESTS = '/admin/evaluation-round?tab=people'

@@ -13,6 +13,7 @@ import { recordAudit } from './audit'
 import { assertHr, byName, loadPeople, personRef, type WeeklyActor } from './context'
 import { loadCycle, roundOpensAt } from './cycles'
 import { WeeklyError } from './errors'
+import { listChangedBell } from './bell-notices'
 import { deliverOnce, type WeeklySendMail } from './notifications'
 import { applyMappingChange, mappingOf, MIN_PEERS } from './peer-requests'
 import { periodRoundStage } from './round'
@@ -104,8 +105,11 @@ export async function changeRoundMapping(
   await deliverOnce([
     { userId: person.id, text: `HR ${verb} ${other.name} as ${what} for ${cycle.period.name}.` },
     { userId: other.id, text: `HR ${verb} ${person.name} ${input.relation === 'PEER' ? 'as a peer' : input.relation === 'LEAD' ? 'as a team member' : 'as your lead'} for ${cycle.period.name}.` },
-  ].map((m) => ({
-    userId: m.userId, kind: 'weekly-mapping' as const, dedupeKey: `list-changed:${cycleId}:${m.userId}:${input.otherId}:${input.userId}:${input.relation}:${input.action}:${now.toISOString()}`,
+  ].map((m) => {
+    const dedupeKey = `list-changed:${cycleId}:${m.userId}:${input.otherId}:${input.userId}:${input.relation}:${input.action}:${now.toISOString()}`
+    return { m, dedupeKey }
+  }).map(({ m, dedupeKey }) => ({
+    userId: m.userId, kind: 'weekly-mapping' as const, dedupeKey, bell: listChangedBell({ text: m.text, dedupeKey }),
     render: (name: string) => renderListChangedEmail({ name, change: m.text, appUrl }),
   })), send)
 }
