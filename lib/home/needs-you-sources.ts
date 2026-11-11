@@ -124,33 +124,36 @@ function hrLeaveItems(rows: readonly ApprovalLeaveRow[]): NeedsYouItem[] {
     title: `${plural(waiting.length, 'leave request', 'leave requests')} waiting for HR`, detail: null,
     dueDay: earliest(waiting.map((r) => dayKeyOf(r.startDate))), href: '/admin/leave', action: 'Review', prefetch: true,
   }]
-  const plans: NeedsYouItem[] = rows
-    .filter((r) => !waitingForHr(r) && planPending(r))
-    .map((r) => ({
-      key: `leave:${r.id}`, source: 'leave-approval' as const, eyebrow: 'Handover plan',
-      title: `Review ${r.employee.name}’s handover plan`, detail: formatDateRange(r.startDate, r.endDate),
-      dueDay: dayKeyOf(r.startDate), href: getLeaveRequestPath(r.id), action: 'Review', prefetch: true,
-    }))
-  return [...summary, ...plans]
+  // HR_APPROVED rows are the viewer's own lead-queue rows still needing their decision as lead.
+  const own: NeedsYouItem[] = rows.flatMap((r) => {
+    if (waitingForHr(r)) return []
+    const item = r.status === 'HR_APPROVED' || planPending(r) ? leadLeaveItem(r) : null
+    return item ? [item] : []
+  })
+  return [...summary, ...own]
+}
+
+/** One per-request item for a lead: a decision (PENDING/HR_APPROVED, plan folded in) or a plan review. */
+function leadLeaveItem(r: ApprovalLeaveRow): NeedsYouItem | null {
+  const needsDecision = r.status === 'PENDING' || r.status === 'HR_APPROVED'
+  const plan = planPending(r)
+  if (!needsDecision && !plan) return null
+  const range = formatDateRange(r.startDate, r.endDate)
+  return {
+    key: `leave:${r.id}`, source: 'leave-approval',
+    eyebrow: needsDecision ? 'Leave requests' : 'Handover plan',
+    title: needsDecision ? `Approve ${r.employee.name}’s ${labelOf(r.leaveType)} leave` : `Review ${r.employee.name}’s handover plan`,
+    detail: needsDecision && plan ? `${range} · Handover plan to review too` : range,
+    dueDay: dayKeyOf(r.startDate), href: getLeaveRequestPath(r.id), action: 'Review', prefetch: true,
+  }
 }
 
 export function leaveApprovalItems(rows: readonly ApprovalLeaveRow[], viewer: { role: string }): NeedsYouItem[] {
   if (isAdminRole(viewer.role)) return hrLeaveItems(rows)
-  const items: NeedsYouItem[] = []
-  for (const r of rows) {
-    const needsDecision = r.status === 'PENDING' || r.status === 'HR_APPROVED'
-    const plan = planPending(r)
-    if (!needsDecision && !plan) continue
-    const range = formatDateRange(r.startDate, r.endDate)
-    items.push({
-      key: `leave:${r.id}`, source: 'leave-approval',
-      eyebrow: needsDecision ? 'Leave requests' : 'Handover plan',
-      title: needsDecision ? `Approve ${r.employee.name}’s ${labelOf(r.leaveType)} leave` : `Review ${r.employee.name}’s handover plan`,
-      detail: needsDecision && plan ? `${range} · Handover plan to review too` : range,
-      dueDay: dayKeyOf(r.startDate), href: getLeaveRequestPath(r.id), action: 'Review', prefetch: true,
-    })
-  }
-  return items
+  return rows.flatMap((r) => {
+    const item = leadLeaveItem(r)
+    return item ? [item] : []
+  })
 }
 
 export interface ApprovalWfhRow { id: string; status: string; startDate: string; endDate: string; employee: { name: string } }

@@ -173,7 +173,6 @@ describe('leave approvals', () => {
       leaveRow({ id: '1', startDate: '2026-11-25T00:00:00.000Z', endDate: '2026-11-25T00:00:00.000Z' }),
       leaveRow({ id: '2', status: 'LEAD_APPROVED', startDate: '2026-11-18T00:00:00.000Z' }),
       leaveRow({ id: '3', startDate: '2026-11-30T00:00:00.000Z' }),
-      leaveRow({ id: '4', status: 'HR_APPROVED' }),
     ], { role: 'HR' })
     assert.equal(items.length, 1)
     assert.equal(items[0].title, '3 leave requests waiting for HR')
@@ -200,6 +199,29 @@ describe('leave approvals', () => {
     assert.equal(items[1].eyebrow, 'Handover plan')
     assert.equal(items[1].href, '/leave?requestId=a')
     assert.equal(new Set(items.map((i) => i.key)).size, items.length)
+  })
+
+  it('HR who also leads a team gets one decision item per own-team HR_APPROVED row, plan folded in', () => {
+    const plan = { transitionPlanSubmittedAt: '2026-11-10T00:00:00.000Z', transitionPlanLeadStatus: 'PENDING' }
+    const items = leaveApprovalItems([
+      leaveRow({ id: 'p' }),
+      leaveRow({ id: 'h1', status: 'HR_APPROVED', leaveType: 'SICK', ...plan }),
+      leaveRow({ id: 'h2', status: 'HR_APPROVED' }),
+    ], { role: 'HR' })
+    assert.deepEqual(items.map((i) => i.key), ['leave:hr', 'leave:h1', 'leave:h2'])
+    assert.equal(items[0].title, '1 leave request waiting for HR')
+    assert.equal(items[1].title, 'Approve Cara Lindqvist’s sick leave')
+    assert.equal(items[1].eyebrow, 'Leave requests')
+    assert.equal(items[1].href, '/leave?requestId=h1')
+    assert.ok(items[1].detail?.endsWith('Handover plan to review too'))
+    assert.equal(items[2].title, 'Approve Cara Lindqvist’s casual leave')
+    assert.equal(items[2].detail, formatDateRange('2026-11-20', '2026-11-21'))
+    assert.equal(new Set(items.map((i) => i.key)).size, items.length)
+  })
+
+  it('HR with only an HR_APPROVED row gets just the decision item, no summary', () => {
+    const items = leaveApprovalItems([leaveRow({ id: 'h', status: 'HR_APPROVED' })], { role: 'HR' })
+    assert.deepEqual(items.map((i) => i.key), ['leave:h'])
   })
 
   it('WFH approvals: lead per row, HR one summary', () => {
