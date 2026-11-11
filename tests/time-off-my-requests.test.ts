@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MyRequests } from '@/components/leave/time-off/MyRequests'
 import { RequestDetailsBody } from '@/components/leave/time-off/RequestDetailsDialog'
 import type { DirectoryUser, LeaveRequest } from '@/lib/time-off/types'
+import { formatDateRange } from '@/lib/format-date'
 
 const day = (offset: number): string => {
   const d = new Date()
@@ -122,4 +123,20 @@ test('a disapproved plan is editable with the lead reason and Resubmit', () => {
 
 test('an unsubmitted plan shows Submit transition plan', () => {
   assert.match(body(req()), /Submit transition plan/)
+})
+
+test('each action names its request for screen readers (type and date range)', () => {
+  const r = req({ id: 'r9', startDate: day(10), endDate: day(12) })
+  const html = list([r, req({ id: 'r8', leaveType: 'SICK' })])
+  const what = 'Casual leave, ' + formatDateRange(r.startDate, r.endDate)
+  assert.ok(html.includes('aria-label="View details for ' + what + '"'), html)
+  assert.ok(html.includes('aria-label="Edit ' + what + '"'))
+  assert.ok(html.includes('aria-label="Cancel request for ' + what + '"'))
+  assert.match(html, /aria-label="View details for Sick leave, /)
+})
+
+test('the disapproval box has dark-mode colours', () => {
+  const html = body(req({ transitionPlanSubmittedAt: day(-1), transitionPlanLeadStatus: 'DISAPPROVED', transitionPlanDisapprovalReason: 'Add the client handover' }))
+  const box = html.match(/<div class="([^"]*)"><span class="font-medium">Team Lead asked for changes:/)?.[1] ?? ''
+  for (const cls of ['dark:border-red-900', 'dark:bg-red-950/40', 'dark:text-red-200']) assert.ok(box.split(' ').includes(cls), cls + ' in ' + box)
 })

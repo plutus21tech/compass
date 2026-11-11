@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { CalendarMarkerLegend, type CalendarBirthday, type CalendarHoliday } from '@/components/leave/CalendarDayMarkers'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -13,6 +13,8 @@ import {
   type DayCell,
 } from '@/lib/time-off/calendar-grid'
 import { previewRange, reduceRange, type RangeEvent, type RangeState } from '@/lib/time-off/range-select'
+import { reduceTap, type PendingTap, type TapEvent } from '@/lib/time-off/touch-tap'
+import { moveFocusKey, rovingFocusKey } from '@/lib/time-off/calendar-focus'
 import { LEAVE_TYPES, type CalendarEvent, type DirectoryUser } from '@/lib/time-off/types'
 import { CalendarDayCell } from './CalendarDayCell'
 import { DayLeaveDialog } from './DayLeaveDialog'
@@ -154,6 +156,8 @@ export function TeamCalendar(props: TeamCalendarProps) {
   const [range, setRange] = useState<RangeState>(IDLE)
   const rangeRef = useRef<RangeState>(IDLE)
   const [dialogCell, setDialogCell] = useState<DayCell | null>(null)
+  const [focusedDay, setFocusedDay] = useState<string | null>(null)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   const cells = useMemo(
     () =>
@@ -205,33 +209,58 @@ export function TeamCalendar(props: TeamCalendarProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [active, dispatch])
 
+  // Touch/pen second taps wait for pointerup so a scroll that starts on a day never commits it.
+  const tapRef = useRef<PendingTap | null>(null)
+  const tap = (event: TapEvent) => {
+    const result = reduceTap(tapRef.current, event)
+    tapRef.current = result.pending
+    if (result.down) dispatch({ type: 'down', key: result.down })
+  }
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     const key = dayKeyOf(e.target)
     if (!key) return
     const target = e.target as Element
     if (target.hasPointerCapture?.(e.pointerId)) target.releasePointerCapture(e.pointerId)
-    dispatch({ type: 'down', key })
+    const { pointerType, pointerId, clientX: x, clientY: y } = e
+    tap({ type: 'down', pointerType, phase: rangeRef.current.phase, pointerId, key, x, y })
   }
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (tapRef.current) tap({ type: 'move', pointerId: e.pointerId, x: e.clientX, y: e.clientY })
+  }
+  const onPointerCancel = (e: PointerEvent<HTMLDivElement>) => tap({ type: 'cancel', pointerId: e.pointerId })
   const onPointerOver = (e: PointerEvent<HTMLDivElement>) => {
     const key = dayKeyOf(e.target)
     if (key) dispatch({ type: 'enter', key })
   }
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    tap({ type: 'up', pointerId: e.pointerId })
     const key = dayKeyOf(e.target)
     if (key) dispatch({ type: 'up', key })
   }
+  const onFocus = (e: FocusEvent<HTMLDivElement>) => {
+    const key = (e.target as HTMLElement).dataset.day
+    if (key) setFocusedDay(key)
+  }
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return
     const key = dayKeyOf(e.target)
     // Only the cell itself; keys on the "+N more" button keep their own behaviour.
     if (!key || (e.target as HTMLElement).dataset.day !== key) return
+    const nextKey = moveFocusKey(cells, key, e.key)
+    if (nextKey) {
+      e.preventDefault()
+      setFocusedDay(nextKey)
+      gridRef.current?.querySelector<HTMLElement>(`[data-day="${nextKey}"]`)?.focus()
+      return
+    }
+    if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
     dispatch({ type: 'down', key })
     dispatch({ type: 'up', key })
   }
 
   const highlight = range.phase === 'idle' ? selection : previewRange(range)
+  const tabStop = rovingFocusKey(cells, focusedDay, selection?.start ?? null)
   const weeks = Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7))
   const prev = shiftMonth(year, month, -1)
   const next = shiftMonth(year, month, 1)
@@ -264,9 +293,13 @@ export function TeamCalendar(props: TeamCalendarProps) {
 
       <div className="overflow-hidden rounded-xl border-l border-t border-border bg-card">
         <div
+          ref={gridRef}
           role="grid"
           aria-label="Team leave calendar"
+          onFocus={onFocus}
           onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerCancel={onPointerCancel}
           onPointerOver={onPointerOver}
           onPointerUp={onPointerUp}
           onKeyDown={onKeyDown}
@@ -287,6 +320,7 @@ export function TeamCalendar(props: TeamCalendarProps) {
                   holidays={holidays.filter((h) => h.date.slice(0, 10) === cell.key)}
                   birthdays={cell.inMonth ? birthdays.filter((b) => b.day === cell.day) : []}
                   selected={Boolean(highlight && cell.inMonth && cell.key >= highlight.start && cell.key <= highlight.end)}
+                  tabbable={cell.key === tabStop}
                   onMoreClick={setDialogCell}
                 />
               ))}

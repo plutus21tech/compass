@@ -253,7 +253,7 @@ export function RequestPanel(props: RequestPanelProps) {
       aria-labelledby="request-panel-title"
       aria-modal={trapFocus ? true : undefined}
       onKeyDown={onKeyDown}
-      className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background lg:sticky lg:inset-auto lg:top-6 lg:z-auto lg:max-h-[calc(100vh-3rem)] lg:rounded-xl lg:border lg:border-border lg:bg-card lg:shadow-sm"
+      className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background lg:sticky lg:inset-auto lg:top-6 lg:z-auto lg:max-h-[calc(100vh-3.5rem-3rem)] lg:rounded-xl lg:border lg:border-border lg:bg-card lg:shadow-sm"
     >
       <header className="space-y-4 border-b border-border px-5 pb-4 pt-5">
         <div className="flex items-center justify-between gap-3">

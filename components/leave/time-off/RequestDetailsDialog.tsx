@@ -97,7 +97,7 @@ export function RequestDetailsBody({ request, users, onClose, onEdit, onCancel, 
         {planEditable(request) ? (
           <div className="mt-2 space-y-3">
             {disapproved && request.transitionPlanDisapprovalReason?.trim() && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
                 <span className="font-medium">Team Lead asked for changes:</span>{' '}
                 {request.transitionPlanDisapprovalReason}
               </div>

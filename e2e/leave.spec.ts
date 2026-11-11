@@ -152,7 +152,14 @@ test('request leave through the three steps', async ({ page }, testInfo) => {
   await page.locator('#leave-reason').fill('Family trip')
   await expect(page.getByText('3 working days')).toBeVisible()
   if (testInfo.project.name === 'mobile') {
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    // The app shell scrolls inside <main> (and the mobile request panel is its own scroller), so
+    // measure those: the document element never overflows and could never fail this check.
+    const overflow = await page.evaluate(() => {
+      const scrollers = [document.querySelector('main'), document.querySelector('[aria-labelledby="request-panel-title"]')]
+      return scrollers.filter((el): el is Element => el !== null).map((el) => el.scrollWidth - el.clientWidth)
+    })
+    expect(overflow.length).toBeGreaterThan(0)
+    for (const extra of overflow) expect(extra).toBeLessThanOrEqual(0)
   }
 
   await page.getByRole('button', { name: 'Next: Handover' }).click()

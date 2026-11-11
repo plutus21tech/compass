@@ -8,6 +8,7 @@ import {
   type TimeOffSnapshot,
 } from '@/lib/time-off/api'
 import { monthsBetween } from '@/lib/time-off/calendar-grid'
+import { notePublicHolidayFailures } from '@/lib/time-off/holiday-warnings'
 import type { CalendarEvent } from '@/lib/time-off/types'
 
 const EMPTY_SNAPSHOT: TimeOffSnapshot = {
@@ -41,6 +42,7 @@ export function useTimeOffData(enabled: boolean) {
   })
   const [calendarError, setCalendarError] = useState(false)
   const holidayCache = useRef<Map<string, string[]>>(new Map())
+  const warnedHolidayMonths = useRef<ReadonlySet<string>>(new Set())
   const target = useRef({ year: calendar.year, month: calendar.month })
 
   const reload = useCallback(async () => {
@@ -88,12 +90,15 @@ export function useTimeOffData(enabled: boolean) {
     const months = monthsBetween(startKey, endKey)
     const missing = months.filter((m) => !holidayCache.current.has(cacheKey(m.year, m.month)))
     const results = await Promise.all(missing.map((m) => loadCalendarMonth(m.year, m.month)))
-    let failed = false
+    const failedMonths: string[] = []
     results.forEach((r, i) => {
-      if (r.ok) holidayCache.current.set(cacheKey(missing[i].year, missing[i].month), holidayDayKeys(r.data.holidays))
-      else failed = true
+      const key = cacheKey(missing[i].year, missing[i].month)
+      if (r.ok) holidayCache.current.set(key, holidayDayKeys(r.data.holidays))
+      else failedMonths.push(key)
     })
-    if (failed) toast.error(HOLIDAY_ERROR)
+    const noted = notePublicHolidayFailures(warnedHolidayMonths.current, failedMonths)
+    warnedHolidayMonths.current = noted.warned
+    if (noted.warn) toast.error(HOLIDAY_ERROR)
     const keys = new Set<string>()
     for (const m of months) {
       for (const key of holidayCache.current.get(cacheKey(m.year, m.month)) ?? []) keys.add(key)

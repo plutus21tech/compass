@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { RequestSummaryBox } from '@/components/leave/time-off/RequestSummaryBox'
@@ -337,4 +338,10 @@ test('the trap leaves Tab alone for portalled content outside the panel (open Se
   trapTabKey(e, t.container, { activeElement: t.outside as unknown as Element })
   assert.equal(calls.prevented, 0)
   assert.deepEqual(t.focused, [])
+})
+
+test('the docked panel fits below the 56px top bar: main scrolls under it, sticky at top-6 with 1.5rem below', () => {
+  const src = readFileSync('components/leave/time-off/RequestPanel.tsx', 'utf8')
+  assert.match(src, /lg:top-6 /)
+  assert.match(src, /lg:max-h-\[calc\(100vh-3\.5rem-3rem\)\]/)
 })

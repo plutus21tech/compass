@@ -48,6 +48,8 @@ export function MyRequests({ requests, onView, onEdit, onCancel }: MyRequestsPro
             const type = LEAVE_TYPE_STYLE[r.leaveType]
             const status = STATUS_STYLE[r.status] ?? STATUS_STYLE.PENDING
             const Icon = type.icon
+            // Every row has the same three buttons; name the request so screen readers can tell them apart.
+            const what = `${type.label} leave, ${formatDateRange(r.startDate, r.endDate)}`
             return (
               <li key={r.id} className="p-3">
                 <div className="flex items-start gap-3">
@@ -72,18 +74,18 @@ export function MyRequests({ requests, onView, onEdit, onCancel }: MyRequestsPro
                       </p>
                     )}
                     <div className="mt-1 flex flex-wrap gap-3">
-                      <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-primary" onClick={() => onView(r)}>
+                      <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-primary" aria-label={`View details for ${what}`} onClick={() => onView(r)}>
                         <Eye className="mr-1 h-3 w-3" aria-hidden />
                         View details
                       </Button>
                       {canEditRequest(r) && (
-                        <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-amber-600" onClick={() => onEdit(r)}>
+                        <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-amber-600" aria-label={`Edit ${what}`} onClick={() => onEdit(r)}>
                           <Edit3 className="mr-1 h-3 w-3" aria-hidden />
                           Edit
                         </Button>
                       )}
                       {canCancelRequest(r) && (
-                        <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-red-600" onClick={() => onCancel(r)}>
+                        <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-red-600" aria-label={`Cancel request for ${what}`} onClick={() => onCancel(r)}>
                           Cancel request
                         </Button>
                       )}

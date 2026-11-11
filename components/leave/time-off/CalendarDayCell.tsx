@@ -10,6 +10,8 @@ interface CalendarDayCellProps {
   holidays: CalendarHoliday[]
   birthdays: CalendarBirthday[]
   selected: boolean
+  /** The calendar's single tab stop (roving tabindex); other days are reached with the arrow keys. */
+  tabbable: boolean
   onMoreClick: (cell: DayCell) => void
 }
 
@@ -40,7 +42,7 @@ function LeaveChip({ event }: { event: CalendarEvent }) {
   )
 }
 
-export function CalendarDayCell({ cell, holidays, birthdays, selected, onMoreClick }: CalendarDayCellProps) {
+export function CalendarDayCell({ cell, holidays, birthdays, selected, tabbable, onMoreClick }: CalendarDayCellProps) {
   const classes = [
     'flex min-h-[7rem] flex-col gap-1 border-b border-r border-border p-1.5 text-left outline-none',
     'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
@@ -58,7 +60,7 @@ export function CalendarDayCell({ cell, holidays, birthdays, selected, onMoreCli
       data-day={cell.key}
       aria-selected={selected}
       aria-disabled={!cell.selectable}
-      tabIndex={cell.selectable ? 0 : -1}
+      tabIndex={cell.selectable && tabbable ? 0 : -1}
       className={classes.filter(Boolean).join(' ')}
     >
       <div className="flex items-center justify-between gap-1 text-xs">

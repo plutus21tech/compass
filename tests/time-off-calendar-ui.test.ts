@@ -33,7 +33,7 @@ function cellWith(events: CalendarEvent[]): DayCell {
 
 function renderCell(cell: DayCell, selected = false): string {
   return renderToStaticMarkup(
-    createElement(CalendarDayCell, { cell, holidays: [], birthdays: [], selected, onMoreClick: () => {} })
+    createElement(CalendarDayCell, { cell, holidays: [], birthdays: [], selected, tabbable: true, onMoreClick: () => {} })
   )
 }
 
