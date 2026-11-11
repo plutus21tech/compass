@@ -43,6 +43,8 @@ import { WorkspaceBulkActions } from './WorkspaceBulkActions'
 import { WorkspaceKanban } from './WorkspaceKanban'
 import { WorkspaceTaskTable } from './WorkspaceTaskTable'
 import { DueDatePicker } from './DueDatePicker'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import type {
   AssigneeFilter,
   CreateProjectInput,
@@ -861,35 +863,29 @@ export function ProjectsWorkspace() {
 
   if (!workspace) {
     return (
-      <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+      <PageContainer>
         <EmptyState
           icon={<FolderKanban className="h-11 w-11" />}
           title="The project workspace could not be loaded"
           description={loadError || 'Please try again.'}
           action={<Button onClick={() => void loadWorkspace(true)}>Try again</Button>}
         />
-      </div>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-3 p-3 sm:p-4 lg:p-5">
-      <header className="flex items-start justify-between gap-3 xl:items-end">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">Projects & tasks</h1>
-          <p className="mt-0.5 max-w-2xl text-xs text-muted-foreground">
-            Plan by project, work from one task list, and keep every deadline visible.
-          </p>
-        </div>
-        {(workspace.viewer.role === 'HR' || workspace.projects.length > 0) && (
+    <PageContainer width="wide" className="space-y-3">
+      <PageHeader
+        title="Projects"
+        subtitle="Plan by project, work from one task list, and keep every deadline visible."
+        className="mb-0"
+        actions={(workspace.viewer.role === 'HR' || workspace.projects.length > 0) && (
           <Button variant="outline" size="sm" className="shrink-0 px-2 sm:px-3" asChild>
-            <Link href="/projects/analytics">
-              <ChartColumn aria-hidden="true" />
-              <span className="sr-only sm:not-sr-only">Analytics</span>
-            </Link>
+            <Link href="/projects/analytics"><ChartColumn aria-hidden="true" /><span className="sr-only sm:not-sr-only">Analytics</span></Link>
           </Button>
         )}
-      </header>
+      />
 
       <section className="rounded-lg border border-border/60 bg-card/60 p-2 shadow-sm backdrop-blur-sm">
         <div className="flex flex-col gap-2 xl:flex-row xl:flex-nowrap xl:items-center">
@@ -1243,6 +1239,6 @@ export function ProjectsWorkspace() {
           </div>
         </div>
       </Modal>
-    </div>
+    </PageContainer>
   )
 }

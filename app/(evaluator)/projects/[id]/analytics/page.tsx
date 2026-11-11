@@ -17,6 +17,7 @@ import { VIZ_VARS } from '@/components/projects/analytics/chart-theme'
 import type { AnalyticsResponse, Participant } from '@/components/projects/analytics/types'
 import { useDocumentTitle } from '@/components/projects/analytics/useDocumentTitle'
 import { cn } from '@/lib/utils'
+import { PageContainer } from '@/components/layout/page-container'
 
 type Section = 'overview' | 'people'
 type Failure = 'forbidden' | 'not_found' | 'bad_range' | 'error'
@@ -138,7 +139,7 @@ function ProjectAnalytics() {
 
   return (
     <TooltipProvider delayDuration={150} skipDelayDuration={300}>
-      <div className={cn('relative mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8', VIZ_VARS)}>
+      <PageContainer width="wide" className={cn('relative', VIZ_VARS)}>
         <AnalyticsHeader projectId={id} name={data.project.name} color={data.project.color} />
 
         <Tabs value={section} onValueChange={(value) => updateParams({ section: value === 'people' ? 'people' : null })}>
@@ -188,7 +189,7 @@ function ProjectAnalytics() {
             </TabsContent>
           </div>
         </Tabs>
-      </div>
+      </PageContainer>
     </TooltipProvider>
   )
 }

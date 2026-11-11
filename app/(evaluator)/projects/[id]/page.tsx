@@ -21,6 +21,7 @@ import {
   CheckCircle2, RotateCcw, AlertTriangle, PauseCircle, Lock, ChartColumn,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PageContainer } from '@/components/layout/page-container'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { projectLoadFailure, readSharedTaskId } from '@/lib/project-task-utils'
@@ -429,8 +430,7 @@ function ProjectDetail() {
         : '#ef4444'
 
   return (
-    <div className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
-      {/* Back button */}
+    <PageContainer width="wide">
       <button
         onClick={() => router.push('/projects')}
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
@@ -896,6 +896,6 @@ function ProjectDetail() {
           onMembersChange={loadProject}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

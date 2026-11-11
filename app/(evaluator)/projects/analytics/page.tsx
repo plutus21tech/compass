@@ -19,6 +19,7 @@ import { useDocumentTitle } from '@/components/projects/analytics/useDocumentTit
 import { assignProjectColors } from '@/components/projects/analytics/workspace-colors'
 import type { WorkspaceAnalytics, WorkspaceAnalyticsResponse } from '@/components/projects/analytics/types'
 import { cn } from '@/lib/utils'
+import { PageContainer } from '@/components/layout/page-container'
 
 type Failure = 'forbidden' | 'bad_range' | 'error'
 const failureFor = (status: number): Failure => (status === 403 ? 'forbidden' : status === 400 ? 'bad_range' : 'error')
@@ -70,7 +71,7 @@ export default function WorkspaceAnalyticsPage() {
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <div className={cn('relative mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8', VIZ_VARS)}>
+    <PageContainer width="wide" className={cn('relative', VIZ_VARS)}>
       <header className="mb-6 flex flex-col gap-1.5">
         <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
           <ol className="flex flex-wrap items-center gap-1.5">
@@ -94,7 +95,7 @@ function Shell({ children }: { children: ReactNode }) {
         </p>
       </header>
       {children}
-    </div>
+    </PageContainer>
   )
 }
 

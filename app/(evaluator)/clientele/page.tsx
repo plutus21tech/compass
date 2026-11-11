@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/ui/modal'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { Handshake, Users, Send } from 'lucide-react'
 
@@ -127,20 +129,15 @@ export default function ClientelePage() {
 
   if (loading) {
     return (
-      <div className="p-6 sm:p-8 max-w-6xl mx-auto">
+      <PageContainer>
         <LoadingScreen message="Loading your clients..." />
-      </div>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="p-6 sm:p-8 max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-2xl font-display font-semibold text-foreground">Clientele</h1>
-        <p className="text-muted-foreground">
-          The clients you work on, and who else is working on them.
-        </p>
-      </div>
+    <PageContainer>
+      <PageHeader title="Clients" subtitle="The clients you work on, and who else is working on them." className="mb-8" />
 
       {clients.length === 0 ? (
         <Card>
@@ -325,6 +322,6 @@ export default function ClientelePage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </PageContainer>
   )
 }

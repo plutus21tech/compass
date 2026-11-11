@@ -1,38 +1,15 @@
-'use client'
+export type PageWidth = 'default' | 'wide' | 'reading'
 
-import { motion } from 'framer-motion'
-import { DotPattern } from '@/components/magicui/dot-pattern'
-
-interface PageContainerProps {
+export interface PageContainerProps {
   children: React.ReactNode
+  width?: PageWidth
   className?: string
 }
 
-export function PageContainer({ children, className = '' }: PageContainerProps) {
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Background decoration */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-1/2 -right-1/2 w-full h-full bg-gradient-radial from-indigo-500/5 via-transparent to-transparent" />
-        <div className="absolute -bottom-1/2 -left-1/2 w-full h-full bg-gradient-radial from-purple-500/5 via-transparent to-transparent" />
-        <DotPattern className="opacity-[0.03] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
-      </div>
-      <div className={`relative ${className}`}>
-        {children}
-      </div>
-    </div>
-  )
-}
+const BASE = 'mx-auto w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8'
 
-export function PageContent({ children, className = '' }: PageContainerProps) {
-  return (
-    <motion.main
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.1, ease: [0.25, 0.46, 0.45, 0.94], duration: 0.45 }}
-      className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 ${className}`}
-    >
-      {children}
-    </motion.main>
-  )
+export function PageContainer({ children, width = 'default', className }: PageContainerProps) {
+  const max = width === 'wide' ? 'max-w-[1600px]' : 'max-w-7xl'
+  const classes = [BASE, max, className].filter(Boolean).join(' ')
+  return <div className={classes}>{width === 'reading' ? <div className="max-w-4xl">{children}</div> : children}</div>
 }
