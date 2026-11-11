@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildMonthGrid, buildDayCells, eventsOnDay, filterEventsByDepartment, calendarDepartments,
-  monthsBetween, outToday,
+  monthsBetween,
 } from '../lib/time-off/calendar-grid'
 import type { CalendarEvent } from '../lib/time-off/types'
 
@@ -89,10 +89,4 @@ test('monthsBetween crosses a year', () => {
   assert.deepEqual(monthsBetween('2026-12-28', '2026-12-01'), [])
   assert.deepEqual(monthsBetween('nope', '2026-12-01'), [])
   assert.equal(monthsBetween('2026-01-01', '2030-01-01').length, 13)
-})
-
-test('out today: approved colleagues only', () => {
-  const ok = event({}); const pending = event({ status: 'PENDING' }); const mine = event({ isCurrentUser: true })
-  const elsewhere = event({ startDate: '2026-11-20T00:00:00.000Z', endDate: '2026-11-20T00:00:00.000Z' })
-  assert.deepEqual(outToday([ok, pending, mine, elsewhere], '2026-11-19').map((e) => e.id), [ok.id])
 })

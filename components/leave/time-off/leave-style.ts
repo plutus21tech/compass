@@ -45,7 +45,7 @@ export const STATUS_STYLE: Record<string, { color: string; bg: string; label: st
   CANCELLED: { color: 'text-gray-600', bg: 'bg-gray-100 dark:bg-gray-500/20', label: 'Cancelled' },
 }
 
-export const halfDaySessionLabel = (session?: 'FIRST_HALF' | 'SECOND_HALF' | null): string => {
+export const halfDaySessionLabel = (session?: string | null): string => {
   if (session === 'FIRST_HALF') return 'First half'
   if (session === 'SECOND_HALF') return 'Second half'
   return 'Half day'

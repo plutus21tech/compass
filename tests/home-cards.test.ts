@@ -15,7 +15,6 @@ const person = (id: string, name: string): OutPerson => ({
   leaveType: 'CASUAL',
   isHalfDay: false,
   halfDaySession: null,
-  pending: false,
 })
 
 const people = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => person(id, `Person ${id}`))

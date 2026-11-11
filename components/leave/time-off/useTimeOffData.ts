@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { CalendarBirthday, CalendarHoliday } from '@/components/leave/CalendarDayMarkers'
+import type { OutTodayView } from '@/lib/home/out-today'
 import {
-  loadCalendarMonth, loadTimeOff,
+  loadCalendarMonth, loadOutToday, loadTimeOff,
   type TimeOffSnapshot,
 } from '@/lib/time-off/api'
 import { monthsBetween } from '@/lib/time-off/calendar-grid'
@@ -36,6 +37,8 @@ const holidayDayKeys = (holidays: CalendarHoliday[]): string[] => holidays.map((
 export function useTimeOffData(enabled: boolean) {
   const [loading, setLoading] = useState(true)
   const [snapshot, setSnapshot] = useState<TimeOffSnapshot>(EMPTY_SNAPSHOT)
+  // Who is out today comes from Home's source, not the month being viewed, so both pages agree.
+  const [outToday, setOutToday] = useState<OutTodayView | null>(null)
   const [calendar, setCalendar] = useState<CalendarState>(() => {
     const now = new Date()
     return { year: now.getFullYear(), month: now.getMonth(), events: [], holidays: [], birthdays: [] }
@@ -46,9 +49,11 @@ export function useTimeOffData(enabled: boolean) {
   const target = useRef({ year: calendar.year, month: calendar.month })
 
   const reload = useCallback(async () => {
-    const result = await loadTimeOff()
+    const [result, out] = await Promise.all([loadTimeOff(), loadOutToday()])
     if (result.ok) setSnapshot(result.data)
     else toast.error(result.error)
+    if (out.ok) setOutToday(out.data)
+    else console.error('Out today load failed:', out.error)
     setLoading(false)
   }, [])
 
@@ -106,5 +111,5 @@ export function useTimeOffData(enabled: boolean) {
     return keys
   }, [])
 
-  return { loading, snapshot, reload, calendar, calendarError, setMonth, reloadCalendar, holidayKeysFor }
+  return { loading, snapshot, outToday, reload, calendar, calendarError, setMonth, reloadCalendar, holidayKeysFor }
 }

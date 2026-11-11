@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/composed/UserAvatar'
 import { formatDate } from '@/lib/format-date'
 import { homeSummary } from '@/lib/home/summary'
-import type { HomeOverview, OutPerson, TeamUpcomingRow } from '@/lib/home/out-today'
+import { othersOutToday, type HomeOverview, type OutPerson, type TeamUpcomingRow } from '@/lib/home/out-today'
 import type { Source } from './fetch-source'
 import { CardSkeleton, HomeCard } from './HomeCard'
 import { OutTodayDialog } from './OutTodayDialog'
@@ -106,7 +106,7 @@ export function OutTodayCard({ overview, teamUpcoming, viewerId }: OutTodayCardP
     )
   }
   const data = overview.data
-  const people = data.outToday.people.filter((p) => p.id !== viewerId)
+  const { people } = othersOutToday(data.outToday, viewerId)
   const upcoming = teamUpcoming?.ok ? teamUpcoming.data : []
   return (
     <>

@@ -1,4 +1,5 @@
 import type { CalendarBirthday, CalendarHoliday } from '@/components/leave/CalendarDayMarkers'
+import type { OutTodayView } from '@/lib/home/out-today'
 import type { TransitionTask } from '@/lib/leave-transition-plan'
 import type {
   ApprovalRequest, CalendarEvent, DirectoryUser, LeaveBalance, LeaveRequest, WfhRequest,
@@ -22,6 +23,7 @@ export interface CalendarMonthData {
 }
 
 const LOAD_ERROR = 'Could not load your time off. Refresh to try again.'
+const OUT_TODAY_ERROR = 'Could not load who is out today.'
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 /** ok only when the HTTP call succeeded and the body does not say success:false. */
@@ -136,4 +138,25 @@ export async function loadCalendarMonth(year: number, month: number): Promise<Ap
     ok: true,
     data: { events: r.data.events ?? [], holidays: r.data.holidays ?? [], birthdays: r.data.birthdays ?? [] },
   }
+}
+
+const isOutPerson = (value: unknown): boolean =>
+  value !== null && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'string'
+
+/** The `outToday` of a GET /api/home/overview body, or null when the body is not one. */
+export function pickOutToday(body: unknown): OutTodayView | null {
+  const data = body !== null && typeof body === 'object' ? (body as { data?: unknown }).data : undefined
+  const out = data !== null && typeof data === 'object' ? (data as { outToday?: unknown }).outToday : undefined
+  if (out === null || typeof out !== 'object') return null
+  const { count, people } = out as { count?: unknown; people?: unknown }
+  if (typeof count !== 'number' || !Array.isArray(people) || !people.every(isOutPerson)) return null
+  return out as OutTodayView
+}
+
+/** Who is out today, from the same source and rule as Home (approved leave, Karachi day). */
+export async function loadOutToday(): Promise<ApiResult<OutTodayView>> {
+  const r = await call<unknown>('/api/home/overview', undefined, OUT_TODAY_ERROR)
+  if (!r.ok) return r
+  const out = pickOutToday(r.data)
+  return out ? { ok: true, data: out } : { ok: false, error: OUT_TODAY_ERROR }
 }

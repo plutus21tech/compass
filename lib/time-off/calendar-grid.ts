@@ -116,12 +116,3 @@ export function monthsBetween(startKey: string, endKey: string): Array<{ year: n
   }
   return result
 }
-
-export function outToday(events: CalendarEvent[], todayKey: string): CalendarEvent[] {
-  return events.filter((event) => {
-    const start = toDateKey(event.startDate)
-    const end = toDateKey(event.endDate)
-    if (!start || !end) return false
-    return todayKey >= start && todayKey <= end && !event.isCurrentUser && event.status === 'APPROVED'
-  })
-}

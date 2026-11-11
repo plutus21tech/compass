@@ -6,6 +6,7 @@ import { teamShortLabel } from '@/lib/teams/catalog'
 import { addDays, daysBetween, dayKeyOf, karachiDayKey } from './time'
 import {
   OUT_STATUSES,
+  OUT_TODAY_STATUS,
   summariseOutToday,
   type HolidayView,
   type HomeOverview,
@@ -45,13 +46,14 @@ export async function loadHomeOverview(
 ): Promise<HomeOverview> {
   const today = karachiDayKey(now)
   const todayDate = dayDate(today)
-  const statuses = [...OUT_STATUSES]
+  // "Next out" still looks ahead at requests waiting for approval; "out today" does not.
+  const upcomingStatuses = [...OUT_STATUSES]
   const department = viewer.department?.trim() ? viewer.department : null
 
   const [outRows, nextOut, holidays, catalog] = await Promise.all([
     db.leaveRequest.findMany({
       where: {
-        status: { in: statuses },
+        status: OUT_TODAY_STATUS,
         startDate: { lte: todayDate },
         endDate: { gte: todayDate },
         employee: ACTIVE_PERSON_WHERE,
@@ -68,7 +70,7 @@ export async function loadHomeOverview(
     department
       ? db.leaveRequest.findFirst({
           where: {
-            status: { in: statuses },
+            status: { in: upcomingStatuses },
             employeeId: { not: viewer.id },
             employee: { AND: [ACTIVE_PERSON_WHERE, { department: { equals: department, mode: 'insensitive' } }] },
             startDate: { gt: todayDate, lte: dayDate(addDays(today, NEXT_OUT_WINDOW_DAYS)) },

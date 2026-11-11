@@ -26,7 +26,6 @@ import { isThreeEDepartment } from '@/lib/company-branding'
 import { formatDate, localDayKey } from '@/lib/format-date'
 import { cancelLeave } from '@/lib/time-off/api'
 import { buildBalanceCards, nextLeave } from '@/lib/time-off/balance-cards'
-import { filterEventsByDepartment, outToday } from '@/lib/time-off/calendar-grid'
 import { DEEP_LINK_UNAVAILABLE, deepLinkTarget, parseTimeOffParams } from '@/lib/time-off/page-params'
 import { panelModeKey, panelSwitchAction } from '@/lib/time-off/panel-switch'
 import { planReminderRequests } from '@/lib/time-off/request-rules'
@@ -82,7 +81,6 @@ export default function LeavePage() {
   const isThreeE = isThreeEDepartment(user?.department)
   const balanceYear = new Date().getFullYear()
   const reminders = planReminderRequests(snapshot.requests, viewerDepartment)
-  const outTodayEvents = outToday(filterEventsByDepartment(calendar.events, departmentFilter), localDayKey(new Date()))
 
   // The details dialog always shows the latest copy of its request, and closes if it is gone.
   const detailsRequest = detailsId ? snapshot.requests.find((r) => r.id === detailsId) ?? null : null
@@ -248,7 +246,7 @@ export default function LeavePage() {
           <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
             <MyRequests requests={snapshot.requests} onView={(r) => setDetailsId(r.id)} onEdit={openEdit} onCancel={askCancel} />
             <ApprovalQueue requests={snapshot.approvals} highlightedId={highlightedId} onChanged={reloadAll} />
-            <OutTodayCard events={outTodayEvents} />
+            <OutTodayCard outToday={data.outToday} viewerId={user?.id ?? ''} />
           </div>
           <div className="mt-6">
             <WfhSection

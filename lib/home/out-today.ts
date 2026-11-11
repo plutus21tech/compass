@@ -1,5 +1,7 @@
 export const OUT_STATUSES = ['PENDING', 'LEAD_APPROVED', 'HR_APPROVED', 'APPROVED'] as const
 export const PENDING_STATUSES = ['PENDING', 'LEAD_APPROVED', 'HR_APPROVED'] as const
+/** Only fully approved leave makes someone "out today", on Home and on Time off alike. */
+export const OUT_TODAY_STATUS = 'APPROVED'
 
 export type LeaveTypeValue = 'CASUAL' | 'SICK' | 'ANNUAL'
 
@@ -20,7 +22,6 @@ export interface OutPerson {
   leaveType: LeaveTypeValue
   isHalfDay: boolean
   halfDaySession: string | null
-  pending: boolean
 }
 
 export interface HolidayView {
@@ -31,7 +32,8 @@ export interface HolidayView {
 
 export interface HomeOverview {
   today: string
-  outToday: { count: number; people: OutPerson[] }
+  /** Everyone out, the viewer included: cards show it through `othersOutToday`. */
+  outToday: OutTodayView
   department: string | null
   departmentOutToday: number | null
   nextOutInDepartment: { name: string; startDate: string } | null
@@ -40,10 +42,13 @@ export interface HomeOverview {
   upcomingHolidays: HolidayView[]
 }
 
-const isPending = (status: string): boolean => (PENDING_STATUSES as readonly string[]).includes(status)
+export interface OutTodayView {
+  count: number
+  people: OutPerson[]
+}
 
-/** Lower is better: a final row beats a pending one, then a full day beats a half day. */
-const rank = (row: OutRow): number => (isPending(row.status) ? 2 : 0) + (row.isHalfDay ? 1 : 0)
+/** Lower is better: a full day beats a half day. */
+const rank = (row: OutRow): number => (row.isHalfDay ? 1 : 0)
 
 const normalise = (value: string | null): string | null => {
   const trimmed = value?.trim().toLowerCase()
@@ -56,6 +61,7 @@ export function summariseOutToday(
 ): { people: OutPerson[]; departmentOutToday: number | null } {
   const best = new Map<string, OutRow>()
   for (const row of rows) {
+    if (row.status !== OUT_TODAY_STATUS) continue
     const current = best.get(row.employeeId)
     if (!current || rank(row) < rank(current)) best.set(row.employeeId, row)
   }
@@ -68,7 +74,6 @@ export function summariseOutToday(
       leaveType: row.leaveType,
       isHalfDay: row.isHalfDay,
       halfDaySession: row.halfDaySession,
-      pending: isPending(row.status),
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 
@@ -79,6 +84,12 @@ export function summariseOutToday(
       : people.filter((p) => p.id !== viewer.id && normalise(p.department) === viewerDepartment).length
 
   return { people, departmentOutToday }
+}
+
+/** The one "who is out today" both Home and Time off show: the viewer is never counted or listed. */
+export function othersOutToday(outToday: OutTodayView, viewerId: string): OutTodayView {
+  const people = outToday.people.filter((p) => p.id !== viewerId)
+  return { count: people.length, people }
 }
 
 /** One row of GET /api/leave/requests?scope=team-upcoming, as Home reads it. */

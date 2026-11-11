@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ApprovalQueue } from '@/components/leave/time-off/ApprovalQueue'
-import { OutTodayCard } from '@/components/leave/time-off/OutTodayCard'
 import { PlanDisapproveForm } from '@/components/leave/time-off/PlanDisapproveDialog'
 import { beginRow, endRow } from '@/lib/time-off/row-guard'
 import type { ApprovalRequest, CalendarEvent } from '@/lib/time-off/types'
@@ -104,32 +103,6 @@ test('PlanDisapproveForm disables Send back while the reason is empty', () => {
   assert.match(html, /What should change\?/)
   assert.match(html, /id="plan-disapprove-reason"/)
   assert.match(html, /<button[^>]*disabled=""[^>]*>Send back<\/button>/)
-})
-
-const event = (o: Partial<CalendarEvent> = {}): CalendarEvent => ({
-  id: 'ev1',
-  employeeId: 'e2',
-  employeeName: 'Omar Ali',
-  department: null,
-  leaveType: 'ANNUAL',
-  isHalfDay: true,
-  halfDaySession: 'FIRST_HALF',
-  startDate: day(0),
-  endDate: day(0),
-  status: 'APPROVED',
-  isCurrentUser: false,
-  ...o,
-})
-
-test('OutTodayCard shows type and half-day session', () => {
-  const html = renderToStaticMarkup(createElement(OutTodayCard, { events: [event()] }))
-  assert.match(html, /Out today/)
-  assert.match(html, /Omar Ali/)
-  assert.match(html, /\(Annual, First half\)/)
-})
-
-test('OutTodayCard renders nothing when empty', () => {
-  assert.equal(renderToStaticMarkup(createElement(OutTodayCard, { events: [] })), '')
 })
 
 test('row guard blocks only the busy row', () => {

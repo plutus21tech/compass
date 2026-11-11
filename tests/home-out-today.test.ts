@@ -13,16 +13,15 @@ const row = (over: Partial<OutRow> & { employeeId: string }): OutRow => ({
   ...over,
 })
 
-test('each person counts once; a final row beats a pending one', () => {
+test('each person counts once; a full day beats a half day', () => {
   const { people } = summariseOutToday(
     [
-      row({ employeeId: 'hom-pia', status: 'PENDING', isHalfDay: true, halfDaySession: 'FIRST_HALF' }),
-      row({ employeeId: 'hom-pia', status: 'APPROVED' }),
+      row({ employeeId: 'hom-pia', isHalfDay: true, halfDaySession: 'FIRST_HALF' }),
+      row({ employeeId: 'hom-pia' }),
     ],
     { id: 'v', department: 'Design' }
   )
   assert.equal(people.length, 1)
-  assert.equal(people[0].pending, false)
   assert.equal(people[0].isHalfDay, false)
 })
 

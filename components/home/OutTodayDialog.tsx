@@ -7,6 +7,7 @@ import { LEAVE_TYPE_LABEL, LEAVE_TYPE_TONE } from '@/lib/leave-type-style'
 import { PENDING_STATUSES, type OutPerson, type TeamUpcomingRow } from '@/lib/home/out-today'
 
 const UPCOMING_SHOWN = 6
+/** Only upcoming team leave can still be waiting: nobody waiting counts as out today. */
 const WAITING = 'Waiting for approval'
 
 interface OutTodayDialogProps {
@@ -35,7 +36,6 @@ function PersonRow({ person }: { person: OutPerson }) {
       <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         <TypeDot type={person.leaveType} />
         {person.isHalfDay ? <span>Half day</span> : null}
-        {person.pending ? <span>{WAITING}</span> : null}
       </p>
     </li>
   )

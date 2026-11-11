@@ -67,7 +67,7 @@ after(async () => {
   await prisma.$disconnect()
 })
 
-test('each person counts once; half days count; rejected and cancelled do not', WEEKLY_DB_TEST, async () => {
+test('approved only: each person counts once; pending, lead-approved, rejected and cancelled do not', WEEKLY_DB_TEST, async () => {
   await leave('hom-pia', '2031-03-12', '2031-03-12', 'APPROVED')
   await leave('hom-pia', '2031-03-11', '2031-03-13', 'PENDING')
   await leave('hom-omar', '2031-03-12', '2031-03-12', 'LEAD_APPROVED', { isHalfDay: true, halfDaySession: 'FIRST_HALF' })
@@ -77,10 +77,8 @@ test('each person counts once; half days count; rejected and cancelled do not', 
 
   const overview = await loadHomeOverview(viewer, NOW)
   const mine = overview.outToday.people.filter((p) => p.id.startsWith('hom-'))
-  assert.deepEqual(mine.map((p) => p.id), ['hom-omar', 'hom-pia'])
-  assert.equal(mine[0].pending, true)
-  assert.equal(mine[0].isHalfDay, true)
-  assert.equal(mine[1].pending, false)
+  assert.deepEqual(mine.map((p) => p.id), ['hom-pia'])
+  assert.equal(mine[0].isHalfDay, false)
   assert.equal(overview.departmentOutToday, 1)
   assert.ok(!JSON.stringify(overview).includes(SECRET))
 })
@@ -91,6 +89,26 @@ test('out today uses the Karachi day', WEEKLY_DB_TEST, async () => {
   assert.ok(included.outToday.people.some((p) => p.id === 'hom-pia'))
   const excluded = await loadHomeOverview(viewer, new Date('2031-03-12T18:30:00Z'))
   assert.ok(!excluded.outToday.people.some((p) => p.id === 'hom-pia'))
+})
+
+test('approved half days count; pending leave never does, on either side of the Karachi midnight', WEEKLY_DB_TEST, async () => {
+  await leave('hom-omar', '2031-03-13', '2031-03-13', 'APPROVED', { isHalfDay: true, halfDaySession: 'FIRST_HALF' })
+  await leave('hom-mina', '2031-03-13', '2031-03-13', 'PENDING')
+  const after = await loadHomeOverview(viewer, new Date('2031-03-12T19:30:00Z'))
+  const ids = after.outToday.people.filter((p) => p.id.startsWith('hom-')).map((p) => p.id)
+  assert.deepEqual(ids, ['hom-omar'])
+  assert.equal(after.outToday.people.find((p) => p.id === 'hom-omar')?.isHalfDay, true)
+  assert.equal(after.departmentOutToday, 0)
+  const before = await loadHomeOverview(viewer, new Date('2031-03-12T18:30:00Z'))
+  assert.equal(before.outToday.people.filter((p) => p.id.startsWith('hom-')).length, 0)
+})
+
+test('the viewer is in the raw list so each card can leave them out', WEEKLY_DB_TEST, async () => {
+  await leave('hom-viewer', '2031-03-12', '2031-03-12', 'APPROVED')
+  await leave('hom-pia', '2031-03-12', '2031-03-12', 'APPROVED')
+  const overview = await loadHomeOverview(viewer, NOW)
+  assert.ok(overview.outToday.people.some((p) => p.id === 'hom-viewer'))
+  assert.equal(overview.departmentOutToday, 1)
 })
 
 test('next out in your department', WEEKLY_DB_TEST, async () => {
