@@ -4,6 +4,16 @@ export interface HomeSummaryInput {
   departmentOutToday: number | null
 }
 
+/**
+ * The needs-you count for the summary line, or null to leave that sentence out: while loading,
+ * and when sources failed and nothing loaded (we can't claim "nothing needs you" then).
+ */
+export function needsYouSummaryCount(data: { items: readonly unknown[]; incomplete: boolean } | null): number | null {
+  if (data === null) return null
+  if (data.incomplete && data.items.length === 0) return null
+  return data.items.length
+}
+
 function needsYouSentence(count: number): string {
   if (count === 0) return 'Nothing needs you right now.'
   return count === 1 ? '1 thing needs you.' : `${count} things need you.`

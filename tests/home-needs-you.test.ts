@@ -71,6 +71,20 @@ describe('weekly source', () => {
     assert.equal(new Set(items.map((i) => i.key)).size, items.length)
   })
 
+  it('a late joiner is FYI only (leads already get the email), never a Needs-you item', () => {
+    const items = weeklyItems(card({
+      notices: [{ text: 'Cleo Mars isn’t in this round; give feedback in person', href: '/evaluations/weekly', kind: 'LATE_JOINER' }],
+    }))
+    assert.deepEqual(items.map((i) => i.title), ['Answer this week’s questions'])
+  })
+
+  it('HR answers waiting carry their own eyebrow', () => {
+    const items = weeklyItems(card({
+      notices: [{ text: '2 answers waiting for your review', href: '/admin/evaluation-round?tab=review', kind: 'HR_ANSWERS' }],
+    }))
+    assert.equal(items[1].eyebrow, 'Answers to review')
+  })
+
   it('check lists state asks to check', () => {
     const [first] = weeklyItems(card({ state: 'CHECK_LISTS', counts: null }))
     assert.equal(first.title, 'Check your evaluation lists')
@@ -169,6 +183,23 @@ describe('leave approvals', () => {
     const one = leaveApprovalItems([leaveRow({})], { role: 'HR' })
     assert.equal(one[0].title, '1 leave request waiting for HR')
     assert.deepEqual(leaveApprovalItems([leaveRow({ status: 'APPROVED' })], { role: 'HR' }), [])
+  })
+
+  it('HR who also leads a team keeps handover-plan reviews on approved team leave, without duplicates', () => {
+    const plan = { transitionPlanSubmittedAt: '2026-11-10T00:00:00.000Z', transitionPlanLeadStatus: 'PENDING' }
+    const items = leaveApprovalItems([
+      leaveRow({ id: 'p', ...plan }),
+      leaveRow({ id: 'l', status: 'LEAD_APPROVED', ...plan }),
+      leaveRow({ id: 'a', status: 'APPROVED', ...plan }),
+      leaveRow({ id: 'h', status: 'HR_APPROVED', ...plan }),
+      leaveRow({ id: 'n', status: 'APPROVED' }),
+    ], { role: 'HR' })
+    assert.deepEqual(items.map((i) => i.key), ['leave:hr', 'leave:a', 'leave:h'])
+    assert.equal(items[0].title, '2 leave requests waiting for HR')
+    assert.equal(items[1].title, 'Review Cara Lindqvist’s handover plan')
+    assert.equal(items[1].eyebrow, 'Handover plan')
+    assert.equal(items[1].href, '/leave?requestId=a')
+    assert.equal(new Set(items.map((i) => i.key)).size, items.length)
   })
 
   it('WFH approvals: lead per row, HR one summary', () => {

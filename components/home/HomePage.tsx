@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
 import { formatDate } from '@/lib/format-date'
 import { greetingFor } from '@/lib/home/time'
-import { homeSummary } from '@/lib/home/summary'
+import { homeSummary, needsYouSummaryCount } from '@/lib/home/summary'
 import type { HomeTask } from '@/lib/home/my-work'
 import { HolidayCard } from './HolidayCard'
 import { HomeTaskSheet } from './HomeTaskSheet'
@@ -44,7 +44,7 @@ export function HomePage() {
 
   const overview = data.overview?.ok ? data.overview.data : null
   const summary = homeSummary({
-    needsYou: data.needsYou?.items.length ?? null,
+    needsYou: needsYouSummaryCount(data.needsYou),
     department: overview?.department ?? null,
     departmentOutToday: overview?.departmentOutToday ?? null,
   })

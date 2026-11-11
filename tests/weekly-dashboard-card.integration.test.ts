@@ -117,7 +117,7 @@ test('notices carry a kind; outcomes and HR changes are the FYI ones', WEEKLY_DB
   assert.ok((await kinds(weeklyActor(W.ben), at(0, 2))).some(([k]) => k === 'PEER_CHANGE_ABOUT_YOU'))
   await decidePeerRequest(HR_ACTOR, request.id, 'APPROVE', null, at(0, 3), send, 'https://compass.example')
   assert.ok((await kinds(ana, at(0, 4))).some(([k, t]) => k === 'LIST_DECISION' && t === 'Approved: your request about Ben Okafor'))
-  assert.deepEqual([...FYI_NOTICE_KINDS].sort(), ['HR_CHANGED_LISTS', 'LIST_DECISION'])
+  assert.deepEqual([...FYI_NOTICE_KINDS].sort(), ['HR_CHANGED_LISTS', 'LATE_JOINER', 'LIST_DECISION'])
 })
 
 test('the card says when the week and the list check are due', WEEKLY_DB_TEST, async () => {

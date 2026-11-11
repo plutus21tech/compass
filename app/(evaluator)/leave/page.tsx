@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { ApprovalQueue } from '@/components/leave/time-off/ApprovalQueue'
 import { BalanceCards } from '@/components/leave/time-off/BalanceCards'
 import { MyRequests } from '@/components/leave/time-off/MyRequests'
+import { useScrollToHash } from '@/components/leave/time-off/use-scroll-to-hash'
 import { OutTodayCard } from '@/components/leave/time-off/OutTodayCard'
 import { PlanReminder } from '@/components/leave/time-off/PlanReminder'
 import { RequestDetailsDialog } from '@/components/leave/time-off/RequestDetailsDialog'
@@ -135,6 +136,7 @@ export default function LeavePage() {
     }
   }, [reminders.length])
 
+  useScrollToHash('my-requests', !loading)
   // Deep links: `requestId` once per id, then `request=1` (dropped from the URL once handled).
   useEffect(() => {
     if (!openRequest) handledOpenRef.current = false

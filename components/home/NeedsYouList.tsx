@@ -78,7 +78,7 @@ export function NeedsYouList({ data, todayKey }: NeedsYouListProps) {
         {data === null ? (
           <SkeletonRows />
         ) : items.length === 0 ? (
-          <p className="p-5 text-sm text-muted-foreground">Nothing needs you right now.</p>
+          data.incomplete ? null : <p className="p-5 text-sm text-muted-foreground">Nothing needs you right now.</p>
         ) : (
           <ul className="divide-y divide-border">
             {visible.map((item, index) => (

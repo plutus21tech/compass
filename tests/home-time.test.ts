@@ -28,3 +28,11 @@ test('summary leaves out the department sentence without a department', () => {
   assert.equal(homeSummary({ needsYou: 2, department: null, departmentOutToday: null }), '2 things need you.')
   assert.equal(homeSummary({ needsYou: null, department: 'Design', departmentOutToday: 0 }), 'Everyone in Design is in today.')
 })
+
+test('the summary drops the needs-you sentence when sources failed and nothing loaded', async () => {
+  const { needsYouSummaryCount } = await import('../lib/home/summary')
+  assert.equal(needsYouSummaryCount({ items: [], incomplete: true }), null)
+  assert.equal(needsYouSummaryCount({ items: [1, 2], incomplete: true }), 2)
+  assert.equal(needsYouSummaryCount({ items: [], incomplete: false }), 0)
+  assert.equal(needsYouSummaryCount(null), null)
+})

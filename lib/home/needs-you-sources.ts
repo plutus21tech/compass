@@ -23,6 +23,7 @@ const NOTICE_EYEBROW: Partial<Record<CardNoticeKind, string>> = {
   HR_LIST_CHANGES: 'Evaluation lists',
   TEAM_SELF_REVIEW: 'Self-evaluation from your team',
   FORMS_OPEN: 'Quarter-end forms',
+  HR_ANSWERS: 'Answers to review',
 }
 
 function noticeAction(kind: CardNoticeKind): string {
@@ -110,16 +111,31 @@ export interface ApprovalLeaveRow {
 
 const planPending = (r: ApprovalLeaveRow) => Boolean(r.transitionPlanSubmittedAt) && r.transitionPlanLeadStatus === 'PENDING'
 
+const waitingForHr = (r: ApprovalLeaveRow) => r.status === 'PENDING' || r.status === 'LEAD_APPROVED'
+
+/**
+ * HR sees one summary for the requests waiting on HR. HR who also lead a team still review their
+ * team's handover plans: rows past HR's queue (only lead-queue rows) with a pending plan get their own item.
+ */
+function hrLeaveItems(rows: readonly ApprovalLeaveRow[]): NeedsYouItem[] {
+  const waiting = rows.filter(waitingForHr)
+  const summary: NeedsYouItem[] = waiting.length === 0 ? [] : [{
+    key: 'leave:hr', source: 'leave-approval', eyebrow: 'Leave requests',
+    title: `${plural(waiting.length, 'leave request', 'leave requests')} waiting for HR`, detail: null,
+    dueDay: earliest(waiting.map((r) => dayKeyOf(r.startDate))), href: '/admin/leave', action: 'Review', prefetch: true,
+  }]
+  const plans: NeedsYouItem[] = rows
+    .filter((r) => !waitingForHr(r) && planPending(r))
+    .map((r) => ({
+      key: `leave:${r.id}`, source: 'leave-approval' as const, eyebrow: 'Handover plan',
+      title: `Review ${r.employee.name}’s handover plan`, detail: formatDateRange(r.startDate, r.endDate),
+      dueDay: dayKeyOf(r.startDate), href: getLeaveRequestPath(r.id), action: 'Review', prefetch: true,
+    }))
+  return [...summary, ...plans]
+}
+
 export function leaveApprovalItems(rows: readonly ApprovalLeaveRow[], viewer: { role: string }): NeedsYouItem[] {
-  if (isAdminRole(viewer.role)) {
-    const waiting = rows.filter((r) => r.status === 'PENDING' || r.status === 'LEAD_APPROVED')
-    if (waiting.length === 0) return []
-    return [{
-      key: 'leave:hr', source: 'leave-approval', eyebrow: 'Leave requests',
-      title: `${plural(waiting.length, 'leave request', 'leave requests')} waiting for HR`, detail: null,
-      dueDay: earliest(waiting.map((r) => dayKeyOf(r.startDate))), href: '/admin/leave', action: 'Review', prefetch: true,
-    }]
-  }
+  if (isAdminRole(viewer.role)) return hrLeaveItems(rows)
   const items: NeedsYouItem[] = []
   for (const r of rows) {
     const needsDecision = r.status === 'PENDING' || r.status === 'HR_APPROVED'

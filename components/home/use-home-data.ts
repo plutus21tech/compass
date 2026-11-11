@@ -35,7 +35,7 @@ interface HomeUser {
   department?: string | null
 }
 
-type Loaded = Omit<HomeData, 'loading' | 'todayKey' | 'reloadTasks'>
+export type Loaded = Omit<HomeData, 'loading' | 'todayKey' | 'reloadTasks'>
 
 const EMPTY: Loaded = {
   overview: null,
@@ -94,6 +94,12 @@ export async function loadAll(user: HomeUser, todayKey: string): Promise<Loaded>
   return { overview, balance, ownLeave, teamUpcoming, needsYou, tasks, projects }
 }
 
+/** A failed reload must not wipe tasks that loaded fine; it only replaces an earlier failure. */
+export function withReloadedTasks(prev: Loaded, tasks: Source<HomeTask[]>): Loaded {
+  if (!tasks.ok && prev.tasks?.ok) return prev
+  return { ...prev, tasks }
+}
+
 export function useHomeData(user: HomeUser | null): HomeData {
   const [todayKey] = useState(() => karachiDayKey(new Date()))
   const [loaded, setLoaded] = useState<Loaded>(EMPTY)
@@ -122,7 +128,7 @@ export function useHomeData(user: HomeUser | null): HomeData {
 
   const reloadTasks = useCallback(async () => {
     const tasks = await fetchSource(S.tasks.url, S.tasks.pick)
-    setLoaded((prev) => ({ ...prev, tasks }))
+    setLoaded((prev) => withReloadedTasks(prev, tasks))
   }, [])
 
   return { loading, todayKey, ...loaded, reloadTasks }

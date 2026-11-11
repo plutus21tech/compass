@@ -95,3 +95,9 @@ test('the side sheet reuses the task panel', () => {
   assert.match(src, /`\/api\/projects\/\$\{/)
   assert.doesNotMatch(src, /router\.push/)
 })
+
+test('needs you: an empty list with failed sources never claims nothing needs you', () => {
+  const html = renderNeeds({ items: [], incomplete: true })
+  assert.doesNotMatch(html, /Nothing needs you right now\./)
+  assert.match(html, /Some items could not be loaded\./)
+})
