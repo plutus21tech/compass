@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { LogOut, Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,9 @@ import { useCompanyBranding } from '@/components/providers/company-branding-prov
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { SearchPage } from '@/components/layout/sidebar-config'
+import { SearchTrigger } from '@/components/search/SearchTrigger'
+import { CommandPalette } from '@/components/search/CommandPalette'
+import { isMacPlatform, shortcutLabel, isPaletteShortcut } from '@/lib/search/shortcut'
 
 interface TopBarProps {
   user?: { name: string; role: string; department?: string } | null
@@ -21,9 +25,27 @@ interface TopBarProps {
   className?: string
 }
 
-export function TopBar({ user, onMenuClick, showMenuButton = false, className }: TopBarProps) {
+export function TopBar({ user, pages = [], locked = false, onMenuClick, showMenuButton = false, className }: TopBarProps) {
   const router = useRouter()
   const { clearSelectedCompany } = useCompanyBranding()
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [hint, setHint] = useState(shortcutLabel(false))
+  const searchEnabled = !locked && !!user
+
+  useEffect(() => {
+    setHint(shortcutLabel(isMacPlatform(navigator.platform)))
+  }, [])
+
+  useEffect(() => {
+    if (!searchEnabled) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isPaletteShortcut(event)) return
+      event.preventDefault()
+      setPaletteOpen((open) => !open)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [searchEnabled])
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -55,6 +77,7 @@ export function TopBar({ user, onMenuClick, showMenuButton = false, className }:
 
       {/* Right: user info + actions */}
       <div className="flex items-center gap-3 ml-auto">
+        {searchEnabled && <SearchTrigger onOpen={() => setPaletteOpen(true)} hint={hint} />}
         <ThemeToggle />
 
         {!user && (
@@ -84,6 +107,7 @@ export function TopBar({ user, onMenuClick, showMenuButton = false, className }:
           <LogOut className="h-4 w-4" />
         </Button>
       </div>
+    {searchEnabled && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} pages={pages} />}
     </header>
   )
 }
