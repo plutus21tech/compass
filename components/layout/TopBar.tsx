@@ -44,6 +44,7 @@ export function TopBar({ user, pages, locked, onMenuClick, className }: TopBarPr
     const onKeyDown = (event: KeyboardEvent) => {
       if (!isPaletteShortcut(event)) return
       event.preventDefault()
+      if (event.repeat) return
       setPaletteOpen((open) => !open)
     }
     window.addEventListener('keydown', onKeyDown)

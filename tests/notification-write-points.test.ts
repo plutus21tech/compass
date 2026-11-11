@@ -41,6 +41,15 @@ for (const point of POINTS) {
   })
 }
 
+test('transition-plan bell rows are written whenever the job acts, not only when the email succeeded', () => {
+  const source = read('lib/leave-transition-plan-job.ts')
+  for (const point of POINTS.filter((p) => p.file === 'lib/leave-transition-plan-job.ts')) {
+    const anchor = source.indexOf(point.anchor)
+    const call = source.indexOf(point.call)
+    assert.doesNotMatch(source.slice(anchor, call), /if \(outcome\.success\)/, point.call)
+  }
+})
+
 test('write points use only the safe notify helpers, never recordNotifications', () => {
   for (const file of new Set(POINTS.map((p) => p.file))) {
     assert.doesNotMatch(read(file), /recordNotifications/, file)

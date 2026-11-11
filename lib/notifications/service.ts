@@ -1,7 +1,7 @@
 // Bell notifications: Compass rows plus the Security Checks inbox, merged for the header bell.
 import type { Prisma, PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { listNotifications, markRead, unreadCount } from '@/lib/security-checks/service/inbox'
+import { listNotifications, markRead } from '@/lib/security-checks/service/inbox'
 
 export const BELL_PAGE_SIZE = 30
 export const BELL_RETENTION_DAYS = 90
@@ -96,10 +96,7 @@ export async function listBell(
 ): Promise<{ items: BellItem[]; unread: number }> {
   const since = new Date(options.now.getTime() - BELL_RETENTION_DAYS * DAY_MS)
   const window = { userId, createdAt: { gte: since } }
-  const [rows, compassUnread] = await Promise.all([
-    db.userNotification.findMany({ where: window, orderBy: { createdAt: 'desc' }, take: BELL_PAGE_SIZE }),
-    db.userNotification.count({ where: { ...window, readAt: null } }),
-  ])
+  const rows = await db.userNotification.findMany({ where: window, orderBy: { createdAt: 'desc' }, take: BELL_PAGE_SIZE })
   const compass: BellItem[] = rows.map((row) => ({
     id: row.id,
     source: 'compass',
@@ -111,9 +108,8 @@ export async function listBell(
     read: row.readAt !== null,
   }))
   let security: BellItem[] = []
-  let securityUnread = 0
   if (options.securityChecks) {
-    const [notices, count] = await Promise.all([listNotifications(userId), unreadCount(userId)])
+    const notices = await listNotifications(userId)
     security = notices.map((notice) => ({
       id: notice.id,
       source: 'security',
@@ -124,12 +120,12 @@ export async function listBell(
       createdAt: notice.createdAt,
       read: notice.read,
     }))
-    securityUnread = count
   }
   const items = [...compass, ...security]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, BELL_PAGE_SIZE)
-  return { items, unread: compassUnread + securityUnread }
+  // Count only what the bell can show: opening it marks exactly these read, so the dot always clears.
+  return { items, unread: items.filter((item) => !item.read).length }
 }
 
 export async function markBellRead(

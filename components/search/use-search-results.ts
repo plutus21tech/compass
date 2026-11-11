@@ -7,16 +7,33 @@ import type { SearchResults } from '@/lib/search/service'
 const DEBOUNCE_MS = 200
 export const SEARCH_ERROR = 'Search is unavailable right now. Pages still work.'
 
-interface State {
+interface View {
   results: SearchResults | null
   loading: boolean
   error: string | null
 }
 
-const IDLE: State = { results: null, loading: false, error: null }
+/** The fetch state plus the query its results (or error) answer. */
+export interface SearchState extends View {
+  answered: string | null
+}
 
-export function useSearchResults(query: string): State {
-  const [state, setState] = useState<State>(IDLE)
+const IDLE_VIEW: View = { results: null, loading: false, error: null }
+const LOADING_VIEW: View = { results: null, loading: true, error: null }
+const IDLE: SearchState = { ...IDLE_VIEW, answered: null }
+
+/**
+ * What the palette shows for `parsed`. Until a response answers exactly this query it reads as
+ * loading -- never "No matches" and never the previous query's results, so Enter cannot open them.
+ */
+export function searchView(state: SearchState, parsed: string | null): View {
+  if (!parsed) return IDLE_VIEW
+  if (state.answered !== parsed) return LOADING_VIEW
+  return { results: state.results, loading: state.loading, error: state.error }
+}
+
+export function useSearchResults(query: string): View {
+  const [state, setState] = useState<SearchState>(IDLE)
   const parsed = parseSearchQuery(query)
 
   useEffect(() => {
@@ -25,16 +42,15 @@ export function useSearchResults(query: string): State {
       return
     }
     const controller = new AbortController()
-    setState((prev) => ({ ...prev, loading: true, error: null }))
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(parsed)}`, { signal: controller.signal })
         const body = await res.json()
         if (!res.ok || !body?.success) throw new Error('search failed')
-        setState({ results: body.data as SearchResults, loading: false, error: null })
-      } catch (err) {
+        setState({ results: body.data as SearchResults, loading: false, error: null, answered: parsed })
+      } catch {
         if (controller.signal.aborted) return
-        setState({ results: null, loading: false, error: SEARCH_ERROR })
+        setState({ results: null, loading: false, error: SEARCH_ERROR, answered: parsed })
       }
     }, DEBOUNCE_MS)
     return () => {
@@ -43,5 +59,5 @@ export function useSearchResults(query: string): State {
     }
   }, [parsed])
 
-  return state
+  return searchView(state, parsed)
 }

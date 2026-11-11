@@ -98,3 +98,18 @@ test('deleting a user deletes their notifications', WEEKLY_DB_TEST, async () => 
   await prisma.user.delete({ where: { id: BEN } })
   assert.equal(await prisma.userNotification.count({ where: { userId: BEN } }), 0)
 })
+
+test('the unread count covers only the items the bell can show, so reading them clears it', WEEKLY_DB_TEST, async () => {
+  await prisma.userNotification.createMany({
+    data: Array.from({ length: 35 }, (_, i) => ({
+      userId: ANA, kind: 'LEAVE_APPROVED', title: `Leave ${i}`, link: '/leave',
+      createdAt: new Date(Date.UTC(2026, 10, 1, 0, i)),
+    })),
+  })
+  const first = await listBell(ANA, { now: NOW, securityChecks: false })
+  assert.equal(first.items.length, 30)
+  assert.equal(first.unread, 30)
+  await markBellRead(ANA, first.items.map((i) => ({ source: i.source, id: i.id })), NOW, { securityChecks: false })
+  const second = await listBell(ANA, { now: NOW, securityChecks: false })
+  assert.equal(second.unread, second.items.filter((i) => !i.read).length)
+})
