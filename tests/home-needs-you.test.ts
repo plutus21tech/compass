@@ -265,7 +265,7 @@ describe('leave type style', () => {
 describe('client-safe imports', () => {
   it('home modules never value-import server modules', async () => {
     const { readFileSync } = await import('node:fs')
-    const files = ['lib/home/needs-you-sources.ts', 'lib/home/needs-you.ts', 'lib/leave-type-style.ts']
+    const files = ['lib/home/needs-you-sources.ts', 'lib/home/needs-you.ts', 'lib/leave-type-style.ts', 'lib/home/time-off.ts', 'lib/home/my-work.ts']
     const banned = /^import\s+(?!type\b)[^\n]*from\s+'(?:@\/lib\/weekly\/service\/[^']*|@\/lib\/db|@prisma\/client)'/m
     for (const f of files) {
       assert.doesNotMatch(readFileSync(f, 'utf8'), banned, `${f} must not value-import server modules`)

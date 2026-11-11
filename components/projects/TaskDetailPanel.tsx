@@ -25,7 +25,7 @@ import { formatDate, formatDateTime } from '@/lib/format-date'
 
 /* ─── Types ───────────────────────────────────────────────────────────── */
 
-interface Label {
+export interface Label {
   id: string
   name: string
   color: string
@@ -120,7 +120,7 @@ export interface PanelTask {
   _count: { comments: number }
 }
 
-interface PanelSprint {
+export interface PanelSprint {
   id: string
   name: string
   startDate: string
