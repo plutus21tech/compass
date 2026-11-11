@@ -7,14 +7,15 @@ import { WarrantyBadge } from '@/components/assets/WarrantyBadge'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageAssets } from '@/lib/permissions'
+import { formatDate } from '@/lib/format-date'
 import { Download, QrCode } from 'lucide-react'
 
 interface PageProps {
   params: Promise<{ tag: string }>
 }
 
-function formatDate(value: Date | null) {
-  return value ? value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'
+function displayDate(value: Date | null) {
+  return formatDate(value, { fallback: '-' })
 }
 
 export default async function DeviceSupportAssetDetailPage({ params }: PageProps) {
@@ -104,7 +105,7 @@ export default async function DeviceSupportAssetDetailPage({ params }: PageProps
           <div>
             <p className="text-xs text-muted-foreground">Warranty Dates</p>
             <p className="mt-1 text-sm">
-              {formatDate(asset.warrantyStartDate)} to {formatDate(asset.warrantyEndDate)}
+              {displayDate(asset.warrantyStartDate)} to {displayDate(asset.warrantyEndDate)}
             </p>
           </div>
           <div>

@@ -32,6 +32,7 @@ import {
   PackageSearch,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatDate, formatTimestampDate } from '@/lib/format-date'
 
 interface DeviceTicket {
   id: string
@@ -479,7 +480,7 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
                             <span className={cn("text-xs", priorityConfig.color)}>{priorityConfig.label}</span>
                             <span className="text-border">•</span>
                             <span className="text-xs text-muted-foreground">
-                              {new Date(ticket.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {formatTimestampDate(ticket.createdAt)}
                             </span>
                           </div>
                         </div>
@@ -533,7 +534,7 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
                                   <div>
                                     <p className="text-xs font-medium text-muted-foreground mb-1">Expected resolution date</p>
                                     <p className="text-sm text-foreground">
-                                      {new Date(ticket.expectedResolutionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      {formatDate(ticket.expectedResolutionDate)}
                                     </p>
                                   </div>
                                 )}
@@ -599,7 +600,7 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
                             <span className={cn("text-xs", priorityConfig.color)}>{priorityConfig.label}</span>
                             <span className="text-border">•</span>
                             <span className="text-xs text-muted-foreground">
-                              Resolved {ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                              Resolved {formatTimestampDate(ticket.resolvedAt)}
                             </span>
                           </div>
                         </div>
@@ -650,7 +651,7 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
                                   <div>
                                     <p className="text-xs font-medium text-muted-foreground mb-1">Expected resolution date</p>
                                     <p className="text-sm text-foreground">
-                                      {new Date(ticket.expectedResolutionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      {formatDate(ticket.expectedResolutionDate)}
                                     </p>
                                   </div>
                                 )}

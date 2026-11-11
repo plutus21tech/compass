@@ -17,6 +17,7 @@ import { AnswerCard } from './AnswerCard'
 import { HistoryList } from './HistoryList'
 import { WeeklyProgress } from './WeeklyProgress'
 import { errorMessage, weeklyRequest, withActingAs } from './weekly-api'
+import { formatTimestampDate } from '@/lib/format-date'
 
 interface PersonGroup { key: string; name: string; perspective: Perspective; prompts: InboxPrompt[] }
 
@@ -30,10 +31,9 @@ function groupByPerson(prompts: InboxPrompt[]): PersonGroup[] {
   return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-const DUE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', weekday: 'long', day: 'numeric', month: 'short' })
 /** The Friday the week's questions are due: "Friday 9 Oct". */
 function dueDate(weekOneStartsOn: string, week: number): string {
-  return DUE.format(weekDueAt(new Date(weekOneStartsOn), week)).replace(',', '')
+  return formatTimestampDate(weekDueAt(new Date(weekOneStartsOn), week))
 }
 
 /** UX spec, section 5: "Submit this week", enabled once every performance question has an answer. */
