@@ -150,7 +150,7 @@ export function SidebarLayout({
           <SidebarSkeleton collapsed={collapsed} />
         </div>
         <div className="flex flex-1 flex-col overflow-hidden">
-          <TopBar user={null} showMenuButton onMenuClick={() => setMobileOpen(true)} />
+          <TopBar user={null} pages={[]} locked={false} onMenuClick={() => setMobileOpen(true)} />
           <main className="flex-1 overflow-y-auto">
             <PageSkeleton />
           </main>
@@ -208,7 +208,6 @@ export function SidebarLayout({
             user={user}
             pages={pages}
             locked={locked}
-            showMenuButton
             onMenuClick={() => setMobileOpen(true)}
           />
           <main className={cn(

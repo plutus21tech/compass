@@ -1,33 +1,36 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { LogOut, Menu } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
-import { UserAvatar } from '@/components/composed/UserAvatar'
-import { useCompanyBranding } from '@/components/providers/company-branding-provider'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { SearchPage } from '@/components/layout/sidebar-config'
 import { SearchTrigger } from '@/components/search/SearchTrigger'
 import { CommandPalette } from '@/components/search/CommandPalette'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
+import { UserMenu } from '@/components/layout/top-bar/UserMenu'
 import { isMacPlatform, shortcutLabel, isPaletteShortcut } from '@/lib/search/shortcut'
 
+interface TopBarUser {
+  name: string
+  role: string
+  position?: string | null
+  department?: string | null
+}
+
 interface TopBarProps {
-  user?: { name: string; role: string; department?: string } | null
-  /** Pages the person can search for (consumed by the search box in a later task). */
-  pages?: SearchPage[]
-  /** True while the person is still in onboarding. */
-  locked?: boolean
-  onMenuClick?: () => void
-  showMenuButton?: boolean
+  user: TopBarUser | null
+  /** Pages the person can search for. */
+  pages: readonly SearchPage[]
+  /** True while the person is still in onboarding: no search, no bell. */
+  locked: boolean
+  onMenuClick: () => void
   className?: string
 }
 
-export function TopBar({ user, pages = [], locked = false, onMenuClick, showMenuButton = false, className }: TopBarProps) {
-  const router = useRouter()
-  const { clearSelectedCompany } = useCompanyBranding()
+export function TopBar({ user, pages, locked, onMenuClick, className }: TopBarProps) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [hint, setHint] = useState(shortcutLabel(false))
   const searchEnabled = !locked && !!user
@@ -47,12 +50,6 @@ export function TopBar({ user, pages = [], locked = false, onMenuClick, showMenu
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [searchEnabled])
 
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    clearSelectedCompany()
-    router.push('/login')
-  }
-
   return (
     <header
       className={cn(
@@ -62,52 +59,31 @@ export function TopBar({ user, pages = [], locked = false, onMenuClick, showMenu
     >
       {/* Left: mobile menu button */}
       <div className="flex items-center gap-3">
-        {showMenuButton && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={onMenuClick}
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-        )}
-      </div>
-
-      {/* Right: user info + actions */}
-      <div className="flex items-center gap-3 ml-auto">
-        {searchEnabled && <SearchTrigger onOpen={() => setPaletteOpen(true)} hint={hint} />}
-        <ThemeToggle />
-
-        {!user && (
-          <div className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-border" aria-hidden="true">
-            <Skeleton className="h-8 w-8 rounded-full" />
-            <Skeleton className="hidden h-4 w-24 md:block" />
-          </div>
-        )}
-
-        {user && (
-          <div className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-border">
-            <UserAvatar name={user.name} size="sm" />
-            <div className="hidden md:block">
-              <p className="text-sm font-medium text-foreground leading-none">{user.name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{user.department || user.role}</p>
-            </div>
-          </div>
-        )}
-
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleLogout}
-          aria-label="Logout"
-          className="text-muted-foreground hover:text-foreground"
+          className="lg:hidden"
+          onClick={onMenuClick}
+          aria-label="Open menu"
         >
-          <LogOut className="h-4 w-4" />
+          <Menu className="h-5 w-5" />
         </Button>
       </div>
-    {searchEnabled && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} pages={pages} />}
+
+      {/* Right: search, bell, theme, account */}
+      <div className="flex items-center gap-2 ml-auto">
+        {searchEnabled && <SearchTrigger onOpen={() => setPaletteOpen(true)} hint={hint} />}
+        {searchEnabled && <NotificationBell />}
+        <ThemeToggle />
+        {user ? (
+          <UserMenu user={user} />
+        ) : (
+          <div className="flex items-center gap-2.5 pl-2" aria-hidden="true">
+            <Skeleton className="h-8 w-8 rounded-full" />
+          </div>
+        )}
+      </div>
+      {searchEnabled && <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} pages={pages} />}
     </header>
   )
 }
