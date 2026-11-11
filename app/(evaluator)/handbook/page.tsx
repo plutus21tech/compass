@@ -11,6 +11,8 @@ import { HandbookHero } from '@/components/handbook/HandbookHero'
 import { HandbookRow } from '@/components/handbook/HandbookRow'
 import { HandbookHubSkeleton } from '@/components/handbook/HandbookSkeletons'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { pickerTeams, teamLabel as labelForTeam } from '@/lib/handbook/teams'
 import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { filterPages } from '@/lib/handbook/search'
@@ -84,9 +86,12 @@ function HandbookHubInner() {
   const rest = CATEGORY_ORDER.filter((c) => c !== 'START_HERE')
 
   return (
-    <div className="p-6 sm:p-8 max-w-7xl mx-auto">
-      {user && isAdminRole(user.role) && (
-        <div className="flex flex-wrap items-center gap-2 mb-6 rounded-lg border border-border bg-muted/40 px-3 py-2">
+    <PageContainer>
+      <PageHeader
+        title="Handbook"
+        actions={
+          user && isAdminRole(user.role) ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
           <span className="text-xs font-medium text-muted-foreground mr-1">Preview as</span>
           <Link
             href="/handbook"
@@ -125,7 +130,9 @@ function HandbookHubInner() {
             </Link>
           ))}
         </div>
-      )}
+      ) : undefined
+        }
+      />
 
       <HandbookHero
         firstName={firstName}
@@ -222,7 +229,7 @@ function HandbookHubInner() {
             ))}
         </>
       )}
-    </div>
+    </PageContainer>
   )
 }
 

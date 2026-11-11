@@ -12,6 +12,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft, Save } from 'lucide-react'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { MyChecklist } from '@/components/academy/hr/MyChecklist'
 import { isLeadInputSubmitted } from '@/lib/academy/setup'
 
@@ -146,7 +148,7 @@ export default function TeamLeadFormPage() {
   const submitted = !!form.submittedAt && leadInputComplete
 
   return (
-    <div className="p-6 sm:p-8 max-w-4xl mx-auto">
+    <PageContainer width="reading">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
         <Button variant="ghost" size="sm" asChild>
           <Link href="/dashboard" className="gap-1.5">
@@ -155,16 +157,14 @@ export default function TeamLeadFormPage() {
         </Button>
       </motion.div>
 
+      <PageHeader
+        title="Team Lead Onboarding Form"
+        subtitle={newHire ? `${newHire.name} · ${newHire.title}` : 'New hire onboarding preparation'}
+      />
+
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
       <Card>
         <CardContent className="p-6 sm:p-8 space-y-5">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-display font-light text-foreground tracking-tight">Team Lead Onboarding Form</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {newHire ? `${newHire.name} · ${newHire.title}` : 'New hire onboarding preparation'}
-            </p>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label className="mb-1">Email Groups</Label>
@@ -231,7 +231,7 @@ export default function TeamLeadFormPage() {
         </CardContent>
       </Card>
       </motion.div>
-    </div>
+    </PageContainer>
   )
 }
 

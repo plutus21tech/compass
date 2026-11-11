@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/select'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ShimmerButton } from '@/components/magicui/shimmer-button'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { useCompanyBranding } from '@/components/providers/company-branding-provider'
 import {
   Monitor,
@@ -90,6 +92,10 @@ const STATUS_CONFIG = {
   UNDER_REVIEW: { label: 'Under Review', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-500/20', icon: Search },
   SOLUTION: { label: 'Solution Provided', color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-500/20', icon: Wrench },
   RESOLVED: { label: 'Resolved', color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-500/20', icon: CheckCircle2 },
+}
+
+function Frame({ embedded, children }: { embedded: boolean; children: React.ReactNode }) {
+  return embedded ? <div>{children}</div> : <PageContainer>{children}</PageContainer>
 }
 
 export default function DeviceSupportPage({ embedded = false }: { embedded?: boolean }) {
@@ -185,9 +191,9 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
 
   if (loading) {
     return (
-      <div className={embedded ? "" : "p-6 sm:p-8 max-w-7xl mx-auto"}>
+      <Frame embedded={embedded}>
         <LoadingScreen message="Loading device support..." />
-      </div>
+      </Frame>
     )
   }
 
@@ -195,8 +201,9 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
   const resolvedTickets = tickets.filter(t => t.status === 'RESOLVED')
 
   return (
-    <div className={embedded ? "" : "p-6 sm:p-8 max-w-7xl mx-auto"}>
+    <Frame embedded={embedded}>
         {/* Header */}
+        {embedded ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -214,6 +221,18 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
             New Ticket
           </ShimmerButton>
         </motion.div>
+        ) : (
+          <PageHeader
+            title="Help & IT"
+            subtitle="Report device issues and track your support tickets"
+            actions={
+              <ShimmerButton onClick={() => setShowForm(!showForm)} className="flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                New Ticket
+              </ShimmerButton>
+            }
+          />
+        )}
 
         {assignedAssets.length > 0 && (
           <motion.div
@@ -677,6 +696,6 @@ export default function DeviceSupportPage({ embedded = false }: { embedded?: boo
         >
           <span>Powered by {branding.companyName}</span>
         </motion.div>
-    </div>
+    </Frame>
   )
 }

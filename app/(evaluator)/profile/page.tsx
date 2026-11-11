@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { toast } from 'sonner'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -468,14 +470,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="p-6 sm:p-8 max-w-2xl mx-auto">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-display font-light tracking-tight text-foreground">
-          Profile
-        </h1>
-        <p className="text-muted-foreground mt-1">Your account information and settings</p>
-      </motion.div>
+    <PageContainer width="reading">
+      <PageHeader title="Profile" subtitle="Your account information and settings" />
 
       {/* Profile Card */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
@@ -964,6 +960,6 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
       </motion.div>
-    </div>
+    </PageContainer>
   )
 }
