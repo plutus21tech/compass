@@ -16,6 +16,8 @@ import { EmptyState } from '@/components/composed/EmptyState'
 import { WeeklyQuestionsCard } from '@/components/weekly/WeeklyQuestionsCard'
 import { AssignedCard } from '@/components/academy/AssignedCard'
 import type { AssignedCardView } from '@/lib/academy/view'
+import { formatDateRange, formatTimestampDate } from '@/lib/format-date'
+import { formatDays } from '@/lib/format-count'
 import {
   ClipboardCheck,
   Calendar,
@@ -424,9 +426,7 @@ export default function DashboardPage() {
                           <div>
                             <p className="text-sm font-medium text-foreground">{req.employee.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {req.leaveType} &middot; {new Date(req.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                              {' \u2013 '}
-                              {new Date(req.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              {req.leaveType} &middot; {formatDateRange(req.startDate, req.endDate)}
                             </p>
                           </div>
                         </div>
@@ -483,9 +483,7 @@ export default function DashboardPage() {
                             <p className="text-sm font-medium text-foreground">{req.employee.name}</p>
                             <p className="text-xs text-muted-foreground">
                               {req.employee.department || 'No department'} &middot;{' '}
-                              {new Date(req.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                              {' \u2013 '}
-                              {new Date(req.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              {formatDateRange(req.startDate, req.endDate)}
                             </p>
                           </div>
                         </div>
@@ -533,7 +531,7 @@ export default function DashboardPage() {
                           <div>
                             <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{ticket.title}</p>
                             <p className="text-xs text-muted-foreground">
-                              {ticket.employee.name} &middot; {new Date(ticket.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                              {ticket.employee.name} &middot; {formatTimestampDate(ticket.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -629,7 +627,7 @@ export default function DashboardPage() {
                       <item.icon className={`h-5 w-5 mx-auto mb-1.5 ${item.color}`} />
                       <p className="text-xl font-semibold text-foreground">{formatLeaveValue(item.total - item.used)}</p>
                       <p className="text-xs text-muted-foreground">{item.label}</p>
-                      <p className="text-[10px] text-muted-foreground/60">{formatLeaveValue(item.used)}/{formatLeaveValue(item.total)} used</p>
+                      <p className="text-[10px] text-muted-foreground/60">{formatDays(item.used)} used of {formatLeaveValue(item.total)}</p>
                     </div>
                   ))}
                 </div>

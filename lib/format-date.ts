@@ -132,6 +132,16 @@ export function formatDateRange(start: DateInput, end: DateInput, options: Forma
   return `${left}${RANGE_SEPARATOR}${dayLabel(to, false)}${yearSuffix}`
 }
 
+/**
+ * A browser-local Date (as built by calendar grids with `new Date(y, m, d)`)
+ * as its local `YYYY-MM-DD` day, ready for formatDate and friends.
+ */
+export function localDayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
 /** A date-only month: "November 2026". */
 export function formatMonthYear(value: DateInput): string {
   const day = toCalendarDay(value)

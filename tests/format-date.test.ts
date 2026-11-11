@@ -7,6 +7,7 @@ import {
   formatMonthYear,
   formatTime,
   formatTimestampDate,
+  localDayKey,
 } from '../lib/format-date'
 
 // Tuesday 10 Nov 2026, 12:00 in Karachi.
@@ -50,6 +51,12 @@ test('formatDateRange', () => {
   assert.equal(formatDateRange('2026-10-30', '2026-11-03', { now: NOW }), 'Fri 30 Oct – Tue 3 Nov')
   assert.equal(formatDateRange('2027-02-01', '2027-02-03', { now: NOW }), 'Mon 1 – Wed 3 Feb 2027')
   assert.equal(formatDateRange('2026-12-31', '2027-01-01', { now: NOW }), 'Thu 31 Dec 2026 – Fri 1 Jan 2027')
+})
+
+test('localDayKey uses the local calendar day', () => {
+  assert.equal(localDayKey(new Date(2026, 10, 5)), '2026-11-05')
+  assert.equal(localDayKey(new Date(2026, 0, 1, 23, 59)), '2026-01-01')
+  assert.equal(formatDate(localDayKey(new Date(2026, 10, 5)), { now: NOW }), 'Thu 5 Nov')
 })
 
 test('formatMonthYear', () => {

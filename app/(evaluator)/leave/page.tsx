@@ -53,6 +53,8 @@ import { detectBrowserLeaveTimeZone } from '@/lib/leave-timezone'
 import { isThreeEDepartment } from '@/lib/company-branding'
 import { calculateWfhDays, hasWfhEnded } from '@/lib/wfh-utils'
 import { resolveLeaveRequestDeepLinkTarget } from '@/lib/leave-deep-links'
+import { formatDate, formatDateRange, localDayKey } from '@/lib/format-date'
+import { daysLeftSuffix } from '@/lib/format-count'
 import {
   CalendarDayMarkers,
   CalendarMarkerLegend,
@@ -210,12 +212,6 @@ const toDateKey = (value: string) => {
   return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`
 }
 
-const formatApiDate = (value: string, options?: Intl.DateTimeFormatOptions) => {
-  const key = toDateKey(value)
-  const parsed = key ? parseInputDateAsLocal(key) : null
-  if (!parsed) return value
-  return parsed.toLocaleDateString('en-US', options)
-}
 
 /** A leave can be cancelled until the day before its last day (lib/leave-utils canCancelLeave). */
 const isBeforeLastDay = (endDate: string) => {
@@ -570,7 +566,7 @@ export default function LeavePage() {
 
   const getReturnDateLabel = (startDate: string, endDate: string, isHalfDay = false) => {
     if (isHalfDay) {
-      return formatApiDate(startDate)
+      return formatDate(startDate)
     }
     const key = toDateKey(endDate)
     if (!key) return ''
@@ -578,7 +574,7 @@ export default function LeavePage() {
     // Expected return is the next business day after the last day off (skips weekends).
     const returnDate = getNextBusinessDay(new Date(Date.UTC(year, month - 1, day)))
     const returnKey = `${returnDate.getUTCFullYear()}-${String(returnDate.getUTCMonth() + 1).padStart(2, '0')}-${String(returnDate.getUTCDate()).padStart(2, '0')}`
-    return formatApiDate(returnKey)
+    return formatDate(returnKey)
   }
 
   const openDayEventsModal = (date: Date, events: CalendarEvent[]) => {
@@ -1084,7 +1080,7 @@ export default function LeavePage() {
                   <StatsCard
                     title={config.label}
                     value={remaining}
-                    suffix={`/ ${total} days`}
+                    suffix={daysLeftSuffix(remaining, total)}
                     decimalPlaces={decimalPlaces}
                     icon={<Icon className={`w-4 h-4 ${config.color}`} />}
                     className={`${config.bgLight} border-border`}
@@ -1360,10 +1356,8 @@ export default function LeavePage() {
                                     </Badge>
                                   </div>
                                   <p className="text-xs text-muted-foreground">
-                                    {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                    {' - '}
-                                    {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                    {' - '}{getDurationLabel(days)}
+                                    {formatDateRange(request.startDate, request.endDate)}
+                                    {' · '}{getDurationLabel(days)}
                                   </p>
                                   <p className="text-[11px] text-muted-foreground">
                                     Return date: {getReturnDateLabel(request.startDate, request.endDate, request.isHalfDay)}
@@ -1469,10 +1463,8 @@ export default function LeavePage() {
                                   </Badge>
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                  {typeConfig.label} - {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                  {' - '}
-                                  {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                  {' - '}{getDurationLabel(days)}
+                                  {typeConfig.label} · {formatDateRange(request.startDate, request.endDate)}
+                                  {' · '}{getDurationLabel(days)}
                                 </p>
                                 {request.isHalfDay && (
                                   <p className="text-[11px] text-muted-foreground">
@@ -1658,10 +1650,8 @@ export default function LeavePage() {
                                       </Badge>
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                      {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                      {' - '}
-                                      {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                      {' - '}{getDurationLabel(days)}
+                                      {formatDateRange(request.startDate, request.endDate)}
+                                      {' · '}{getDurationLabel(days)}
                                     </p>
                                     <p className="text-sm text-foreground mt-2">{request.reason}</p>
                                     {request.workPlan && (
@@ -1728,9 +1718,7 @@ export default function LeavePage() {
                                   </Badge>
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  {request.employee?.department || 'No department'} • {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                  {' - '}
-                                  {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
+                                  {request.employee?.department || 'No department'} • {formatDateRange(request.startDate, request.endDate)}
                                   {' • '}{getDurationLabel(days)}
                                 </p>
                                 <p className="text-sm text-foreground mt-2">{request.reason}</p>
@@ -2132,11 +2120,7 @@ export default function LeavePage() {
         }}
         title={
           selectedDayDate
-            ? `Team on leave - ${selectedDayDate.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}`
+            ? `Team on leave · ${formatDate(localDayKey(selectedDayDate))}`
             : 'Team on leave'
         }
         size="md"
@@ -2220,13 +2204,13 @@ export default function LeavePage() {
               <div>
                 <Label className="text-muted-foreground">Start Date (first day off)</Label>
                 <p className="text-sm font-medium text-foreground mt-1">
-                  {formatApiDate(selectedRequest.startDate)}
+                  {formatDate(selectedRequest.startDate)}
                 </p>
               </div>
               <div>
                 <Label className="text-muted-foreground">End Date (last day off)</Label>
                 <p className="text-sm font-medium text-foreground mt-1">
-                  {formatApiDate(selectedRequest.endDate)}
+                  {formatDate(selectedRequest.endDate)}
                 </p>
               </div>
             </div>

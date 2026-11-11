@@ -8,14 +8,7 @@ import type { MyTaskRecord } from '@/lib/my-tasks/types'
 import { addDays, toStartOfDay } from '@/lib/my-tasks/dates'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { formatDateRange, formatMonthYear } from '@/lib/format-date'
-
-/** The calendar's days are browser-local dates; label them by their local calendar day. */
-function localDayKey(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
+import { formatDateRange, formatMonthYear, localDayKey } from '@/lib/format-date'
 
 interface MyTasksCalendarViewProps {
   tasks: MyTaskRecord[]
