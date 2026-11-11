@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Card } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export type HomeCardLink = { label: string; href: string } | { label: string; onClick: () => void }
 
@@ -45,9 +46,9 @@ export function HomeCard({ title, link, children, footer }: HomeCardProps) {
 
 export function CardSkeleton() {
   return (
-    <div className="space-y-3" aria-busy="true">
-      <div className="h-9 w-24 animate-pulse rounded-md bg-muted" />
-      <div className="h-4 w-48 animate-pulse rounded-md bg-muted" />
+    <div role="status" aria-label="Loading" className="space-y-3">
+      <Skeleton className="h-9 w-24" />
+      <Skeleton className="h-4 w-48" />
     </div>
   )
 }

@@ -111,3 +111,31 @@ test('a failed source shows its own line', () => {
   assert.match(html[2], /Could not load holidays\./)
   for (const h of html) assert.doesNotMatch(h, /undefined|NaN/)
 })
+
+const row = (id: string, emp: string) => ({
+  id,
+  leaveType: 'CASUAL' as const,
+  status: 'APPROVED',
+  startDate: '2026-11-20',
+  endDate: '2026-11-21',
+  employee: { id: emp, name: `E ${emp}`, department: 'Design' },
+})
+const upcoming = (rows: ReturnType<typeof row>[]) =>
+  renderToStaticMarkup(createElement(OutTodayCard, { overview: overview(), teamUpcoming: { ok: true, data: rows }, viewerId: 'me' }))
+
+test('out today: team upcoming counts people, not rows', () => {
+  assert.match(upcoming([row('1', 'x'), row('2', 'x')]), /1 person on your team has leave coming up/)
+  assert.match(upcoming([row('1', 'x'), row('2', 'y'), row('3', 'z')]), /3 people on your team have leave coming up/)
+})
+
+test('time off: no false footer while own leave is loading; parts use separators', () => {
+  const balance = {
+    ok: true,
+    data: { casualDays: 5, casualUsed: 0, annualDays: 14, annualUsed: 0, sickDays: 6, sickUsed: 6 },
+  } as never
+  const html = renderToStaticMarkup(createElement(TimeOffCard, { balance, ownLeave: null, todayKey: '2026-11-11' }))
+  assert.doesNotMatch(html, /No leave booked yet/)
+  assert.match(html, /aria-label="Loading"/)
+  assert.match(html, /aria-label="5 casual · 14 annual · No sick left"/)
+  assert.match(html, />19<\/span>/)
+})

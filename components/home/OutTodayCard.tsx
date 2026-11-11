@@ -30,6 +30,11 @@ function departmentLine(overview: HomeOverview): { text: string; allIn: boolean 
   return text ? { text, allIn: overview.departmentOutToday === 0 } : null
 }
 
+function teamLeavePhrase(rows: TeamUpcomingRow[]): string {
+  const n = new Set(rows.map((r) => r.employee.id)).size
+  return n === 1 ? '1 person on your team has leave coming up' : `${n} people on your team have leave coming up`
+}
+
 interface BodyProps {
   overview: HomeOverview
   upcoming: TeamUpcomingRow[]
@@ -56,7 +61,7 @@ function Body({ overview, upcoming, people }: BodyProps) {
         {next ? ` ${next.name.split(' ')[0]} is next out on ${formatDate(next.startDate)}.` : null}
       </p>
       {upcoming.length > 0 ? (
-        <p className="mt-1 text-sm text-muted-foreground">{upcoming.length} on your team have leave coming up</p>
+        <p className="mt-1 text-sm text-muted-foreground">{teamLeavePhrase(upcoming)}</p>
       ) : null}
     </div>
   )

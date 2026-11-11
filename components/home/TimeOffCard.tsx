@@ -1,10 +1,11 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { LEAVE_TYPE_LABEL, LEAVE_TYPE_TONE } from '@/lib/leave-type-style'
+import { LEAVE_TYPE_TONE } from '@/lib/leave-type-style'
 import { nextLeavePhrase, summariseTimeOff, type BalanceInput, type TimeOffPart } from '@/lib/home/time-off'
 import type { OwnLeaveRow } from '@/lib/home/needs-you-sources'
 import type { Source } from './fetch-source'
 import { CardSkeleton, HomeCard } from './HomeCard'
+import { Skeleton } from '@/components/ui/skeleton'
 
 interface TimeOffCardProps {
   balance: Source<BalanceInput> | null
@@ -37,30 +38,34 @@ function Bar({ parts, totalLeft, label }: { parts: TimeOffPart[]; totalLeft: num
   )
 }
 
-function leftText(left: number): string {
-  return String(Number.isInteger(left) ? left : Math.round(left * 10) / 10)
+const SEPARATOR = ' · '
+
+/** One entry per part, in the same order and wording as `partsPhrase`. */
+function PartsRow({ parts, phrase }: { parts: TimeOffPart[]; phrase: string }) {
+  const texts = phrase.split(SEPARATOR)
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
+      {parts.map((p, i) => (
+        <span key={p.type} className="inline-flex items-center gap-1.5">
+          {i > 0 ? <span aria-hidden>·</span> : null}
+          {p.left > 0 ? (
+            <span aria-hidden className={`h-2 w-2 rounded-full ${LEAVE_TYPE_TONE[p.type].dot}`} />
+          ) : null}
+          <span className={p.left > 0 ? undefined : 'text-destructive'}>{texts[i]}</span>
+        </span>
+      ))}
+    </p>
+  )
 }
 
-function PartsRow({ parts }: { parts: TimeOffPart[] }) {
+function BigCount({ totalLeft, phrase }: { totalLeft: number; phrase: string }) {
+  if (totalLeft <= 0) return <p className="text-lg font-semibold">{phrase}</p>
+  const [count, ...rest] = phrase.split(' ')
   return (
-    <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-      {parts.map((p) => {
-        const label = LEAVE_TYPE_LABEL[p.type].toLowerCase()
-        if (p.left <= 0) {
-          return (
-            <li key={p.type} className="text-destructive">
-              No {label} left
-            </li>
-          )
-        }
-        return (
-          <li key={p.type} className="flex items-center gap-1.5">
-            <span aria-hidden className={`h-2 w-2 rounded-full ${LEAVE_TYPE_TONE[p.type].dot}`} />
-            {`${leftText(p.left)} ${label}`}
-          </li>
-        )
-      })}
-    </ul>
+    <p>
+      <span className="text-3xl font-semibold tabular-nums">{count}</span>{' '}
+      <span className="text-muted-foreground">{rest.join(' ')}</span>
+    </p>
   )
 }
 
@@ -81,24 +86,25 @@ export function TimeOffCard({ balance, ownLeave, todayKey }: TimeOffCardProps) {
   }
   const own = ownLeave?.ok ? ownLeave.data : []
   const s = summariseTimeOff(balance.data, own, todayKey)
-  const footerText = ownLeave && !ownLeave.ok ? 'Could not load your leave.' : nextLeavePhrase(s.nextLeave)
+  const footerText = ownLeave === null ? null : !ownLeave.ok ? 'Could not load your leave.' : nextLeavePhrase(s.nextLeave)
   return (
     <HomeCard
       title="Your time off"
       link={LINK}
       footer={
         <>
-          <p className="text-sm text-muted-foreground">{footerText}</p>
+          {footerText === null ? (
+            <Skeleton role="status" aria-label="Loading" className="h-4 w-32" />
+          ) : (
+            <p className="text-sm text-muted-foreground">{footerText}</p>
+          )}
           <RequestButton />
         </>
       }
     >
-      <p>
-        <span className="text-3xl font-semibold tabular-nums">{leftText(s.totalLeft)}</span>{' '}
-        <span className="text-muted-foreground">{s.totalLeft === 1 ? 'day left' : 'days left'}</span>
-      </p>
+      <BigCount totalLeft={s.totalLeft} phrase={s.totalPhrase} />
       <Bar parts={s.parts} totalLeft={s.totalLeft} label={s.partsPhrase} />
-      <PartsRow parts={s.parts} />
+      <PartsRow parts={s.parts} phrase={s.partsPhrase} />
     </HomeCard>
   )
 }
