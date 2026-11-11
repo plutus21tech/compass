@@ -202,7 +202,8 @@ export function AppSidebar({ config, collapsed, onToggle, userRole, className }:
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-3 space-y-1">
+      <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-3">
+        <div className="space-y-1">
         {/* Top-level items */}
         {config.items.map((item) => (
           <SidebarNavItem
@@ -222,9 +223,11 @@ export function AppSidebar({ config, collapsed, onToggle, userRole, className }:
           ),
         )}
 
+        </div>
+
         {/* Pinned items sit at the bottom of the menu, above the footer */}
         {config.pinned && config.pinned.length > 0 && (
-          <div className="mt-auto space-y-0.5 border-t border-border pt-2">
+          <div data-pinned className="mt-auto space-y-0.5 border-t border-border pt-2">
             {config.pinned.map((item) => (
               <SidebarNavItem key={item.href} item={item} collapsed={collapsed} pathname={pathname} />
             ))}

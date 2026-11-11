@@ -31,3 +31,13 @@ test('footer role switches and the collapse toggle are untouched', () => {
   for (const text of ['Admin Console', 'Employee View', 'Payroll (O&A)', 'Security Console', 'Collapse']) assert.ok(sidebar.includes(text), text)
   assert.match(layout, /localStorage\.setItem\('sidebar-collapsed'/)
 })
+
+test('the pinned block is a sibling outside the space-y container so mt-auto works', () => {
+  assert.doesNotMatch(sidebar, /<nav[^>]*space-y/)
+  const inner = sidebar.indexOf('<div className="space-y-1">')
+  const pinned = sidebar.indexOf('data-pinned')
+  assert.ok(inner > 0 && pinned > inner)
+  // the space-y wrapper closes before the pinned block starts
+  const between = sidebar.slice(inner, pinned)
+  assert.ok((between.match(/<div/g) ?? []).length <= (between.match(/<\/div>/g) ?? []).length + 1)
+})
