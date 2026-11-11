@@ -273,7 +273,7 @@ test('a completed project with a past deadline shows no red date and keeps its s
     }],
   })
 
-  assert.match(html, /Jan 10, 2024/)
+  assert.match(html, /Wed 10 Jan 2024/)
   assert.doesNotMatch(html, /text-red-600/)
   assert.match(html, /bg-sky-500/)
 })
