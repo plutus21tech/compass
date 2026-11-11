@@ -13,7 +13,7 @@ export interface TransitionTask {
   links: string
 }
 
-const MAX_ROWS = 50
+export const MAX_TRANSITION_TASKS = 50
 const MAX_TEXT = 2000
 
 const rawTaskSchema = z.object({
@@ -32,7 +32,7 @@ const rawTaskSchema = z.object({
  * `taskDetails`. Throws on shape/bounds violations (too many rows, oversized text).
  */
 export function validateTransitionTasks(raw: unknown): TransitionTask[] {
-  const parsed = z.array(rawTaskSchema).max(MAX_ROWS).parse(raw ?? [])
+  const parsed = z.array(rawTaskSchema).max(MAX_TRANSITION_TASKS).parse(raw ?? [])
   return parsed
     .filter((t) => (t.taskDetails || '').trim().length > 0)
     .map((t) => ({
