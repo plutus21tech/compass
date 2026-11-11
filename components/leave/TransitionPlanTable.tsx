@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { TransitionTask } from '@/lib/leave-transition-plan'
+import { MAX_TRANSITION_TASKS, type TransitionTask } from '@/lib/leave-transition-plan'
 import { Plus, Trash2 } from 'lucide-react'
 
 interface Props {
@@ -153,10 +153,13 @@ export function TransitionPlanTable({ tasks, onChange, disabled }: Props) {
         </div>
       ))}
 
-      {!disabled && (
+      {!disabled && tasks.length < MAX_TRANSITION_TASKS && (
         <Button type="button" variant="outline" size="sm" onClick={add}>
           <Plus className="w-4 h-4" /> Add task
         </Button>
+      )}
+      {!disabled && tasks.length >= MAX_TRANSITION_TASKS && (
+        <p className="text-xs text-muted-foreground">Up to {MAX_TRANSITION_TASKS} tasks</p>
       )}
     </div>
   )
