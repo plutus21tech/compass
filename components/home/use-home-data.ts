@@ -66,7 +66,7 @@ async function loadCard(): Promise<NeedsYouSources['card']> {
   return res.ok ? { ok: true, data: res.data.card } : res
 }
 
-async function loadAll(user: HomeUser, todayKey: string): Promise<Loaded> {
+export async function loadAll(user: HomeUser, todayKey: string): Promise<Loaded> {
   const [
     card, lateForms, academy, teamLeadForms, leaveApprovals, wfhApprovals, ownLeave, securityTasks, tickets,
     overview, balance, teamUpcoming, tasks, projects,
@@ -105,11 +105,16 @@ export function useHomeData(user: HomeUser | null): HomeData {
   useEffect(() => {
     if (userId === null || role === null) return
     let cancelled = false
-    loadAll({ id: userId, role, department }, todayKey).then((next) => {
-      if (cancelled) return
-      setLoaded(next)
-      setLoading(false)
-    })
+    loadAll({ id: userId, role, department }, todayKey)
+      .then((next) => {
+        if (!cancelled) setLoaded(next)
+      })
+      .catch((error: unknown) => {
+        console.error('[home] load failed', error)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }

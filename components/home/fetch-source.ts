@@ -68,20 +68,27 @@ export function needsYouFromSources(
   todayKey: string
 ): { items: NeedsYouItem[]; incomplete: boolean } {
   const items: NeedsYouItem[] = []
-  const add = <T,>(src: Source<T>, build: (data: T) => NeedsYouItem[]) => {
-    if (src.ok) items.push(...build(src.data))
+  let builderFailed = false
+  const add = <T,>(name: string, src: Source<T>, build: (data: T) => NeedsYouItem[]) => {
+    if (!src.ok) return
+    try {
+      items.push(...build(src.data))
+    } catch (error) {
+      builderFailed = true
+      console.error('[home] source could not be read', { source: name, error })
+    }
   }
-  add(s.card, weeklyItems)
-  add(s.lateForms, lateFormItems)
-  add(s.academy, academyItems)
-  add(s.teamLeadForms, teamLeadFormItems)
-  add(s.leaveApprovals, (rows) => leaveApprovalItems(rows, viewer))
-  add(s.wfhApprovals, (rows) => wfhApprovalItems(rows, viewer))
-  add(s.ownLeave, (rows) => ownPlanItems(rows, viewer, todayKey))
-  add(s.securityTasks, securityTaskItems)
-  add(s.tickets, (rows) => ticketItems(rows, viewer.role))
+  add('card', s.card, weeklyItems)
+  add('lateForms', s.lateForms, lateFormItems)
+  add('academy', s.academy, academyItems)
+  add('teamLeadForms', s.teamLeadForms, teamLeadFormItems)
+  add('leaveApprovals', s.leaveApprovals, (rows) => leaveApprovalItems(rows, viewer))
+  add('wfhApprovals', s.wfhApprovals, (rows) => wfhApprovalItems(rows, viewer))
+  add('ownLeave', s.ownLeave, (rows) => ownPlanItems(rows, viewer, todayKey))
+  add('securityTasks', s.securityTasks, securityTaskItems)
+  add('tickets', s.tickets, (rows) => ticketItems(rows, viewer.role))
   const all: Source<unknown>[] = Object.values(s)
-  const incomplete = all.some((src) => !src.ok && src.status !== 404)
+  const incomplete = builderFailed || all.some((src) => !src.ok && src.status !== 404)
   return { items: sortNeedsYou(items), incomplete }
 }
 

@@ -94,6 +94,33 @@ describe('needsYouFromSources', () => {
   })
 })
 
+describe('builder isolation', () => {
+  const viewer = { role: 'HR', department: null }
+
+  it('a throwing builder drops only its source and marks incomplete', async () => {
+    const result = await quiet(async () =>
+      needsYouFromSources({ ...none, card, leaveApprovals: { ok: true, data: [null as never] } }, viewer, '2026-11-11')
+    )
+    assert.equal(result.items.length, 1)
+    assert.equal(result.incomplete, true)
+  })
+
+  it('loadAll never rejects when a builder throws', async () => {
+    const { loadAll } = await import('@/components/home/use-home-data')
+    const original = globalThis.fetch
+    globalThis.fetch = (async (url: string) => {
+      const bad = String(url).startsWith('/api/leave/requests?forApproval=true')
+      return new Response(JSON.stringify(bad ? { requests: [null] } : {}), { status: 200 })
+    }) as unknown as typeof fetch
+    try {
+      const loaded = await quiet(() => loadAll({ id: 'u1', role: 'HR' }, '2026-11-11'))
+      assert.equal(loaded.needsYou?.incomplete, true)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
 describe('HOME_SOURCES', () => {
   it('uses the exact endpoints and bodies', () => {
     assert.equal(HOME_SOURCES.leaveApprovals.url, '/api/leave/requests?forApproval=true')
