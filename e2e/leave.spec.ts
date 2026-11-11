@@ -11,10 +11,23 @@ const ID_PREFIX = 'lve-'
 
 test.skip(academyE2eSkipReason() !== null, academyE2eSkipReason() ?? '')
 
-// A native alert, confirm or prompt is a bug on this page: fail the test if one ever opens.
+// A cold dev-server compile plus a POST that tries SMTP with blank credentials is slow.
+test.describe.configure({ timeout: 120_000 })
+
+const FIRST_LOAD = { timeout: 30_000 }
+let nativeDialogs: string[] = []
+
+// A native alert, confirm or prompt is a bug on this page. Record and dismiss it (throwing inside
+// the handler would not fail the test); afterEach asserts none opened.
+test.afterEach(() => {
+  expect(nativeDialogs, 'native browser dialogs opened').toEqual([])
+})
+
 test.beforeEach(async ({ page }) => {
-  page.on('dialog', (d) => {
-    throw new Error(`native dialog: ${d.message()}`)
+  nativeDialogs = []
+  page.on('dialog', async (d) => {
+    nativeDialogs.push(d.message())
+    await d.dismiss()
   })
   // Never touch a database the guard refused.
   if (academyE2eSkipReason() !== null) return
@@ -131,7 +144,7 @@ test('request leave through the three steps', async ({ page }, testInfo) => {
   const end = nextWeekday(10, 2)
   await signIn(page, STAFF.email)
   await page.goto('/leave?request=1')
-  await expect(page.getByRole('heading', { name: 'Request leave' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Request leave' })).toBeVisible(FIRST_LOAD)
 
   await page.locator('#leave-start').fill(start)
   await page.locator('#leave-end').fill(end)
@@ -146,7 +159,8 @@ test('request leave through the three steps', async ({ page }, testInfo) => {
   await expect(page.getByText('This leave needs a transition plan')).toBeVisible()
   await page.getByRole('button', { name: 'Next: People and review' }).click()
   await page.getByRole('button', { name: 'Submit request' }).click()
-  await expect(page.getByText('Leave request submitted!')).toBeVisible()
+  await expect(page.getByText('Leave request submitted!')).toBeVisible(FIRST_LOAD)
+  await expect(page.getByRole('heading', { name: 'Request leave' })).toBeHidden()
 
   const latest = async () =>
     prisma.leaveRequest.findFirst({ where: { employeeId: STAFF.id }, select: { status: true, leaveType: true } })
@@ -159,7 +173,7 @@ test('cancel asks in a dialog', async ({ page }, testInfo) => {
   const id = await seedAnnualRequest(false)
   await signIn(page, STAFF.email)
   await page.goto('/leave')
-  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible(FIRST_LOAD)
 
   await page.getByRole('button', { name: 'Cancel request' }).click()
   const dialog = page.getByRole('alertdialog', { name: 'Cancel this leave request?' })
@@ -178,7 +192,7 @@ test('drag across days opens the panel with those dates', async ({ page }, testI
 
   const monday = secondMondayNextMonth(0)
   const wednesday = secondMondayNextMonth(2)
-  await expect(page.locator(`[data-day="${monday}"]`)).toBeVisible()
+  await expect(page.locator(`[data-day="${monday}"]`)).toBeVisible(FIRST_LOAD)
   await dragAcross(page, monday, wednesday)
   await expect(page.getByRole('heading', { name: 'Request leave' })).toBeVisible()
   await expect(page.locator('#leave-start')).toHaveValue(monday)
@@ -200,8 +214,8 @@ test('a lead disapproves a plan with a reason from an email link', async ({ page
   await page.goto(`/leave?requestId=${id}`)
 
   const card = page.locator(`#leave-approval-${id}`)
-  await expect(card).toHaveAttribute('aria-current', 'true')
-  await expect(card.getByText('Opened from email')).toBeVisible()
+  await expect(card).toHaveAttribute('aria-current', 'true', FIRST_LOAD)
+  await expect(card.getByText('Opened from email')).toBeVisible(FIRST_LOAD)
 
   await card.getByRole('button', { name: 'Disapprove plan' }).click()
   const reason = 'Please name a cover for the weekly report.'
