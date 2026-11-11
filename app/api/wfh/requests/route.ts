@@ -14,6 +14,7 @@ import {
   wfhRequiresLeadApproval,
 } from '@/lib/wfh-utils'
 import { stripHtml } from '@/lib/sanitize'
+import { notifyWfh } from '@/lib/notifications/leave'
 
 const optionalIdSchema = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -282,6 +283,7 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error('Failed to send immediate WFH approval notification:', error)
       }
+      await notifyWfh(wfhRequest.id, 'WFH_APPROVED')
     }
 
     return NextResponse.json({ success: true, request: wfhRequest })
