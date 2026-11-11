@@ -48,7 +48,7 @@ export function HandbookHero({
         </p>
         <div className="h-px w-full max-w-xs bg-gradient-to-r from-primary/60 to-transparent my-3.5" />
 
-        <h1 className="text-3xl sm:text-4xl font-display font-light tracking-tight text-foreground">
+        <h2 className="text-3xl sm:text-4xl font-display font-light tracking-tight text-foreground">
           {firstName ? (
             <>
               Welcome to Plutus21, <span className="gradient-text">{firstName}</span>.
@@ -58,7 +58,7 @@ export function HandbookHero({
               The <span className="gradient-text">Handbook</span>
             </>
           )}
-        </h1>
+        </h2>
         <p className="text-muted-foreground mt-2 max-w-xl">
           Everything about how we work — the policies, the benefits, the people.
         </p>
