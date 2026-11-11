@@ -9,7 +9,7 @@ import { canSubmitTransitionPlan } from '@/lib/leave-transition-plan'
 import { detectBrowserLeaveTimeZone } from '@/lib/leave-timezone'
 import { submitLeave, submitTransitionPlan, updateLeave } from '@/lib/time-off/api'
 import {
-  EMPTY_REQUEST_FORM, formFromRequest, isFormDirty, isHalfDayEligible, stepError, toLeavePayload,
+  EMPTY_REQUEST_FORM, formFromRequest, isHalfDayEligible, stepError, toLeavePayload,
   toLeaveUpdatePayload, withDates, type RequestForm, type RequestStep,
 } from '@/lib/time-off/request-form'
 import { planRequiredFor } from '@/lib/time-off/request-rules'
@@ -18,6 +18,7 @@ import type { DirectoryUser, LeaveBalance, LeaveRequest } from '@/lib/time-off/t
 import { DatesTypeStep, balanceFor } from './DatesTypeStep'
 import { HandoverStep } from './HandoverStep'
 import { PeopleReviewStep } from './PeopleReviewStep'
+import { shouldTrapFocus, trapTabKey, useScrollLock, useSmallScreen } from './panel-modal'
 
 export type PanelMode = { kind: 'create' } | { kind: 'edit'; request: LeaveRequest }
 
@@ -63,7 +64,7 @@ function firstFailingStep(form: RequestForm, summary: ReturnType<typeof summariz
   return null
 }
 
-function Stepper({ step, onBack }: { step: RequestStep; onBack: (step: RequestStep) => void }) {
+function Stepper({ step, onBack, disabled }: { step: RequestStep; onBack: (step: RequestStep) => void; disabled: boolean }) {
   return (
     <ol className="grid grid-cols-3 gap-2" aria-label="Steps">
       {STEPS.map((s) => {
@@ -80,7 +81,7 @@ function Stepper({ step, onBack }: { step: RequestStep; onBack: (step: RequestSt
         return (
           <li key={s.step} aria-current={current ? 'step' : undefined} className="min-w-0">
             {done ? (
-              <button type="button" onClick={() => onBack(s.step)} className="w-full text-left hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              <button type="button" disabled={disabled} onClick={() => onBack(s.step)} className="w-full text-left hover:text-foreground disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                 {body}
               </button>
             ) : (
@@ -170,6 +171,11 @@ export function RequestPanel(props: RequestPanelProps) {
     [summary.startKey, summary.endKey, summary.problem, form.leaveType, halfDay, viewerDepartment]
   )
 
+  // Below lg the panel is a full-screen modal: contain focus and lock the page behind it.
+  const sectionRef = useRef<HTMLElement>(null)
+  const trapFocus = shouldTrapFocus(useSmallScreen(), open)
+  useScrollLock(trapFocus)
+
   // Move focus into the step that just appeared.
   const bodyRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -183,7 +189,8 @@ export function RequestPanel(props: RequestPanelProps) {
   if (!open) return null
 
   const isEdit = mode.kind === 'edit'
-  const dirty = isEdit ? !sameForm(form, baseline) : isFormDirty(form)
+  // Untouched since opening (including dates that came from a drag) closes without asking.
+  const dirty = !sameForm(form, baseline)
 
   const change = (next: RequestForm) => { setForm(next); setError(null) }
   const goTo = (next: RequestStep) => { setStep(next); setError(null) }
@@ -196,6 +203,7 @@ export function RequestPanel(props: RequestPanelProps) {
   }
 
   const submit = async () => {
+    if (submitting) return
     const failing = firstFailingStep(form, summary)
     if (failing) { setStep(failing.step); setError(failing.error); return }
     setSubmitting(true)
@@ -223,6 +231,7 @@ export function RequestPanel(props: RequestPanelProps) {
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (trapFocus && !confirmOpen) trapTabKey(e, sectionRef.current)
     if (e.key !== 'Escape' || e.defaultPrevented || confirmOpen) return
     e.preventDefault()
     requestClose()
@@ -233,7 +242,10 @@ export function RequestPanel(props: RequestPanelProps) {
 
   return (
     <section
+      ref={sectionRef}
+      role="dialog"
       aria-labelledby="request-panel-title"
+      aria-modal={trapFocus ? true : undefined}
       onKeyDown={onKeyDown}
       className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background lg:sticky lg:inset-auto lg:top-6 lg:z-auto lg:max-h-[calc(100vh-3rem)] lg:rounded-xl lg:border lg:border-border lg:bg-card lg:shadow-sm"
     >
@@ -246,10 +258,10 @@ export function RequestPanel(props: RequestPanelProps) {
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <Stepper step={step} onBack={goTo} />
+        <Stepper step={step} onBack={goTo} disabled={submitting} />
       </header>
 
-      <div ref={bodyRef} tabIndex={-1} aria-label={STEPS[step - 1].label} className="min-w-0 flex-1 outline-none">
+      <div ref={bodyRef} role="group" tabIndex={-1} aria-label={STEPS[step - 1].label} className="min-w-0 flex-1 outline-none">
         {step === 1 && <DatesTypeStep form={form} onChange={change} summary={summary} balance={balance} />}
         {step === 2 && <HandoverStep form={form} onChange={change} planRequired={planRequired} mode={mode.kind} />}
         {step === 3 && (
@@ -269,7 +281,10 @@ export function RequestPanel(props: RequestPanelProps) {
           {step < 3 ? (
             <Button type="button" onClick={next}>{NEXT_LABEL[step as 1 | 2]}</Button>
           ) : (
-            <Button type="button" onClick={submit} disabled={submitting}>{finalLabel}</Button>
+                        // aria-disabled (not disabled) keeps focus on the button while the request is in flight.
+            <Button type="button" onClick={submit} aria-disabled={submitting} className="aria-disabled:cursor-wait aria-disabled:opacity-70">
+              {finalLabel}
+            </Button>
           )}
         </div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

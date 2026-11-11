@@ -7,6 +7,8 @@ import { DatesTypeStep } from '@/components/leave/time-off/DatesTypeStep'
 import { HandoverStep } from '@/components/leave/time-off/HandoverStep'
 import { PeopleReviewStep } from '@/components/leave/time-off/PeopleReviewStep'
 import { MemberMultiSelect } from '@/components/leave/MemberMultiSelect'
+import { RequestPanel } from '@/components/leave/time-off/RequestPanel'
+import { SMALL_SCREEN_QUERY, shouldTrapFocus, wrapFocusIndex } from '@/components/leave/time-off/panel-modal'
 import { TransitionPlanTable } from '@/components/leave/TransitionPlanTable'
 import { summarizeLeaveRequest, type LeaveSummary } from '@/lib/time-off/request-summary'
 import { EMPTY_REQUEST_FORM, type RequestForm } from '@/lib/time-off/request-form'
@@ -237,4 +239,54 @@ test('step 3 summary covers half day, plan and notes; edit mode warns', () => {
   assert.doesNotMatch(html, /second line/)
   assert.match(html, /Teammate3 Example/)
   assert.match(html, /Saving sends it back for approval and emails your lead and HR again\./)
+})
+
+test('the panel is a labelled dialog at every size', () => {
+  const html = renderToStaticMarkup(
+    createElement(RequestPanel, {
+      open: true,
+      mode: { kind: 'create' },
+      initialRange: { start: '2026-11-19', end: '2026-11-23' },
+      balance: BALANCE,
+      balanceYear: 2026,
+      viewerDepartment: 'Design',
+      viewerId: 'u12',
+      users: USERS,
+      holidayKeysFor: async () => new Set<string>(),
+      onClose: noop,
+      onSaved: noop,
+    })
+  )
+  assert.match(html, /<section[^>]*role="dialog"[^>]*aria-labelledby="request-panel-title"/)
+  assert.match(html, /id="request-panel-title"[^>]*>Request leave</)
+  assert.doesNotMatch(html, /aria-modal/) // server render is the docked (non-modal) layout
+  assert.match(html, /role="group"[^>]*aria-label="1\. Dates and type"/)
+  assert.match(html, /aria-current="step"/)
+  assert.match(html, /Next: Handover/)
+  const closed = renderToStaticMarkup(
+    createElement(RequestPanel, {
+      open: false, mode: { kind: 'create' }, initialRange: null, balance: BALANCE, balanceYear: 2026,
+      viewerDepartment: null, viewerId: 'u12', users: USERS, holidayKeysFor: async () => new Set<string>(),
+      onClose: noop, onSaved: noop,
+    })
+  )
+  assert.equal(closed, '')
+})
+
+test('focus is trapped only while open on a small screen', () => {
+  assert.equal(shouldTrapFocus(true, true), true)
+  assert.equal(shouldTrapFocus(true, false), false)
+  assert.equal(shouldTrapFocus(false, true), false)
+  assert.equal(shouldTrapFocus(false, false), false)
+  assert.equal(SMALL_SCREEN_QUERY, '(max-width: 1023px)')
+})
+
+test('Tab wraps at the ends of the panel and nowhere else', () => {
+  assert.equal(wrapFocusIndex(5, 4, false), 0) // Tab on the last item -> first
+  assert.equal(wrapFocusIndex(5, 0, true), 4) // Shift+Tab on the first item -> last
+  assert.equal(wrapFocusIndex(5, -1, true), 4) // Shift+Tab from the heading -> last
+  assert.equal(wrapFocusIndex(5, -1, false), null) // Tab from the heading moves on normally
+  assert.equal(wrapFocusIndex(5, 2, false), null)
+  assert.equal(wrapFocusIndex(5, 2, true), null)
+  assert.equal(wrapFocusIndex(0, 0, false), null)
 })
