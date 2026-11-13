@@ -43,17 +43,20 @@ test('HR loads the standard twelve questions plus the end-of-quarter eNPS repeat
   assert.equal(bank.at(-1)?.text, 'I have the tools I need to do my job well.')
 })
 
-test('one question a week across the round’s 13 weeks, with the eNPS repeated in the last week', WEEKLY_DB_TEST, async () => {
+test('once a month: a batch every four weeks across the round’s 13 weeks, with the eNPS repeated in the last batch', WEEKLY_DB_TEST, async () => {
   await loadDefaultSurvey(HR_ACTOR, periodId)
   const week1 = await mySurvey(ana, at(1))
-  assert.deepEqual(week1.questions.map((q) => q.orderIndex), [0])
+  assert.deepEqual(week1.questions.map((q) => q.orderIndex), [0, 1, 2])
   assert.match(week1.notice, /^Your answer is confidential to HR\. It is never shared with your lead, your colleagues or anyone outside HR, and it does not affect your performance evaluation\./)
-  await submitSurvey(ana, { answers: [{ questionId: week1.questions[0].id, value: 9 }] }, at(1))
-  assert.deepEqual((await mySurvey(ana, at(1))).questions, [])
-  // A missed week stays open: in week 3 Ben sees weeks 1 to 3.
-  assert.deepEqual((await mySurvey(ben, at(3))).questions.map((q) => q.orderIndex), [0, 1, 2])
+  const [nps, happy, direction] = week1.questions
+  await submitSurvey(ana, { answers: [{ questionId: nps.id, value: 9 }, { questionId: happy.id, value: 4 }, { questionId: direction.id, value: 4 }] }, at(1))
+  // Nothing new until the next month's batch in week 5.
+  assert.deepEqual((await mySurvey(ana, at(4))).questions, [])
+  assert.deepEqual((await mySurvey(ana, at(5))).questions.map((q) => q.orderIndex), [3, 4, 5])
+  // A missed batch stays open: in week 5 Ben sees both months'.
+  assert.deepEqual((await mySurvey(ben, at(5))).questions.map((q) => q.orderIndex), [0, 1, 2, 3, 4, 5])
   const bank = await prisma.surveyQuestion.findMany({ where: { periodId }, orderBy: { orderIndex: 'asc' } })
-  assert.deepEqual(bank.map((q) => q.dueWeek), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+  assert.deepEqual(bank.map((q) => q.dueWeek), [1, 1, 1, 5, 5, 5, 9, 9, 9, 13, 13, 13, 13])
 })
 
 test('C-suite partners get no pulse questions and cannot answer them', WEEKLY_DB_TEST, async () => {
@@ -64,29 +67,30 @@ test('C-suite partners get no pulse questions and cannot answer them', WEEKLY_DB
   await assert.rejects(submitSurvey(brad, { answers: [{ questionId: question.id, value: 9 }] }, at(1)), isStatus(409))
 })
 
-test('a shorter round drops the eNPS repeat first, then asks more than one a week', () => {
-  assert.deepEqual(surveyDueWeeks(12, 13), { weeks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], repeatWeek: 13 })
-  assert.deepEqual(surveyDueWeeks(12, 12), { weeks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], repeatWeek: null })
-  assert.deepEqual(surveyDueWeeks(12, 8), { weeks: [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6], repeatWeek: null })
+test('a shorter round has fewer, larger monthly batches; a single batch has no eNPS repeat', () => {
+  assert.deepEqual(surveyDueWeeks(12, 13), { weeks: [1, 1, 1, 5, 5, 5, 9, 9, 9, 13, 13, 13], repeatWeek: 13 })
+  assert.deepEqual(surveyDueWeeks(12, 12), { weeks: [1, 1, 1, 1, 5, 5, 5, 5, 9, 9, 9, 9], repeatWeek: 9 })
+  assert.deepEqual(surveyDueWeeks(12, 8), { weeks: [1, 1, 1, 1, 1, 1, 5, 5, 5, 5, 5, 5], repeatWeek: 5 })
+  assert.deepEqual(surveyDueWeeks(3, 4), { weeks: [1, 1, 1], repeatWeek: null })
 })
 
 test('a disagree answer needs a reason, the improvement question needs an explanation, and the last question is optional', WEEKLY_DB_TEST, async () => {
   await loadDefaultSurvey(HR_ACTOR, periodId)
-  const all = (await mySurvey(ana, at(12))).questions
+  const all = (await mySurvey(ana, at(13))).questions
   const happy = all.find((q) => q.orderIndex === 1)!
   const improve = all.find((q) => q.orderIndex === 10)!
   const ideas = all.find((q) => q.orderIndex === 11)!
-  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: happy.id, value: 2 }] }, at(12)), /why/i)
-  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: improve.id, choice: 'Career growth' }] }, at(12)), /explain/i)
-  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: improve.id, choice: 'Free lunch', text: 'x' }] }, at(12)), /option/i)
+  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: happy.id, value: 2 }] }, at(13)), /why/i)
+  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: improve.id, choice: 'Career growth' }] }, at(13)), /explain/i)
+  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: improve.id, choice: 'Free lunch', text: 'x' }] }, at(13)), /option/i)
   await submitSurvey(ana, {
     answers: [
       { questionId: happy.id, value: 2, text: 'Too much context switching' },
       { questionId: improve.id, choice: 'Career growth', text: 'A clear path to senior roles' },
       { questionId: ideas.id, text: '' },
     ],
-  }, at(12))
-  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: happy.id, value: 4 }] }, at(12)), isStatus(409))
+  }, at(13))
+  await assert.rejects(submitSurvey(ana, { answers: [{ questionId: happy.id, value: 4 }] }, at(13)), isStatus(409))
 })
 
 test('anonymous is chosen per answer and stored without a name; HR sees counts, eNPS with its optional reason, and comments', WEEKLY_DB_TEST, async () => {
@@ -130,17 +134,17 @@ test('each question keeps the week it was scheduled for: adding one later does n
   await loadDefaultSurvey(HR_ACTOR, periodId)
   await addSurveyQuestion(HR_ACTOR, periodId, { text: 'I have the tools I need to do my job well.', kind: 'AGREE' }, at(3))
   const due = (await mySurvey(ben, at(3))).questions
-  // One a week over three weeks, plus the new question, due from the week it was added.
+  // The first month's three, plus the new question, due from the week it was added.
   assert.equal(due.length, 4)
   assert.equal(due.at(-1)?.text, 'I have the tools I need to do my job well.')
 })
 
 test('a blank optional answer is not counted as an answer', WEEKLY_DB_TEST, async () => {
   await loadDefaultSurvey(HR_ACTOR, periodId)
-  const ideas = (await mySurvey(ana, at(12))).questions.find((q) => q.orderIndex === 11)!
-  await submitSurvey(ana, { answers: [{ questionId: ideas.id, text: '' }] }, at(12))
+  const ideas = (await mySurvey(ana, at(13))).questions.find((q) => q.orderIndex === 11)!
+  await submitSurvey(ana, { answers: [{ questionId: ideas.id, text: '' }] }, at(13))
   assert.equal((await surveyResults(HR_ACTOR, periodId)).questions.find((q) => q.id === ideas.id)!.responses, 0)
-  assert.ok(!(await mySurvey(ana, at(12))).questions.some((q) => q.id === ideas.id), 'and it is no longer asked')
+  assert.ok(!(await mySurvey(ana, at(13))).questions.some((q) => q.id === ideas.id), 'and it is no longer asked')
 })
 
 test('an anonymous answer keeps its department only when at least five from that department answered that week', WEEKLY_DB_TEST, async () => {
@@ -182,7 +186,7 @@ test('the last week of a finished round is cleared too, and moving department la
   await scrubSmallDepartments(at(2))
   assert.equal(await prisma.surveyResponse.count({ where: { questionId: nps.id, department: 'Product' } }), 5, 'counted by the department stored with the answer')
   // A late, lone anonymous answer in the round's last week is cleared once the round is closed.
-  const last = await prisma.surveyQuestion.findFirstOrThrow({ where: { periodId, dueWeek: 13 } })
+  const last = await prisma.surveyQuestion.findFirstOrThrow({ where: { periodId, dueWeek: 13, kind: 'NPS' } })
   await submitSurvey(weeklyActor(W.cara), { answers: [{ questionId: last.id, value: 5, anonymous: true }] }, at(13))
   await prisma.weeklyCycle.updateMany({ where: { periodId }, data: { status: 'CLOSED' } })
   await scrubSmallDepartments(at(13, 3))

@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { after, NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { ZodError } from 'zod'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { isAdminRole } from '@/lib/permissions'
@@ -9,18 +10,20 @@ import {
   encryptSensitivePayrollProfileFields,
 } from '@/lib/payroll/sensitive-fields'
 import { isPlutusEmail } from '@/lib/onboarding'
+import { missingAttributes, type PersonAttributes } from '@/lib/academy/attributes'
+import { adminAttributeGate, formatZodIssues, mergeAttributePatch } from '@/lib/academy/profile-input'
+import {
+  ATTRIBUTE_SELECT,
+  copySetupToUser,
+  getPersonAttributes,
+  setPersonAttributes,
+} from '@/lib/academy/service/attributes'
+import { hireTitleFor, parseNewUserOnboarding, type NewUserOnboarding } from '@/lib/academy/new-user-onboarding'
+import { createHireForUser, startOnboarding, type StartOnboardingResult } from '@/lib/academy/service/new-user-onboarding'
+import { notifyCourseReleased } from '@/lib/academy/service/notify'
+import { checkAssignableTeamTag } from '@/lib/teams/load'
 
 const VALID_USER_ROLES = ['EMPLOYEE', 'HR', 'SECURITY', 'OA', 'EXECUTION'] as const
-const VALID_TEAM_TAGS = [
-  'PAKISTAN',
-  'MOROCCO',
-  'COLOMBIA',
-  'INDONESIA',
-  'ECUADOR',
-  'NOBLE',
-  'THREE_E_PAKISTAN',
-  'THREE_E_MOROCCO',
-] as const
 
 const SAFE_USER_RESPONSE_SELECT = {
   id: true,
@@ -154,6 +157,18 @@ async function upsertPayrollProfileAndRevision(args: {
   })
 }
 
+/** The Academy attributes of a listed user, with the ones still to fill in. */
+function academyFields(entry: Partial<PersonAttributes>) {
+  const attributes: PersonAttributes = {
+    officeLocation: entry.officeLocation ?? null,
+    remoteCountry: entry.remoteCountry ?? null,
+    workMode: entry.workMode ?? null,
+    contractType: entry.contractType ?? null,
+    employmentStatus: entry.employmentStatus ?? null,
+  }
+  return { attributes, missingAttributes: missingAttributes(attributes) }
+}
+
 // GET - List all users
 export async function GET(_request: NextRequest) {
   try {
@@ -176,6 +191,7 @@ export async function GET(_request: NextRequest) {
         benefitCategoryId: true,
         teamTag: true,
         createdAt: true,
+        ...ATTRIBUTE_SELECT,
         benefitCategory: {
           select: {
             id: true,
@@ -251,6 +267,7 @@ export async function GET(_request: NextRequest) {
       users: users.map((entry) => ({
         ...entry,
         payrollProfile: decryptSensitivePayrollProfileFields(entry.payrollProfile),
+        ...academyFields(entry),
       })),
       payrollMeta: {
         departments: payrollDepartments,
@@ -276,6 +293,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body: unknown = await request.json()
     const {
       name,
       email,
@@ -289,7 +307,7 @@ export async function POST(request: NextRequest) {
       benefitCategoryId,
       teamTag,
       payrollProfile,
-    } = (await request.json()) as {
+    } = body as {
       name?: string
       email?: string | null
       discordId?: string | null
@@ -330,17 +348,22 @@ export async function POST(request: NextRequest) {
     }
 
     let linkedNewHire: { id: string; email: string; userId: string | null } | null = null
+    // Ticked with no existing record: Compass creates the hire record and releases the course.
+    let newHireOnboarding: NewUserOnboarding | null = null
     if (shouldCreateAsNewHire) {
-      if (!normalizedNewHireId) {
-        return NextResponse.json({ error: 'newHireId is required for new hires' }, { status: 400 })
-      }
       if (!normalizedEmail) {
         return NextResponse.json({ error: 'Email is required for new hires' }, { status: 400 })
       }
       if (!isPlutusEmail(normalizedEmail)) {
         return NextResponse.json({ error: 'New hire email must be a plutus21.com address' }, { status: 400 })
       }
-
+    }
+    if (shouldCreateAsNewHire && !normalizedNewHireId) {
+      const parsed = parseNewUserOnboarding(body)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      newHireOnboarding = parsed.data
+    }
+    if (shouldCreateAsNewHire && normalizedNewHireId && normalizedEmail) {
       linkedNewHire = await prisma.newHire.findUnique({
         where: { id: normalizedNewHireId },
         select: { id: true, email: true, userId: true },
@@ -368,11 +391,16 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedTeamTag = normalizeOptionalString(teamTag)
-    if (normalizedTeamTag && !VALID_TEAM_TAGS.includes(normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number])) {
-      return NextResponse.json({ error: 'Invalid team tag' }, { status: 400 })
+    if (normalizedTeamTag) {
+      const check = await checkAssignableTeamTag(normalizedTeamTag)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
+      }
     }
 
-    const newUser = await prisma.$transaction(async (tx) => {
+    const hireTitle = hireTitleFor(position)
+    const hireDepartment = normalizeOptionalString(department)
+    const { newUser, hireId } = await prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
         data: {
           name: normalizedName,
@@ -383,7 +411,7 @@ export async function POST(request: NextRequest) {
           role: normalizedRole as (typeof VALID_USER_ROLES)[number],
           passwordHash,
           benefitCategoryId: normalizedBenefitCategoryId || null,
-          teamTag: (normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number]) || null,
+          teamTag: normalizedTeamTag || null,
           onboardingCompleted: shouldCreateAsNewHire ? false : true,
         },
         select: SAFE_USER_RESPONSE_SELECT,
@@ -398,28 +426,34 @@ export async function POST(request: NextRequest) {
           },
         })
 
-        const modules = await tx.onboardingModule.findMany({
-          where: { isActive: true },
-          orderBy: { orderIndex: 'asc' },
-          select: { id: true },
-        })
-
-        if (modules.length > 0) {
-          const now = new Date()
-          await tx.onboardingProgress.createMany({
-            data: modules.map((module, index) => ({
-              userId: createdUser.id,
-              moduleId: module.id,
-              status: index === 0 ? 'IN_PROGRESS' : 'LOCKED',
-              startedAt: index === 0 ? now : null,
-              completedAt: null,
-            })),
-          })
-        }
+        await copySetupToUser(tx, linkedNewHire.id, createdUser.id)
+        return { newUser: createdUser, hireId: linkedNewHire.id }
       }
 
-      return createdUser
+      if (shouldCreateAsNewHire && newHireOnboarding && normalizedEmail) {
+        const createdHireId = await createHireForUser(tx, {
+          userId: createdUser.id,
+          name: normalizedName,
+          email: normalizedEmail,
+          title: hireTitle,
+          department: hireDepartment,
+          onboarding: newHireOnboarding,
+        })
+        return { newUser: createdUser, hireId: createdHireId }
+      }
+
+      return { newUser: createdUser, hireId: null }
     })
+
+    // Outside the user's transaction: the release takes its own lock, and a failure must not undo the user.
+    let onboarding: StartOnboardingResult | null = null
+    if (hireId) {
+      const firstSetup = newHireOnboarding
+        ? { title: hireTitle, department: hireDepartment, onboarding: newHireOnboarding }
+        : null
+      onboarding = await startOnboarding(prisma, hireId, user.id, firstSetup)
+      if (onboarding.released) after(() => notifyCourseReleased(prisma, hireId))
+    }
 
     if (payrollProfile) {
       await upsertPayrollProfileAndRevision({
@@ -429,7 +463,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, user: newUser })
+    return NextResponse.json({ success: true, user: newUser, onboarding })
   } catch (error) {
     if (error instanceof Error && 'code' in error && (error as any).code === 'P2002') {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
@@ -447,6 +481,14 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const body: unknown = await request.json()
+    // Only HR may send the attribute keys.
+    const attributeGate = adminAttributeGate(user.role, body)
+    const attributeRequested = attributeGate === 'allow'
+    if (attributeGate === 'forbidden') {
+      return NextResponse.json({ error: 'Only HR can change onboarding attributes' }, { status: 403 })
+    }
+
     const {
       id,
       name,
@@ -458,7 +500,7 @@ export async function PUT(request: NextRequest) {
       benefitCategoryId,
       teamTag,
       payrollProfile,
-    } = (await request.json()) as {
+    } = body as {
       id?: string
       name?: string
       email?: string | null
@@ -476,8 +518,13 @@ export async function PUT(request: NextRequest) {
     }
 
     const normalizedTeamTag = normalizeOptionalString(teamTag)
-    if (normalizedTeamTag && !VALID_TEAM_TAGS.includes(normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number])) {
-      return NextResponse.json({ error: 'Invalid team tag' }, { status: 400 })
+    if (normalizedTeamTag) {
+      // Keeping an archived tag the person already has is fine; moving them onto one is not.
+      const current = await prisma.user.findUnique({ where: { id }, select: { teamTag: true } })
+      const check = await checkAssignableTeamTag(normalizedTeamTag, current?.teamTag ?? null)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
+      }
     }
 
     const normalizedRole = typeof role === 'string' ? role.toUpperCase() : 'EMPLOYEE'
@@ -497,23 +544,28 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: {
-        name,
-        email: normalizeOptionalString(email),
-        discordId: normalizeOptionalString(discordId),
-        department: department || null,
-        position: position || null,
-        role: normalizedRole as (typeof VALID_USER_ROLES)[number],
-        ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
-        // Omitting teamTag leaves it untouched; sending null clears it.
-        ...(teamTag !== undefined
-          ? { teamTag: (normalizedTeamTag as (typeof VALID_TEAM_TAGS)[number]) ?? null }
-          : {}),
-      },
-      select: SAFE_USER_RESPONSE_SELECT,
-    })
+    const userChanges = {
+      name,
+      email: normalizeOptionalString(email),
+      discordId: normalizeOptionalString(discordId),
+      department: department || null,
+      position: position || null,
+      role: normalizedRole as (typeof VALID_USER_ROLES)[number],
+      ...(benefitCategoryId !== undefined ? { benefitCategoryId: normalizedBenefitCategoryId } : {}),
+      // Omitting teamTag leaves it untouched; sending null clears it.
+      ...(teamTag !== undefined
+        ? { teamTag: normalizedTeamTag ?? null }
+        : {}),
+    }
+
+    const updatedUser = attributeRequested
+      ? await prisma.$transaction(async (tx) => {
+          const saved = await tx.user.update({ where: { id }, data: userChanges, select: SAFE_USER_RESPONSE_SELECT })
+          const current = await getPersonAttributes(tx, id)
+          await setPersonAttributes(tx, id, mergeAttributePatch(current, body))
+          return saved
+        })
+      : await prisma.user.update({ where: { id }, data: userChanges, select: SAFE_USER_RESPONSE_SELECT })
 
     if (payrollProfile) {
       await upsertPayrollProfileAndRevision({
@@ -527,6 +579,12 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && 'code' in error && (error as any).code === 'P2002') {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+    }
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        { error: formatZodIssues(error) },
+        { status: 400 },
+      )
     }
     console.error('Failed to update user:', error)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to update user' }, { status: 500 })

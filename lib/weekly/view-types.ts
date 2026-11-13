@@ -145,7 +145,9 @@ export interface ReviewQueueResponse { cycleId: string; counts: Record<AnswerSta
 export interface CoverageView { evaluatee: PersonRef; perspective: Perspective; satisfied: number; total: number; evaluatorsContributing: number; share: number; lowEvidence: boolean }
 export interface EvaluatorStatsView { evaluator: PersonRef; released: number; answered: number; notObserved: number; open: number; overdue: number; responseRate: number | null }
 export interface DriftView { evaluator: PersonRef; perspective: Perspective; difference: number; count: number }
-export interface WeekProgressView { week: number; asked: number; answered: number }
+/** Someone with questions from a week still unanswered; `remindedToday` once HR's reminder reached them today. */
+export interface PendingEvaluatorView { evaluator: PersonRef; open: number; remindedToday: boolean }
+export interface WeekProgressView { week: number; asked: number; answered: number; pending: PendingEvaluatorView[] }
 export interface DepartmentProgressView { department: string; evaluators: number; asked: number; answered: number }
 export interface DashboardResponse {
   cycle: CycleSummary
@@ -161,7 +163,8 @@ export interface DashboardResponse {
 export type FormRelationshipTypeValue = 'C_LEVEL' | 'DEPT' | 'HR'
 export type FormStatusValue = 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'CLOSED_BY_OTHER'
 export interface FormSummaryView { relationshipType: FormRelationshipTypeValue; evaluatee: PersonRef; department: string | null; memberCount: number; status: FormStatusValue }
-export interface FormsResponse { cycle: CycleSummary | null; open: boolean; opensAt: string | null; forms: FormSummaryView[] }
+/** `partner`: the person fills their evaluations in tables (shared with HR) instead of these forms. */
+export interface FormsResponse { cycle: CycleSummary | null; open: boolean; opensAt: string | null; forms: FormSummaryView[]; partner?: boolean }
 export interface FormQuestionView {
   id: string
   source: 'GLOBAL' | 'LEAD'
@@ -183,6 +186,8 @@ export interface FormTableRow {
   status: FormStatusValue
   ratings: Record<string, number | null>
   total: number | null
+  /** A partner's row: who saved it last, the partner or someone in HR (both fill the same row). */
+  lastSavedBy: string | null
 }
 export interface FormTableView {
   evaluator: PersonRef

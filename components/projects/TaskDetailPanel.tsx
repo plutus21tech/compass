@@ -22,10 +22,11 @@ import { copyTextToClipboard } from '@/lib/copy-text'
 import { buildTaskShareUrl } from '@/lib/project-task-utils'
 import { imageUrlFromMarkdown, safeLinkHref } from '@/lib/safe-url'
 import { formatSprintRange, getSprintStatus } from '@/lib/project-sprints'
+import { formatDate, formatDateTime } from '@/lib/format-date'
 
 /* ─── Types ───────────────────────────────────────────────────────────── */
 
-interface Label {
+export interface Label {
   id: string
   name: string
   color: string
@@ -120,7 +121,7 @@ export interface PanelTask {
   _count: { comments: number }
 }
 
-interface PanelSprint {
+export interface PanelSprint {
   id: string
   name: string
   startDate: string
@@ -173,13 +174,7 @@ function parseTaskDate(value: string | null | undefined) {
 }
 
 function formatTaskDate(value: string | null | undefined) {
-  const date = parseTaskDate(value)
-  if (!date) return 'No deadline'
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatDate(value, { fallback: 'No deadline' })
 }
 
 function statusLabelForTask(task: Pick<PanelTask, 'status' | 'section'>) {
@@ -1479,7 +1474,7 @@ export function TaskDetailPanel({
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{c.author.name}</span>
                         <span className="text-[10px] text-muted-foreground">
-                          {new Date(c.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {formatDateTime(c.createdAt)}
                         </span>
                       </div>
                       <div className="mt-0.5">
@@ -1556,13 +1551,7 @@ export function TaskDetailPanel({
                   <div key={activity.id} className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
                     <p className="text-sm text-foreground/90">{activity.summary}</p>
                     <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {new Date(activity.createdAt).toLocaleString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {formatDateTime(activity.createdAt)}
                     </p>
                   </div>
                 ))}

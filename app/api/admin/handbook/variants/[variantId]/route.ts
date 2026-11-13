@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { TeamTag } from '@prisma/client'
 import { getSession } from '@/lib/auth'
 import { isAdminRole } from '@/lib/permissions'
 import { prisma } from '@/lib/db'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, unknownTeamTags } from '@/lib/handbook/teams'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { findOverlapForPage } from '@/lib/handbook/admin-queries'
 
 export async function PUT(
@@ -34,7 +34,8 @@ export async function PUT(
       if (!audiences.length) {
         return NextResponse.json({ error: 'Select at least one team' }, { status: 400 })
       }
-      const invalid = audiences.filter((t) => !(ALL_TEAMS as readonly string[]).includes(t))
+      const teams = await loadTeamCatalog()
+      const invalid = unknownTeamTags(teams, audiences)
       if (invalid.length) {
         return NextResponse.json(
           { error: `Invalid team(s): ${invalid.join(', ')}` },
@@ -46,10 +47,10 @@ export async function PUT(
       // teams save cleanly instead of colliding with itself.
       const overlap = await findOverlapForPage(existing.pageId, {
         variantId,
-        audiences: audiences as TeamTag[],
+        audiences,
       })
       if (overlap.length) {
-        const names = overlap.map((t) => TEAM_LABELS[t]).join(', ')
+        const names = overlap.map((t) => teamLabel(teams, t)).join(', ')
         return NextResponse.json(
           { error: `Another variant of this page already covers: ${names}` },
           { status: 400 }
@@ -61,7 +62,7 @@ export async function PUT(
       if (audiences) {
         await tx.handbookAudience.deleteMany({ where: { variantId } })
         await tx.handbookAudience.createMany({
-          data: audiences.map((team) => ({ variantId, team: team as TeamTag })),
+          data: audiences.map((team) => ({ variantId, team })),
         })
       }
       return tx.handbookVariant.update({

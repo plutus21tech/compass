@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { TeamTag } from '@prisma/client'
 import { getSession } from '@/lib/auth'
 import { isAdminRole } from '@/lib/permissions'
 import { prisma } from '@/lib/db'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, unknownTeamTags } from '@/lib/handbook/teams'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { findOverlapForPage } from '@/lib/handbook/admin-queries'
 
 export async function POST(
@@ -25,17 +25,17 @@ export async function POST(
     if (!audiences?.length) {
       return NextResponse.json({ error: 'Select at least one team' }, { status: 400 })
     }
-    const invalid = audiences.filter((t) => !(ALL_TEAMS as readonly string[]).includes(t))
+    const teams = await loadTeamCatalog()
+    const invalid = unknownTeamTags(teams, audiences)
     if (invalid.length) {
       return NextResponse.json({ error: `Invalid team(s): ${invalid.join(', ')}` }, { status: 400 })
     }
 
     // Two variants of one page must never claim the same team -- that reader
     // would see two conflicting policies with no way to tell which is theirs.
-    // The cast is sound: audiences was just validated against ALL_TEAMS.
-    const overlap = await findOverlapForPage(pageId, { audiences: audiences as TeamTag[] })
+    const overlap = await findOverlapForPage(pageId, { audiences })
     if (overlap.length) {
-      const names = overlap.map((t) => TEAM_LABELS[t]).join(', ')
+      const names = overlap.map((t) => teamLabel(teams, t)).join(', ')
       return NextResponse.json(
         { error: `Another variant of this page already covers: ${names}` },
         { status: 400 }
@@ -48,7 +48,7 @@ export async function POST(
         pageId,
         bodyMarkdown: bodyMarkdown ?? '',
         orderIndex: count,
-        audiences: { create: audiences.map((team) => ({ team: team as TeamTag })) },
+        audiences: { create: audiences.map((team) => ({ team })) },
       },
       include: { audiences: { select: { team: true } } },
     })

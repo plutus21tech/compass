@@ -2,10 +2,11 @@ import nodemailer from 'nodemailer'
 import { prisma } from '@/lib/db'
 import { formatReportAsHTML, generateDetailedReport } from './reports'
 import { escapeHtml } from '@/lib/sanitize'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { teamLabel, type TeamTag } from '@/lib/teams/catalog'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { groupHolidaysByTeam, holidayIdsFullyDelivered, monthRangeUtc } from '@/lib/holidays'
-import type { TeamTag } from '@prisma/client'
-import { calculateLeaveDuration, getExpectedReturnDate } from '@/lib/leave-utils'
+import { getExpectedReturnDate } from '@/lib/leave-utils'
+import { chargeableLeaveDays } from '@/lib/leave-holiday-store'
 import { safeRecordLeaveAuditEvent } from '@/lib/leave-audit'
 import { calculateWfhDays } from '@/lib/wfh-utils'
 import { normalizeCoverPersonIds } from '@/lib/leave-cover'
@@ -13,6 +14,7 @@ import { shouldReceiveReportForPeriod } from '@/lib/evaluation-profile-rules'
 import { getResolvedEvaluationAssignments } from '@/lib/evaluation-assignments'
 import { renderLeaveRequestEmailAction } from '@/lib/leave-deep-links'
 import { compassUrl } from '@/lib/compass-url'
+import { formatAcademyDate } from '@/lib/academy/view-labels'
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -358,7 +360,8 @@ export async function sendLeaveRequestNotification(requestId: string) {
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const subject = `Leave Request: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
 
@@ -693,7 +696,8 @@ export async function sendLeaveApprovalNotification(
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   const isApproved = status === 'approved'
@@ -799,7 +803,8 @@ export async function sendLeaveCancellationNotification(
   const endDateValue = new Date(leaveRequest.endDate)
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const subject = `Leave Cancelled: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
 
@@ -939,7 +944,8 @@ export async function sendTransitionPlanReminderNotification(requestId: string) 
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
   const returnDate = returnDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const msPerDay = 1000 * 60 * 60 * 24
   const today = new Date()
@@ -1081,7 +1087,8 @@ async function sendTransitionPlanDeadlineMail(
   const endDateValue = new Date(leaveRequest.endDate)
   const startDate = startDateValue.toLocaleDateString()
   const endDate = endDateValue.toLocaleDateString()
-  const daysCount = calculateLeaveDuration(startDateValue, endDateValue, leaveRequest.isHalfDay)
+  // Same holiday-aware count that was charged to the balance.
+  const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   // Spelled out with the weekday in UTC: a bare numeric date is the wrong thing to be
@@ -1556,6 +1563,50 @@ export async function sendTeamLeadFormRequestNotification(newHireId: string) {
   }
 }
 
+/** Asks the team lead for role expectations and goals. Throws on send failure; callers log it. */
+export async function sendLeadInputRequest(newHireId: string): Promise<void> {
+  const newHire = await prisma.newHire.findUnique({
+    where: { id: newHireId },
+    include: {
+      teamLead: { select: { name: true, email: true } },
+      teamLeadForm: { select: { leadInputDueAt: true } },
+    },
+  })
+  if (!newHire) return
+
+  const recipients = mergeRecipientEmails([newHire.teamLead?.email], getOnboardingExecutionRecipients())
+  if (recipients.length === 0) return
+
+  const formUrl = compassUrl(`/team-lead-form/${encodeURIComponent(newHire.id)}`)
+  const dueAt = newHire.teamLeadForm?.leadInputDueAt
+  const dueLine = dueAt
+    ? `<p><strong>Please complete by:</strong> ${escapeHtml(dueAt.toISOString().slice(0, 10))}</p>`
+    : ''
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">Your input is needed for a new hire</h2>
+      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>New Hire:</strong> ${escapeHtml(newHire.name)}</p>
+        <p><strong>Title:</strong> ${escapeHtml(newHire.title)}</p>
+        <p><strong>Joining:</strong> ${escapeHtml(newHire.onboardingDate.toISOString().slice(0, 10))}</p>
+        ${dueLine}
+      </div>
+      <p style="color: #475569; margin: 0 0 14px;">
+        Please describe what you expect from this role and set their goals for day 1, week 1, month 1 and month 3.
+      </p>
+      <p><a href="${formUrl}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Add role expectations</a></p>
+    </div>
+  `
+
+  await transporter.sendMail({
+    from: `P21 Compass <${FROM_EMAIL}>`,
+    to: recipients.join(', '),
+    subject: `Action Required: role expectations for ${newHire.name}`,
+    html: htmlContent,
+  })
+}
+
 export async function sendSecurityChecklistCompleteNotification(newHireId: string) {
   const newHire = await prisma.newHire.findUnique({
     where: { id: newHireId },
@@ -1649,6 +1700,50 @@ export async function sendOnboardingCompletedNotification(userId: string) {
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
     console.error('Failed to send onboarding completed notification:', error)
+    return { success: false, error: error.message }
+  }
+}
+
+/** Goes to HR at every failAlertThreshold failed attempts. Never carries the hire's answers. */
+export async function sendQuizFailAlert(userId: string, failedCount: number) {
+  const hire = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, email: true, department: true },
+  })
+
+  if (!hire) {
+    return { success: false, message: 'User not found' }
+  }
+
+  const recipients = mergeRecipientEmails(await getHrRecipientEmails())
+
+  if (recipients.length === 0) {
+    return { success: false, message: 'No recipients configured for quiz fail alert' }
+  }
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">Culture Quiz: Please Arrange a Short Conversation</h2>
+      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>User:</strong> ${escapeHtml(hire.name)}</p>
+        <p><strong>Email:</strong> ${escapeHtml(hire.email || 'N/A')}</p>
+        <p><strong>Department:</strong> ${escapeHtml(hire.department || 'N/A')}</p>
+        <p><strong>Failed attempts:</strong> ${failedCount}</p>
+      </div>
+      <p>Retakes stay open, so nothing is blocked while you talk.</p>
+    </div>
+  `
+
+  try {
+    const info = await transporter.sendMail({
+      from: `P21 Compass <${FROM_EMAIL}>`,
+      to: recipients.join(', '),
+      subject: `Culture Quiz Failed ${failedCount} Times: ${hire.name}`,
+      html: htmlContent,
+    })
+    return { success: true, data: { messageId: info.messageId } }
+  } catch (error: any) {
+    console.error('Failed to send quiz fail alert:', error)
     return { success: false, error: error.message }
   }
 }
@@ -1763,7 +1858,9 @@ async function deliverHolidayEmails({
   }
 
   const isNew = scope === 'new'
-  const byTeam = groupHolidaysByTeam(holidays, ALL_TEAMS)
+  const teams = await loadTeamCatalog()
+  const labelOf = (team: TeamTag) => teamLabel(teams, team)
+  const byTeam = groupHolidaysByTeam(holidays, teams.all)
   const ccEmails = await getHolidayCcEmails()
   const skipped: string[] = []
   const plan: HolidayPlanEntry[] = []
@@ -1791,13 +1888,13 @@ async function deliverHolidayEmails({
     const to = mergeRecipientEmails(recipients.map((r) => r.email))
 
     if (to.length === 0) {
-      skipped.push(`${TEAM_LABELS[team]}: nobody tagged`)
+      skipped.push(`${labelOf(team)}: nobody tagged`)
       continue
     }
 
     plan.push({
       team,
-      teamLabel: TEAM_LABELS[team],
+      teamLabel: labelOf(team),
       recipients: to.length,
       holidays: teamHolidays.map((holiday) => holiday.name),
     })
@@ -1827,11 +1924,11 @@ async function deliverHolidayEmails({
         : 'New Public Holidays'
       : `Public Holidays in ${label}`
     const subject = isNew
-      ? `${heading} — ${TEAM_LABELS[team]}`
-      : `Public Holidays in ${label} — ${TEAM_LABELS[team]}`
+      ? `${heading} — ${labelOf(team)}`
+      : `Public Holidays in ${label} — ${labelOf(team)}`
     const intro = isNew
-      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(TEAM_LABELS[team])}.`
-      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(TEAM_LABELS[team])} this month.`
+      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(labelOf(team))}.`
+      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(labelOf(team))} this month.`
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px;">
@@ -1860,15 +1957,15 @@ async function deliverHolidayEmails({
       })
       sent++
     } catch (error) {
-      console.error(`Failed to send holiday email to ${TEAM_LABELS[team]}:`, error)
-      skipped.push(`${TEAM_LABELS[team]}: send failed`)
+      console.error(`Failed to send holiday email to ${labelOf(team)}:`, error)
+      skipped.push(`${labelOf(team)}: send failed`)
       failedTeams.add(team)
     }
   }
 
   let announced = 0
   if (!dryRun) {
-    const deliveredIds = holidayIdsFullyDelivered(holidays, failedTeams, ALL_TEAMS)
+    const deliveredIds = holidayIdsFullyDelivered(holidays, failedTeams, teams.all)
     if (deliveredIds.length > 0) {
       // `notifiedAt: null` keeps the first announcement's timestamp rather than
       // overwriting it every time the monthly digest re-lists the same holiday.
@@ -2266,4 +2363,261 @@ export async function sendTransitionPlanEscalation(requestId: string) {
     })
     return { success: false, message: 'Failed to escalate to HR' }
   }
+}
+
+async function getOaRecipientEmails(): Promise<string[]> {
+  const users = await prisma.user.findMany({ where: { role: 'OA', email: { not: null } }, select: { email: true } })
+  return users.flatMap((user) => (user.email ? [user.email] : []))
+}
+
+/** Tells O&A that a hire changed bank or payout details. Carries the person's name only, never the details. */
+export async function sendPaymentDetailsUpdatedNotification(personName: string) {
+  const recipients = mergeRecipientEmails(await getOaRecipientEmails())
+  if (recipients.length === 0) {
+    console.error('[academy] no O&A recipients configured for payment details notification')
+    return { success: false, message: 'No O&A recipients configured' }
+  }
+  const subject = `Payment details updated for ${personName}`
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">Payment details updated</h2>
+      <p>${escapeHtml(personName)} updated their payment details. Open Compass to review them.</p>
+    </div>
+  `
+  try {
+    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients.join(', '), subject, html })
+    return { success: true, data: { messageId: info.messageId } }
+  } catch (error) {
+    console.error('Failed to send payment details updated notification')
+    return { success: false, error: error instanceof Error ? error.message : 'send failed' }
+  }
+}
+
+export interface AcademyNotice {
+  subject: string
+  html: string
+}
+
+export interface AcademySendResult {
+  success: boolean
+  message?: string
+}
+
+type AcademyOwnerRole = 'HR' | 'SECURITY' | 'OA' | 'TEAM_LEAD'
+
+/** Plain text goes in; everything shown is escaped here. */
+function academyNotice(input: {
+  subject: string
+  heading: string
+  lines: string[]
+  list?: string[]
+  closing?: string
+  linkLabel: string
+  path: string
+}): AcademyNotice {
+  const paragraph = (line: string): string => `<p>${escapeHtml(line)}</p>`
+  const list = input.list ? [`<ul>${input.list.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`] : []
+  const closing = input.closing ? [paragraph(input.closing)] : []
+  const lines = [...input.lines.map(paragraph), ...list, ...closing].join('\n      ')
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #0D9488;">${escapeHtml(input.heading)}</h2>
+      ${lines}
+      <p><a href="${compassUrl(input.path)}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">${escapeHtml(input.linkLabel)}</a></p>
+    </div>
+  `
+  return { subject: input.subject, html }
+}
+
+export interface AcademyDigestItem {
+  title: string
+  /** YYYY-MM-DD, as the item stores it. */
+  dueDate: string
+  overdue: boolean
+}
+
+/** Where each owner can clear their tasks. */
+function ownerTaskLink(ownerRole: AcademyOwnerRole, newHireId: string): { linkLabel: string; path: string } {
+  const id = encodeURIComponent(newHireId)
+  switch (ownerRole) {
+    case 'HR':
+      return { linkLabel: 'Open the tracker', path: '/admin/onboarding/tracker' }
+    case 'OA':
+      return { linkLabel: 'Open payment details', path: '/oa/payment-details' }
+    case 'SECURITY':
+      return { linkLabel: 'Open the security checklist', path: `/security/onboarding/${id}` }
+    case 'TEAM_LEAD':
+      return { linkLabel: 'Open the team lead form', path: `/team-lead-form/${id}` }
+  }
+}
+
+const digestLine = ({ title, dueDate, overdue }: AcademyDigestItem): string =>
+  overdue ? `${title}: was due ${formatAcademyDate(`${dueDate}T00:00:00.000Z`, 'UTC')}` : `${title}: due today`
+
+const moduleCountLabel = (count: number): string => `${count} onboarding module${count === 1 ? '' : 's'}`
+
+/** Every Onboarding Academy notice. Names only: no pay, bank or other personal data. */
+export const academyNotices = {
+  courseReleased: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: 'Your onboarding course is ready',
+      heading: `Welcome, ${name}`,
+      lines: ['Your onboarding course is ready for you in Compass. Start with the first module when you sign in.'],
+      linkLabel: 'Open your course',
+      path: '/onboarding',
+    }),
+  assignment: (input: { name: string; title: string; slug: string; inCourse: boolean }): AcademyNotice =>
+    academyNotice({
+      subject: `A module for you to read: ${input.title}`,
+      heading: `Hi ${input.name}`,
+      lines: [
+        input.inCourse
+          ? `Please read this module again: "${input.title}".`
+          : `HR has asked you to read "${input.title}" in Compass. It's there whenever you have a few minutes.`,
+      ],
+      linkLabel: 'Open the module',
+      path: `/onboarding/${encodeURIComponent(input.slug)}`,
+    }),
+  leadInputOverdue: (input: { leadName: string; hireName: string; newHireId: string }): AcademyNotice =>
+    academyNotice({
+      subject: `${input.hireName} still needs your input`,
+      heading: 'Your input is still needed',
+      lines: [
+        `Hi ${input.leadName}, ${input.hireName}'s role expectations and goals are still waiting on you, and the due date has passed.`,
+        'A few minutes from you now will help them settle in well.',
+      ],
+      linkLabel: 'Add your input',
+      path: `/team-lead-form/${encodeURIComponent(input.newHireId)}`,
+    }),
+  buddy: (input: { buddyName: string; hireName: string }): AcademyNotice =>
+    academyNotice({
+      subject: `You're ${input.hireName}'s buddy`,
+      heading: `You're ${input.hireName}'s buddy`,
+      lines: [`Hi ${input.buddyName}, ${input.hireName} joins today and you're their buddy. Please say hello and help them find their feet.`],
+      linkLabel: 'Open Compass',
+      path: '/',
+    }),
+  moduleOverdue: (input: { hireName: string; moduleCount: number }): AcademyNotice =>
+    academyNotice({
+      subject: `You have ${moduleCountLabel(input.moduleCount)} overdue`,
+      heading: 'A quick nudge on your onboarding',
+      lines: [
+        `Hi ${input.hireName}, you have ${moduleCountLabel(input.moduleCount)} past the due date. Please pick up where you left off today.`,
+        'If something is in your way, let your team lead or HR know.',
+      ],
+      linkLabel: 'Open your course',
+      path: '/onboarding',
+    }),
+  checklistDigest: (input: {
+    hireName: string
+    newHireId: string
+    ownerRole: AcademyOwnerRole
+    items: readonly AcademyDigestItem[]
+  }): AcademyNotice => {
+    const count = input.items.length
+    return academyNotice({
+      subject: `Onboarding tasks for ${input.hireName}`,
+      heading: `${count === 1 ? 'An onboarding task is' : 'Onboarding tasks are'} waiting on you`,
+      lines: [`You have ${count} open onboarding task${count === 1 ? '' : 's'} for ${input.hireName}:`],
+      list: input.items.map(digestLine),
+      closing: `Please finish ${count === 1 ? 'it' : 'them'} when you can, so their onboarding stays on track.`,
+      ...ownerTaskLink(input.ownerRole, input.newHireId),
+    })
+  },
+  firstPaymentSave: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: `${name} has added their payment details`,
+      heading: 'New payment details',
+      lines: [`${name} has added their payment details for the first time. You can review them in Compass.`],
+      linkLabel: 'Open payment details',
+      path: '/oa/payment-details',
+    }),
+  paymentSetupDone: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: `${name} has finished Module 11`,
+      heading: 'Module 11 finished',
+      lines: [`${name} has finished Module 11, Getting Paid, so their payment details are ready for you.`],
+      linkLabel: 'Open payment details',
+      path: '/oa/payment-details',
+    }),
+  linkedinSubmitted: (name: string): AcademyNotice =>
+    academyNotice({
+      subject: `Please verify ${name}'s LinkedIn link`,
+      heading: 'A LinkedIn link to verify',
+      lines: [`${name} has added their LinkedIn link. Please check it and verify it in the tracker.`],
+      linkLabel: 'Open the tracker',
+      path: '/admin/onboarding/tracker',
+    }),
+}
+
+/** Never throws, and logs no address: the once-only log needs a plain result. */
+async function deliverAcademyNotice(
+  to: ReadonlyArray<string | null | undefined>,
+  notice: AcademyNotice,
+  cc: ReadonlyArray<string | null | undefined> = [],
+): Promise<AcademySendResult> {
+  const recipients = mergeRecipientEmails([...to])
+  if (recipients.length === 0) return { success: false, message: 'No recipients' }
+  const copied = mergeRecipientEmails([...cc]).filter((email) => !recipients.includes(email))
+  try {
+    await transporter.sendMail({
+      from: `P21 Compass <${FROM_EMAIL}>`,
+      to: recipients.join(', '),
+      ...(copied.length > 0 ? { cc: copied.join(', ') } : {}),
+      subject: notice.subject,
+      html: notice.html,
+    })
+    return { success: true }
+  } catch (error) {
+    console.error('[academy] notice not delivered', { error: error instanceof Error ? error.name : 'unknown' })
+    return { success: false, message: 'Send failed' }
+  }
+}
+
+export const sendCourseReleasedNotice = (to: string, name: string): Promise<AcademySendResult> =>
+  deliverAcademyNotice([to], academyNotices.courseReleased(name))
+
+export const sendAssignmentNotice = (input: {
+  to: string
+  name: string
+  title: string
+  slug: string
+  inCourse: boolean
+}): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.assignment(input))
+
+export const sendLeadInputOverdueNotice = (input: {
+  to: string
+  leadName: string
+  hireName: string
+  newHireId: string
+}): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.leadInputOverdue(input))
+
+export const sendBuddyNotice = (input: { to: string; buddyName: string; hireName: string }): Promise<AcademySendResult> =>
+  deliverAcademyNotice([input.to], academyNotices.buddy(input))
+
+export const sendModuleOverdueNotice = (input: {
+  to: string
+  cc: string | null
+  hireName: string
+  moduleCount: number
+}): Promise<AcademySendResult> => deliverAcademyNotice([input.to], academyNotices.moduleOverdue(input), [input.cc])
+
+export const sendChecklistDigestNotice = (input: {
+  to: readonly string[]
+  hireName: string
+  newHireId: string
+  ownerRole: AcademyOwnerRole
+  items: readonly AcademyDigestItem[]
+}): Promise<AcademySendResult> => deliverAcademyNotice(input.to, academyNotices.checklistDigest(input))
+
+export async function sendFirstPaymentSaveNotice(name: string): Promise<AcademySendResult> {
+  return deliverAcademyNotice(await getOaRecipientEmails(), academyNotices.firstPaymentSave(name))
+}
+
+export async function sendPaymentSetupDoneNotice(name: string): Promise<AcademySendResult> {
+  return deliverAcademyNotice(await getOaRecipientEmails(), academyNotices.paymentSetupDone(name))
+}
+
+export async function sendLinkedinSubmittedNotice(name: string): Promise<AcademySendResult> {
+  return deliverAcademyNotice(await getHrRecipientEmails(), academyNotices.linkedinSubmitted(name))
 }

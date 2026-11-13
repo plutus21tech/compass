@@ -106,12 +106,15 @@ test('validateSprintCompletionPlan requires one valid action per unfinished task
 })
 
 test('sprint display helpers count calendar days inclusively', async () => {
-  const { addSprintDays, sprintSpanDays, sprintDaysLeft, formatSprintRange, defaultCompletionTargetId } = await import('../lib/project-sprints')
+  const { addSprintDays, sprintSpanDays, sprintDaysLeft, formatSprintDay, formatSprintRange, defaultCompletionTargetId } = await import('../lib/project-sprints')
   assert.equal(addSprintDays('2026-10-19', 13), '2026-11-01')
   assert.equal(sprintSpanDays('2026-10-19', '2026-11-01'), 14)
   assert.equal(sprintDaysLeft('2026-11-01', new Date('2026-10-23T06:00:00Z')), 9)
   assert.equal(sprintDaysLeft('2026-10-23', new Date('2026-10-23T06:00:00Z')), 0)
-  assert.equal(formatSprintRange({ startDate: '2026-10-05', endDate: '2026-10-18' }), 'Oct 5 – Oct 18')
+  const inOctober = new Date('2026-10-23T06:00:00Z')
+  assert.equal(formatSprintRange({ startDate: '2026-10-05', endDate: '2026-10-18' }, inOctober), 'Mon 5 – Sun 18 Oct')
+  assert.equal(formatSprintRange({ startDate: '2026-10-26', endDate: '2026-11-08' }, inOctober), 'Mon 26 Oct – Sun 8 Nov')
+  assert.equal(formatSprintDay('2027-01-04', inOctober), 'Mon 4 Jan 2027')
 
   const now = new Date('2026-10-23T06:00:00Z')
   const sprints = [

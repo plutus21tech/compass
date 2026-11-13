@@ -4,11 +4,13 @@ import { getSession } from '@/lib/auth'
 import { sendLeaveApprovalNotification, sendLeaveCancellationNotification } from '@/lib/email'
 import { LeaveStatus, Prisma } from '@prisma/client'
 import { z } from 'zod'
-import { calculateLeaveDuration, canCancelLeave } from '@/lib/leave-utils'
+import { canCancelLeave } from '@/lib/leave-utils'
+import { chargeableLeaveDays } from '@/lib/leave-holiday-store'
 import { restoreCancelledLeaveBalance } from '@/lib/leave-balance'
 import { isAdminRole } from '@/lib/permissions'
 import { removeLeaveCalendarEvent, syncLeaveCalendarEvent } from '@/lib/google-calendar'
 import { stripHtml } from '@/lib/sanitize'
+import { notifyLeave } from '@/lib/notifications/leave'
 
 const leaveApprovalSchema = z.object({
   requestId: z.string().trim().min(1),
@@ -125,6 +127,7 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error('Failed to send leave cancellation notification:', e)
         }
+        await notifyLeave(requestId, 'LEAVE_CANCELLED')
 
         return NextResponse.json({ success: true, status: 'CANCELLED' })
       }
@@ -151,6 +154,7 @@ export async function POST(request: NextRequest) {
       } catch (e) {
         console.error('Failed to send rejection notification:', e)
       }
+      await notifyLeave(requestId, 'LEAVE_REJECTED')
 
       return NextResponse.json({ success: true, status: 'REJECTED' })
     }
@@ -204,10 +208,17 @@ export async function POST(request: NextRequest) {
       if (newStatus === 'APPROVED') {
         const start = new Date(leaveRequest.startDate)
         const end = new Date(leaveRequest.endDate)
-        const daysUsed = calculateLeaveDuration(start, end, leaveRequest.isHalfDay)
+        // Charged with the holidays as they stand now; later holiday changes move the
+        // balance by the difference (lib/leave-holiday-store.ts).
+        const daysUsed = await chargeableLeaveDays(prisma, {
+          employeeId: leaveRequest.employeeId,
+          startDate: start,
+          endDate: end,
+          isHalfDay: leaveRequest.isHalfDay,
+        })
         if (daysUsed <= 0) {
           return NextResponse.json(
-            { error: 'Selected leave range does not include any working leave duration (Mon-Fri).' },
+            { error: 'Selected leave range does not include any working days (Mon-Fri, excluding holidays).' },
             { status: 400 }
           )
         }
@@ -271,6 +282,7 @@ export async function POST(request: NextRequest) {
           } catch (e) {
             console.error('Failed to send approval notification:', e)
           }
+          await notifyLeave(requestId, 'LEAVE_APPROVED')
         }
       } else {
         await prisma.leaveRequest.updateMany({

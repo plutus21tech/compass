@@ -12,8 +12,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Check, Loader2, Pencil, X } from 'lucide-react'
 import { buildTravelTierPatch, toTravelTierDraft, type TravelTierDraft } from '@/lib/payroll/travel-tiers'
 import { formatCalendarDate, formatTimestampDate } from '@/lib/payroll/display-dates'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
-import type { TeamTag } from '@prisma/client'
+import { pickerTeams, teamLabel, type TeamTag } from '@/lib/teams/catalog'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 
 interface Props {
   canEdit: boolean
@@ -107,11 +107,11 @@ interface PublicHoliday {
 }
 
 // Country groupings, so a national holiday can be applied to both entities in that
-// country in one click rather than remembering which tags pair up.
+// country in one click rather than remembering which tags pair up. "Everyone" is
+// appended from the loaded catalog so it includes tags HR adds.
 const TEAM_PRESETS: Array<{ label: string; teams: TeamTag[] }> = [
   { label: 'All Pakistan', teams: ['PAKISTAN', 'THREE_E_PAKISTAN'] },
   { label: 'All Morocco', teams: ['MOROCCO', 'THREE_E_MOROCCO'] },
-  { label: 'Everyone', teams: [...ALL_TEAMS] },
 ]
 
 export function PayrollSettingsPanel({ canEdit }: Props) {
@@ -145,6 +145,8 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
   })
   const [editingHolidayId, setEditingHolidayId] = useState<string | null>(null)
   const [editingTeamTags, setEditingTeamTags] = useState<TeamTag[]>([])
+  const { catalog } = useTeamCatalog()
+  const teamPresets = [...TEAM_PRESETS, { label: 'Everyone', teams: [...catalog.active] }]
   const [sendingDigest, setSendingDigest] = useState(false)
   // Defaults to the current month, which is what the "send now" case needs after
   // this month's holidays have just been entered.
@@ -1014,7 +1016,7 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
                     <p className="text-xs text-muted-foreground">{formatCalendarDate(holiday.holidayDate)}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {holiday.teamTags?.length
-                        ? holiday.teamTags.map((t) => TEAM_LABELS[t]).join(', ')
+                        ? holiday.teamTags.map((t) => teamLabel(catalog, t)).join(', ')
                         : 'All teams (untagged)'}
                     </p>
                     <p className="text-xs mt-0.5">
@@ -1057,7 +1059,7 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
                 {canEdit && editingHolidayId === holiday.id && (
                   <div className="border-t border-border pt-2 space-y-2">
                     <div className="flex flex-wrap gap-1.5">
-                      {ALL_TEAMS.map((team) => (
+                      {pickerTeams(catalog, editingTeamTags).map((team) => (
                         <button
                           key={team}
                           type="button"
@@ -1068,7 +1070,7 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
                               : 'bg-background text-foreground border-border hover:bg-muted'
                           }`}
                         >
-                          {TEAM_LABELS[team]}
+                          {teamLabel(catalog, team)}
                         </button>
                       ))}
                     </div>
@@ -1097,7 +1099,7 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
                 <div className="flex items-center justify-between">
                   <Label>Applies To</Label>
                   <div className="flex gap-1">
-                    {TEAM_PRESETS.map((preset) => (
+                    {teamPresets.map((preset) => (
                       <button
                         key={preset.label}
                         type="button"
@@ -1110,7 +1112,7 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {ALL_TEAMS.map((team) => (
+                  {pickerTeams(catalog, holidayForm.teamTags).map((team) => (
                     <button
                       key={team}
                       type="button"
@@ -1123,7 +1125,7 @@ export function PayrollSettingsPanel({ canEdit }: Props) {
                           : 'bg-background text-foreground border-border hover:bg-muted'
                       }`}
                     >
-                      {TEAM_LABELS[team]}
+                      {teamLabel(catalog, team)}
                     </button>
                   ))}
                 </div>

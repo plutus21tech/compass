@@ -3,18 +3,21 @@ import { notFound, redirect } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { WarrantyBadge } from '@/components/assets/WarrantyBadge'
 import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageAssets } from '@/lib/permissions'
+import { formatDate } from '@/lib/format-date'
 import { Download, QrCode } from 'lucide-react'
 
 interface PageProps {
   params: Promise<{ tag: string }>
 }
 
-function formatDate(value: Date | null) {
-  return value ? value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'
+function displayDate(value: Date | null) {
+  return formatDate(value, { fallback: '-' })
 }
 
 export default async function DeviceSupportAssetDetailPage({ params }: PageProps) {
@@ -41,8 +44,8 @@ export default async function DeviceSupportAssetDetailPage({ params }: PageProps
   const canView = canManageAssets(user.role) || asset.currentAssigneeId === user.id
   if (!canView) {
     return (
-      <div className="mx-auto max-w-xl p-6 sm:p-8">
-        <Card>
+      <PageContainer>
+        <Card className="mx-auto max-w-xl">
           <CardContent className="space-y-4 p-8 text-center">
             <div>
               <h1 className="font-display text-2xl font-semibold text-foreground">Asset access restricted</h1>
@@ -55,23 +58,22 @@ export default async function DeviceSupportAssetDetailPage({ params }: PageProps
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6 sm:p-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-foreground">{asset.assetName}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {asset.equipmentId} · {asset.category}
-          </p>
-        </div>
-        <Button asChild variant="outline">
-          <Link href="/device-support">Back</Link>
-        </Button>
-      </div>
+    <PageContainer className="space-y-6">
+      <PageHeader
+        title={asset.assetName}
+        subtitle={`${asset.equipmentId} · ${asset.category}`}
+        className="mb-0"
+        actions={
+          <Button asChild variant="outline">
+            <Link href="/device-support">Back</Link>
+          </Button>
+        }
+      />
 
       <Card>
         <CardContent className="grid gap-4 p-4 md:grid-cols-4">
@@ -104,7 +106,7 @@ export default async function DeviceSupportAssetDetailPage({ params }: PageProps
           <div>
             <p className="text-xs text-muted-foreground">Warranty Dates</p>
             <p className="mt-1 text-sm">
-              {formatDate(asset.warrantyStartDate)} to {formatDate(asset.warrantyEndDate)}
+              {displayDate(asset.warrantyStartDate)} to {displayDate(asset.warrantyEndDate)}
             </p>
           </div>
           <div>
@@ -148,6 +150,6 @@ export default async function DeviceSupportAssetDetailPage({ params }: PageProps
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

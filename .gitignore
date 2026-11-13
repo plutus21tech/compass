@@ -58,3 +58,6 @@ dev.db-journal
 
 # Handbook seed carries policy content - never commit (public repo)
 /scripts/seed-handbook.ts
+
+# Impeccable design-tool scratch
+.impeccable/

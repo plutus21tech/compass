@@ -1,0 +1,174 @@
+import test, { after, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
+import { prisma } from '../lib/db'
+import { AcademyError } from '../lib/academy/errors'
+import { readPayout, savePayout } from '../lib/academy/service/payout'
+import { seedAcademy } from '../prisma/seed-academy'
+import { cleanCourse } from './helpers/academy-course-fixtures'
+import { ACADEMY_DB_TEST, P } from './helpers/academy-test-db'
+import { WEEKLY_DB_READY } from './helpers/weekly-test-db'
+
+// Fictional test key, not a real secret.
+process.env.ONBOARDING_FIELD_ENCRYPTION_KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'
+
+const bank = {
+  method: 'BANK_TRANSFER', accountHolderName: 'Cara Lindqvist', bankName: 'Example Bank',
+  accountNumberOrIban: 'GB33BUKB20201555555555', swiftBic: 'BUKBGB22', bankCountry: 'GB',
+  bankAddress: '1 Example Street', currency: 'GBP',
+}
+const wise = { method: 'WISE', accountHolderName: 'Cara Lindqvist', payoutEmail: 'cara@example.test', currency: 'USD' }
+
+beforeEach(async () => {
+  if (!WEEKLY_DB_READY) return
+  await cleanCourse()
+  await seedAcademy(prisma)
+  await prisma.user.create({ data: { ...P.hr, onboardingCompleted: true } })
+  await prisma.user.create({ data: { ...P.hire, onboardingCompleted: true, contractType: 'INDEPENDENT_CONTRACTOR' } })
+  await prisma.user.create({ data: { ...P.staff, onboardingCompleted: true, contractType: 'PK_EMPLOYMENT' } })
+  const paymentModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'getting-paid' } })
+  await prisma.onboardingProgress.create({ data: { userId: P.hire.id, moduleId: paymentModule.id, status: 'IN_PROGRESS' } })
+})
+after(async () => {
+  if (WEEKLY_DB_READY) await cleanCourse()
+  await prisma.$disconnect()
+})
+
+test('sensitive fields are encrypted at rest; plain fields stay plain; no payroll profile is created', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  const row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  for (const f of ['accountHolderName', 'bankName', 'accountNumberOrIban', 'swiftBic', 'bankAddress'] as const) {
+    assert.ok(row[f]?.startsWith('p21enc:v1:'), `${f} should be encrypted`)
+  }
+  assert.equal(row.method, 'BANK_TRANSFER')
+  assert.equal(row.bankCountry, 'GB')
+  assert.equal(row.currency, 'GBP')
+  assert.equal(await prisma.payrollEmployeeProfile.count({ where: { userId: P.hire.id } }), 0)
+})
+
+test('permanently deleting the owner leaves the reveal log rows', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  await readPayout(prisma, P.hire.id, { reveal: true, viewerId: P.hr.id })
+  await prisma.user.delete({ where: { id: P.hire.id } })
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: P.hire.id } }), 0)
+  const logs = await prisma.onboardingPaymentRevealLog.findMany({ where: { paymentUserId: P.hire.id } })
+  assert.equal(logs.length, 1)
+  assert.equal(logs[0].viewerId, P.hr.id)
+})
+
+test('masked read hides values and writes no log', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  const view = await readPayout(prisma, P.hire.id, { reveal: false, viewerId: P.hr.id })
+  assert.equal(view?.fields.accountNumberOrIban, '••••5555')
+  assert.equal(view?.fields.swiftBic, '••••')
+  assert.equal(view?.fields.bankName, 'Example Bank')
+  assert.equal(await prisma.onboardingPaymentRevealLog.count(), 0)
+})
+
+test('revealed read is unmasked and writes exactly one log row', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  const view = await readPayout(prisma, P.hire.id, { reveal: true, viewerId: P.hr.id })
+  assert.equal(view?.fields.accountNumberOrIban, 'GB33BUKB20201555555555')
+  assert.equal(view?.accountHolderName, 'Cara Lindqvist')
+  const logs = await prisma.onboardingPaymentRevealLog.findMany()
+  assert.equal(logs.length, 1)
+  assert.equal(logs[0].paymentUserId, P.hire.id)
+  assert.equal(logs[0].viewerId, P.hr.id)
+})
+
+test('reveal returns nothing and writes no log when the log write fails', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  await assert.rejects(readPayout(prisma, P.hire.id, { reveal: true, viewerId: null as never }))
+  assert.equal(await prisma.onboardingPaymentRevealLog.count(), 0)
+})
+
+test('reveal of a user with no payout returns null and logs nothing', ACADEMY_DB_TEST, async () => {
+  assert.equal(await readPayout(prisma, P.hire.id, { reveal: true, viewerId: P.hr.id }), null)
+  assert.equal(await prisma.onboardingPaymentRevealLog.count(), 0)
+})
+
+test('a view says when the details last changed', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, bank)
+  const first = await readPayout(prisma, P.hire.id, { reveal: false, viewerId: P.hr.id })
+  await savePayout(prisma, P.hire.id, wise)
+  const second = await readPayout(prisma, P.hire.id, { reveal: false, viewerId: P.hr.id })
+  assert.equal(second?.submittedAt, first?.submittedAt)
+  assert.ok(Date.parse(second?.updatedAt ?? '') > Date.parse(first?.updatedAt ?? ''))
+})
+
+test('PK employment is refused with 400', ACADEMY_DB_TEST, async () => {
+  await assert.rejects(savePayout(prisma, P.staff.id, bank), (e: unknown) => e instanceof AcademyError && e.status === 400)
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: P.staff.id } }), 0)
+})
+
+test('a null contractType may save', ACADEMY_DB_TEST, async () => {
+  await prisma.user.update({ where: { id: P.hire.id }, data: { contractType: null } })
+  await savePayout(prisma, P.hire.id, wise)
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: P.hire.id } }), 1)
+})
+
+test('changing method clears the previous method fields; reports first vs update', ACADEMY_DB_TEST, async () => {
+  assert.deepEqual(await savePayout(prisma, P.hire.id, bank), { isUpdate: false })
+  assert.deepEqual(await savePayout(prisma, P.hire.id, wise), { isUpdate: true })
+  const row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.equal(row.method, 'WISE')
+  assert.ok(row.payoutEmail?.startsWith('p21enc:v1:'))
+  for (const f of ['bankName', 'accountNumberOrIban', 'swiftBic', 'bankCountry', 'bankAddress', 'instructions'] as const) {
+    assert.equal(row[f], null, `${f} should be cleared`)
+  }
+})
+
+test('OTHER instructions and WISE payoutEmail are encrypted at rest', ACADEMY_DB_TEST, async () => {
+  await savePayout(prisma, P.hire.id, { method: 'OTHER', accountHolderName: 'Cara Lindqvist', currency: 'EUR', instructions: 'Pay by cheque to the office' })
+  let row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.ok(row.instructions?.startsWith('p21enc:v1:'))
+  await savePayout(prisma, P.hire.id, wise)
+  row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.ok(row.payoutEmail?.startsWith('p21enc:v1:'))
+  assert.equal(row.instructions, null)
+})
+
+async function rereadPaymentRow(withHistory: boolean) {
+  const paymentModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'getting-paid' } })
+  await prisma.onboardingProgress.update({
+    where: { userId_moduleId: { userId: P.hire.id, moduleId: paymentModule.id } },
+    data: { status: 'COMPLETED', source: 'REREAD', completedAt: new Date() },
+  })
+  if (withHistory) {
+    await prisma.onboardingProgressHistory.create({
+      data: { userId: P.hire.id, moduleId: paymentModule.id, completedAt: new Date() },
+    })
+  }
+  return paymentModule.id
+}
+
+test('a finished contractor updates payout details after a Module 11 re-read, and the update is flagged for OA', ACADEMY_DB_TEST, async () => {
+  assert.deepEqual(await savePayout(prisma, P.hire.id, wise), { isUpdate: false })
+  const moduleId = await rereadPaymentRow(true)
+  // isUpdate is what makes the route send OA the change notice.
+  assert.deepEqual(await savePayout(prisma, P.hire.id, bank), { isUpdate: true })
+  const row = await prisma.onboardingPaymentDetails.findUniqueOrThrow({ where: { userId: P.hire.id } })
+  assert.equal(row.method, 'BANK_TRANSFER')
+  const progress = await prisma.onboardingProgress.findUniqueOrThrow({ where: { userId_moduleId: { userId: P.hire.id, moduleId } } })
+  assert.equal(progress.status, 'COMPLETED')
+  assert.equal(progress.source, 'REREAD')
+})
+
+test('staff assigned Module 11 fresh have no history and still get 403', ACADEMY_DB_TEST, async () => {
+  await rereadPaymentRow(false)
+  await assert.rejects(savePayout(prisma, P.hire.id, wise), (e: unknown) => e instanceof AcademyError && e.status === 403)
+  assert.equal(await prisma.onboardingPaymentDetails.count({ where: { userId: P.hire.id } }), 0)
+})
+
+test('a Module 11 re-read shows a PK employee no bank form, and a contractor the payout form', ACADEMY_DB_TEST, async () => {
+  const { loadModule } = await import('../lib/academy/service/course')
+  const paymentModule = await prisma.onboardingModule.findUniqueOrThrow({ where: { slug: 'getting-paid' } })
+  await prisma.onboardingProgress.create({
+    data: { userId: P.staff.id, moduleId: paymentModule.id, status: 'COMPLETED', source: 'REREAD', completedAt: new Date() },
+  })
+  await prisma.onboardingProgressHistory.create({ data: { userId: P.staff.id, moduleId: paymentModule.id, completedAt: new Date() } })
+  await rereadPaymentRow(true)
+  const targets = async (userId: string) =>
+    (await loadModule(prisma, userId, 'getting-paid')).blocks.flatMap((b) => (b.type === 'inputField' ? [b.target] : []))
+  assert.deepEqual(await targets(P.staff.id), [])
+  assert.deepEqual(await targets(P.hire.id), ['payout'])
+})

@@ -14,16 +14,19 @@ const RELATIONSHIP_LABELS: Record<TableRelationshipTypeValue, string> = {
   PEER: 'As a peer', CROSS_DEPARTMENT: 'Cross-department', SELF: 'Self',
 }
 
-function TablesPanel({ kind, periodId }: { kind: FormTableKind; periodId?: string }) {
+const PARTNER_ENDPOINT = '/api/weekly/partner-tables'
+
+/** `mine`: a partner's own tables on their evaluations page, rather than HR's view of every partner. */
+export function TablesPanel({ kind, periodId, mine = false }: { kind: FormTableKind; periodId?: string; mine?: boolean }) {
   const [data, setData] = useState<FormTablesResponse | null>(null)
   const load = useCallback(async () => {
     try {
       const quarter = periodId ? `&periodId=${encodeURIComponent(periodId)}` : ''
-      setData(await weeklyRequest<FormTablesResponse>(`/api/admin/weekly/form-tables?kind=${kind}${quarter}`))
+      setData(await weeklyRequest<FormTablesResponse>(mine ? PARTNER_ENDPOINT : `/api/admin/weekly/form-tables?kind=${kind}${quarter}`))
     } catch (e) {
       toast.error(errorMessage(e, 'Could not load the evaluations'))
     }
-  }, [kind, periodId])
+  }, [kind, periodId, mine])
   useEffect(() => {
     void load()
   }, [load])
@@ -31,7 +34,8 @@ function TablesPanel({ kind, periodId }: { kind: FormTableKind; periodId?: strin
   if (!data) return <p className="text-sm text-muted-foreground">Loading…</p>
   if (!data.quarter) return <p className="text-sm text-muted-foreground">No quarter is running on weekly evaluations.</p>
   if (data.tables.length === 0) {
-    return <p className="text-sm text-muted-foreground">{kind === 'HR' ? 'You have no HR evaluations this quarter.' : 'No partner has evaluations mapped this quarter.'}</p>
+    const none = mine ? 'You have no evaluations mapped this quarter.' : kind === 'HR' ? 'You have no HR evaluations this quarter.' : 'No partner has evaluations mapped this quarter.'
+    return <p className="text-sm text-muted-foreground">{none}</p>
   }
   return (
     <div className="space-y-6">
@@ -41,9 +45,9 @@ function TablesPanel({ kind, periodId }: { kind: FormTableKind; periodId?: strin
         <Card key={`${table.evaluator.id}-${table.relationshipType}`}>
           <CardContent className="space-y-3 p-4">
             <h2 className="font-semibold">
-              {kind === 'HR' ? 'HR evaluation' : `${table.evaluator.name} · ${RELATIONSHIP_LABELS[table.relationshipType]}`}
+              {kind === 'HR' ? 'HR evaluation' : mine ? RELATIONSHIP_LABELS[table.relationshipType] : `${table.evaluator.name} · ${RELATIONSHIP_LABELS[table.relationshipType]}`}
             </h2>
-            <FormTable kind={kind} table={table} editable={data.open && !data.locked} periodId={periodId} />
+            <FormTable kind={kind} table={table} editable={data.open && !data.locked} periodId={periodId} endpoint={mine ? PARTNER_ENDPOINT : undefined} />
           </CardContent>
         </Card>
       ))}
@@ -66,7 +70,7 @@ export function QuarterEvaluationsWorkspace({ periodId }: { periodId?: string } 
         </TabsList>
         <TabsContent value="hr" className="pt-4"><TablesPanel kind="HR" periodId={periodId} /></TabsContent>
         <TabsContent value="partners" className="pt-4">
-          <p className="mb-4 text-sm text-muted-foreground">Filled in by HR on the partners’ behalf. The partners do not see these on their own accounts.</p>
+          <p className="mb-4 text-sm text-muted-foreground">The partners see these same tables on their own accounts and can fill them in themselves; HR can fill them in too. Whatever either saves shows here, with who saved each row last.</p>
           <TablesPanel kind="PARTNER" periodId={periodId} />
         </TabsContent>
       </Tabs>

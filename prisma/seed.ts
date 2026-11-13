@@ -729,7 +729,6 @@ async function main() {
         slug: moduleData.slug,
         title: moduleData.title,
         orderIndex: index + 1,
-        content: '',
         isActive: true,
       },
     })
@@ -770,7 +769,6 @@ async function main() {
     create: {
       id: 'singleton',
       quizPassPercent: 80,
-      maxQuizAttempts: 3,
       welcomeMessage: 'Welcome to Compass onboarding.',
     },
   })

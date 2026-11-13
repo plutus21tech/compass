@@ -140,6 +140,21 @@ test('questions carried over count toward the 5 a week, so the week is never dou
   assert.equal(planWeek(input(list, { week: 2 })).length, 1)
 })
 
+test('once the carried questions are answered, the same week is topped up to the cap, and no further', () => {
+  // Monday: four carried questions leave room for one new one (as above).
+  const carried = pairs(10).slice(0, 4).map((p) => ({ ...p, asked: 1, lastAskedWeek: 1 }))
+  const monday = [...carried.map((p) => ({ ...p, hasOpenPrompt: true })), ...pairs(10).slice(4)]
+  const [first] = planWeek(input(monday, { week: 2 }))
+  const given = (p: SchedulablePair, chosen: string[]) => (chosen.includes(p.key) ? { ...p, asked: p.asked + 1, lastAskedWeek: 2, askedThisWeek: (p.askedThisWeek ?? 0) + 1, hasOpenPrompt: true } : p)
+  // Later that week the four are answered: this week's one still counts, so four more fit, not five.
+  const caughtUp = [...carried, ...pairs(10).slice(4)].map((p) => given(p, [first]))
+  const topUp = planWeek(input(caughtUp, { week: 2 }))
+  assert.equal(topUp.length, 4)
+  assert.ok(!topUp.includes(first), 'not the person already asked about this week')
+  // Planned again after the top-up: the week is full.
+  assert.deepEqual(planWeek(input(caughtUp.map((p) => given(p, topUp)), { week: 2 })), [])
+})
+
 test('the same topic is not asked about the same person within 3 weeks (section 8)', () => {
   const topic = (id: string, overrides: Partial<SchedulableTopic> = {}): SchedulableTopic => ({ id, status: 'OPEN', asked: 0, snoozedUntilWeek: null, ...overrides })
   const recent = topic('recent', { asked: 1, lastAskedWeek: 4 })

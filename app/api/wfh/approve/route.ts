@@ -7,6 +7,7 @@ import { isAdminRole } from '@/lib/permissions'
 import { wfhRequiresLeadApproval } from '@/lib/wfh-utils'
 import { sendWfhApprovalNotification } from '@/lib/email'
 import { stripHtml } from '@/lib/sanitize'
+import { notifyWfh } from '@/lib/notifications/leave'
 
 const wfhApprovalSchema = z.object({
   requestId: z.string().trim().min(1),
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error('Failed to send WFH rejection notification:', error)
       }
+      await notifyWfh(requestId, 'WFH_REJECTED')
 
       return NextResponse.json({ success: true, status: 'REJECTED' })
     }
@@ -161,6 +163,7 @@ export async function POST(request: NextRequest) {
         } catch (error) {
           console.error('Failed to send WFH approval notification:', error)
         }
+        await notifyWfh(requestId, 'WFH_APPROVED')
       }
 
       return NextResponse.json({ success: true, status: newStatus })

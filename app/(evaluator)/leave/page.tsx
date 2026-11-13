@@ -1,2572 +1,296 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { motion } from 'framer-motion'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Home, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import {
-  Calendar,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Edit3,
-  Eye,
-  Home,
-  Palmtree,
-  Plus,
-  Sun,
-  Thermometer,
-  TriangleAlert,
-  Users,
-  X,
-  XCircle,
-} from 'lucide-react'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
-import { Badge } from '@/components/ui/badge'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
+import { ApprovalQueue } from '@/components/leave/time-off/ApprovalQueue'
+import { BalanceCards } from '@/components/leave/time-off/BalanceCards'
+import { MyRequests } from '@/components/leave/time-off/MyRequests'
+import { useScrollToHash } from '@/components/leave/time-off/use-scroll-to-hash'
+import { OutTodayCard } from '@/components/leave/time-off/OutTodayCard'
+import { PlanReminder } from '@/components/leave/time-off/PlanReminder'
+import { RequestDetailsDialog } from '@/components/leave/time-off/RequestDetailsDialog'
+import { RequestPanel, type PanelMode } from '@/components/leave/time-off/RequestPanel'
+import { TeamCalendar } from '@/components/leave/time-off/TeamCalendar'
+import { useTimeOffData } from '@/components/leave/time-off/useTimeOffData'
+import { WfhRequestDialog } from '@/components/leave/time-off/WfhRequestDialog'
+import { WfhSection } from '@/components/leave/time-off/WfhSection'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Modal } from '@/components/ui/modal'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { StatsCard } from '@/components/composed/StatsCard'
-import { LoadingScreen } from '@/components/composed/LoadingScreen'
-import { Textarea } from '@/components/ui/textarea'
-import { TransitionPlanTable } from '@/components/leave/TransitionPlanTable'
-import { TransitionPlanView } from '@/components/leave/TransitionPlanView'
-import { MemberMultiSelect } from '@/components/leave/MemberMultiSelect'
-import {
-  canSubmitTransitionPlan,
-  transitionPlanRequired,
-  validateTransitionTasks,
-  type TransitionTask,
-} from '@/lib/leave-transition-plan'
-import { calculateLeaveDuration, getNextBusinessDay } from '@/lib/leave-utils'
-import { detectBrowserLeaveTimeZone } from '@/lib/leave-timezone'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Skeleton } from '@/components/ui/skeleton'
 import { isThreeEDepartment } from '@/lib/company-branding'
-import { calculateWfhDays, hasWfhEnded } from '@/lib/wfh-utils'
-import { resolveLeaveRequestDeepLinkTarget } from '@/lib/leave-deep-links'
+import { formatDate, localDayKey } from '@/lib/format-date'
+import { cancelLeave } from '@/lib/time-off/api'
+import { buildBalanceCards, nextLeave } from '@/lib/time-off/balance-cards'
+import { DEEP_LINK_UNAVAILABLE, deepLinkTarget, parseTimeOffParams } from '@/lib/time-off/page-params'
+import { panelModeKey, panelSwitchAction } from '@/lib/time-off/panel-switch'
+import { planReminderRequests } from '@/lib/time-off/request-rules'
+import type { LeaveRequest } from '@/lib/time-off/types'
 
-interface LeaveBalance {
-  casualDays: number
-  sickDays: number
-  annualDays: number
-  casualUsed: number
-  sickUsed: number
-  annualUsed: number
-  remaining: {
-    casual: number
-    sick: number
-    annual: number
-  }
+type Range = { start: string; end: string }
+interface PanelState {
+  open: boolean
+  mode: PanelMode
+  range: Range | null
 }
 
-interface LeaveRequest {
-  id: string
-  leaveType: 'CASUAL' | 'SICK' | 'ANNUAL'
-  isHalfDay: boolean
-  halfDaySession?: 'FIRST_HALF' | 'SECOND_HALF' | null
-  unavailableStartTime?: string | null
-  unavailableEndTime?: string | null
-  startDate: string
-  endDate: string
-  reason: string
-  transitionPlan: string
-  transitionPlanTasks?: TransitionTask[] | null
-  transitionPlanSubmittedAt?: string | null
-  transitionPlanLeadStatus?: 'PENDING' | 'APPROVED' | 'DISAPPROVED'
-  transitionPlanDisapprovalReason?: string | null
-  status: string
-  coverPerson?: { id: string; name: string }
-  coverPeople?: Array<{ id: string; name: string }>
-  additionalNotifyIds?: string[]
-  leadApprovedBy?: string
-  hrApprovedBy?: string
-  rejectionReason?: string
-  createdAt: string
-}
-
-interface ApprovalRequest extends LeaveRequest {
-  employee: {
-    id: string
-    name: string
-    department: string | null
-    position: string | null
-  }
-}
-
-interface CalendarEvent {
-  id: string
-  employeeId: string
-  employeeName: string
-  department: string | null
-  leaveType: 'CASUAL' | 'SICK' | 'ANNUAL'
-  isHalfDay: boolean
-  halfDaySession?: 'FIRST_HALF' | 'SECOND_HALF' | null
-  unavailableStartTime?: string | null
-  unavailableEndTime?: string | null
-  startDate: string
-  endDate: string
-  status: string
-  isCurrentUser: boolean
-}
-
-interface WfhRequest {
-  id: string
-  startDate: string
-  endDate: string
-  reason: string
-  workPlan?: string | null
-  status: string
-  leadApprovedBy?: string | null
-  hrApprovedBy?: string | null
-  rejectionReason?: string | null
-  createdAt: string
-  employee?: {
-    id: string
-    name: string
-    department: string | null
-    position: string | null
-  }
-}
-
-interface User {
-  id: string
-  name: string
-  department?: string
-}
-
-const LEAVE_TYPE_CONFIG = {
-  CASUAL: { icon: Sun, color: 'text-amber-500', bg: 'bg-amber-500', bgLight: 'bg-amber-100 dark:bg-amber-500/20', label: 'Casual' },
-  SICK: { icon: Thermometer, color: 'text-red-500', bg: 'bg-red-500', bgLight: 'bg-red-100 dark:bg-red-500/20', label: 'Sick' },
-  ANNUAL: { icon: Palmtree, color: 'text-emerald-500', bg: 'bg-emerald-500', bgLight: 'bg-emerald-100 dark:bg-emerald-500/20', label: 'Annual' },
-}
-
-const STATUS_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  PENDING: { color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-500/20', label: 'Pending' },
-  LEAD_APPROVED: { color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-500/20', label: 'Lead Approved' },
-  HR_APPROVED: { color: 'text-indigo-600', bg: 'bg-indigo-100 dark:bg-indigo-500/20', label: 'HR Approved' },
-  APPROVED: { color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-500/20', label: 'Approved' },
-  REJECTED: { color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-500/20', label: 'Rejected' },
-  CANCELLED: { color: 'text-gray-600', bg: 'bg-gray-100 dark:bg-gray-500/20', label: 'Cancelled' },
-}
-
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const HALF_DAY_SESSION_OPTIONS = [
-  { value: 'FIRST_HALF', label: 'First Half' },
-  { value: 'SECOND_HALF', label: 'Second Half' },
-] as const
-
-const isHalfDayEligibleLeaveType = (leaveType: 'CASUAL' | 'SICK' | 'ANNUAL') =>
-  leaveType === 'CASUAL' || leaveType === 'SICK'
-
-const getHalfDaySessionLabel = (session?: 'FIRST_HALF' | 'SECOND_HALF' | null) => {
-  if (session === 'FIRST_HALF') return 'First half'
-  if (session === 'SECOND_HALF') return 'Second half'
-  return 'Half day'
-}
-
-const getHalfDayWindowLabel = (start?: string | null, end?: string | null) => {
-  if (!start || !end) return 'Unavailable hours not provided'
-  return `${start} - ${end}`
-}
-
-const getDurationLabel = (days: number) => (days === 0.5 ? '0.5d' : `${days}d`)
-const getLeaveDecimalPlaces = (value: number) => (Number.isInteger(value) ? 0 : 1)
-
-const formatDateForInput = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-
-const parseInputDateAsLocal = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number)
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
-    return null
-  }
-  return new Date(year, month - 1, day)
-}
-
-const toDateKey = (value: string) => {
-  const match = value.match(/^(\d{4}-\d{2}-\d{2})/)
-  if (match) return match[1]
-
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return ''
-  return `${parsed.getUTCFullYear()}-${String(parsed.getUTCMonth() + 1).padStart(2, '0')}-${String(parsed.getUTCDate()).padStart(2, '0')}`
-}
-
-const formatApiDate = (value: string, options?: Intl.DateTimeFormatOptions) => {
-  const key = toDateKey(value)
-  const parsed = key ? parseInputDateAsLocal(key) : null
-  if (!parsed) return value
-  return parsed.toLocaleDateString('en-US', options)
-}
-
-/** A leave can be cancelled until the day before its last day (lib/leave-utils canCancelLeave). */
-const isBeforeLastDay = (endDate: string) => {
-  const parsed = parseInputDateAsLocal(toDateKey(endDate))
-  if (!parsed) return false
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  parsed.setHours(0, 0, 0, 0)
-
-  return parsed.getTime() > today.getTime()
-}
-
-const isLeaveNotStarted = (startDate: string) => {
-  const parsed = parseInputDateAsLocal(toDateKey(startDate))
-  if (!parsed) return true
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  parsed.setHours(0, 0, 0, 0)
-
-  return parsed.getTime() >= today.getTime()
-}
-
-export default function LeavePage() {
-  const layoutUser = useLayoutUser()
-  const searchParams = useSearchParams()
-  const deepLinkedRequestId = searchParams.get('requestId')?.trim() || ''
-  const handledDeepLinkRef = useRef('')
-  const [user, setUser] = useState<any>(null)
-  const [balance, setBalance] = useState<LeaveBalance | null>(null)
-  const [requests, setRequests] = useState<LeaveRequest[]>([])
-  const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
-  const [approvalProcessingId, setApprovalProcessingId] = useState<string | null>(null)
-  const [wfhRequests, setWfhRequests] = useState<WfhRequest[]>([])
-  const [wfhApprovalQueue, setWfhApprovalQueue] = useState<WfhRequest[]>([])
-  const [wfhApprovalProcessingId, setWfhApprovalProcessingId] = useState<string | null>(null)
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
-  const [users, setUsers] = useState<User[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isWfhModalOpen, setIsWfhModalOpen] = useState(false)
-  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false)
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
-  const [isDayEventsModalOpen, setIsDayEventsModalOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [wfhSubmitting, setWfhSubmitting] = useState(false)
-  const [updating, setUpdating] = useState(false)
-  const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null)
-  const [selectedDayDate, setSelectedDayDate] = useState<Date | null>(null)
-  const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([])
-  const [departmentFilter, setDepartmentFilter] = useState<string>('ALL')
-  const [reminderNoticeShown, setReminderNoticeShown] = useState(false)
-  const [highlightedApprovalRequestId, setHighlightedApprovalRequestId] = useState('')
-
-  // Calendar state
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear())
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [selectedRange, setSelectedRange] = useState<{ start: Date | null; end: Date | null }>({ start: null, end: null })
-  const [selectingEnd, setSelectingEnd] = useState(false)
-
-  // Form state
-  const [formData, setFormData] = useState({
-    leaveType: 'CASUAL',
-    isHalfDay: false,
-    halfDaySession: '' as '' | 'FIRST_HALF' | 'SECOND_HALF',
-    unavailableStartTime: '',
-    unavailableEndTime: '',
-    startDate: '',
-    endDate: '',
-    reason: '',
-    transitionPlan: '',
-    coverPersonIds: [] as string[],
-    additionalNotifyIds: [] as string[],
-  })
-
-  const [editFormData, setEditFormData] = useState({
-    id: '',
-    leaveType: 'CASUAL' as 'CASUAL' | 'SICK' | 'ANNUAL',
-    isHalfDay: false,
-    halfDaySession: '' as '' | 'FIRST_HALF' | 'SECOND_HALF',
-    unavailableStartTime: '',
-    unavailableEndTime: '',
-    startDate: '',
-    endDate: '',
-    reason: '',
-    transitionPlan: '',
-    coverPersonIds: [] as string[],
-    additionalNotifyIds: [] as string[],
-  })
-
-  const [wfhFormData, setWfhFormData] = useState({
-    startDate: '',
-    endDate: '',
-    reason: '',
-    workPlan: '',
-  })
-
-  // Structured transition plan state
-  const [createTasks, setCreateTasks] = useState<TransitionTask[]>([])
-  const [detailTasks, setDetailTasks] = useState<TransitionTask[]>([])
-  const [planSavingDraft, setPlanSavingDraft] = useState(false)
-  const [planSubmitting, setPlanSubmitting] = useState(false)
-  const [planReviewProcessingId, setPlanReviewProcessingId] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (layoutUser) setUser(layoutUser)
-    loadData()
-  }, [layoutUser])
-
-  useEffect(() => {
-    if (user) {
-      loadCalendarEvents()
-    }
-  }, [currentMonth, currentYear, user])
-
-  const loadData = async () => {
-    try {
-      const [balanceRes, requestsRes, usersRes, approvalsRes, wfhRequestsRes, wfhApprovalsRes] = await Promise.all([
-        fetch('/api/leave/balance'),
-        fetch('/api/leave/requests?employeeId=me'),
-        fetch('/api/users'),
-        fetch('/api/leave/requests?forApproval=true'),
-        fetch('/api/wfh/requests?employeeId=me'),
-        fetch('/api/wfh/requests?forApproval=true'),
-      ])
-
-      const balanceData = await balanceRes.json()
-      const requestsData = await requestsRes.json()
-      const usersData = await usersRes.json()
-      const approvalsData = await approvalsRes.json()
-      const wfhRequestsData = await wfhRequestsRes.json()
-      const wfhApprovalsData = await wfhApprovalsRes.json()
-
-      setBalance(balanceData.balance)
-      setRequests(requestsData.requests || [])
-      setUsers(usersData.users || [])
-      setApprovalQueue(approvalsData.requests || [])
-      setWfhRequests(wfhRequestsData.requests || [])
-      setWfhApprovalQueue(wfhApprovalsData.requests || [])
-    } catch (error) {
-      toast.error('Failed to load data')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleApprovalDecision = async (requestId: string, action: 'approve' | 'reject') => {
-    setApprovalProcessingId(requestId)
-    try {
-      const res = await fetch('/api/leave/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId, action }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to process request')
-      }
-
-      const toastMessage = action === 'approve'
-        ? 'Leave approved'
-        : data.status === 'CANCELLED'
-          ? 'Leave cancelled'
-          : 'Leave rejected'
-      toast.success(toastMessage)
-      await Promise.all([loadData(), loadCalendarEvents()])
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to process request')
-    } finally {
-      setApprovalProcessingId(null)
-    }
-  }
-
-  const handleWfhApprovalDecision = async (requestId: string, action: 'approve' | 'reject') => {
-    setWfhApprovalProcessingId(requestId)
-    try {
-      const res = await fetch('/api/wfh/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requestId, action }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to process WFH request')
-      }
-
-      toast.success(action === 'approve' ? 'WFH approved' : 'WFH rejected')
-      await loadData()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to process WFH request')
-    } finally {
-      setWfhApprovalProcessingId(null)
-    }
-  }
-
-  const loadCalendarEvents = async () => {
-    try {
-      const res = await fetch(`/api/leave/calendar?month=${currentMonth}&year=${currentYear}`)
-      const data = await res.json()
-      setCalendarEvents(data.events || [])
-    } catch (error) {
-      console.error('Failed to load calendar:', error)
-    }
-  }
-
-  const editableStatuses = new Set(['PENDING', 'LEAD_APPROVED', 'HR_APPROVED'])
-  const cancellableStatuses = new Set(['PENDING', 'LEAD_APPROVED', 'HR_APPROVED', 'APPROVED'])
-  const canCancelRequest = (request: LeaveRequest) =>
-    cancellableStatuses.has(request.status) && isBeforeLastDay(request.endDate)
-  const canCancelWfhRequest = (request: WfhRequest) =>
-    cancellableStatuses.has(request.status) && !hasWfhEnded(new Date(request.endDate))
-  const availableNotifyUsers = useMemo(
-    () => users.filter((u) => u.id !== user?.id),
-    [users, user?.id]
-  )
-  const isThreeEUser = useMemo(() => isThreeEDepartment(user?.department), [user?.department])
-  const showMyWfhCard = isThreeEUser || wfhRequests.length > 0
-  const showWfhSection = showMyWfhCard || wfhApprovalQueue.length > 0
-
-  const getRequestCoverPeople = (request: LeaveRequest) =>
-    Array.isArray(request.coverPeople) && request.coverPeople.length > 0
-      ? request.coverPeople
-      : request.coverPerson
-        ? [request.coverPerson]
-        : []
-
-  const calendarDepartments = useMemo(() => {
-    const values = new Set<string>()
-    for (const person of users) {
-      const department = person.department?.trim()
-      if (department) values.add(department)
-    }
-    for (const event of calendarEvents) {
-      const department = event.department?.trim()
-      if (department) values.add(department)
-    }
-    return Array.from(values).sort((a, b) => a.localeCompare(b))
-  }, [calendarEvents, users])
-
-  const filteredCalendarEvents = useMemo(() => {
-    if (departmentFilter === 'ALL') return calendarEvents
-    const selectedDepartment = departmentFilter.trim()
-    return calendarEvents.filter(
-      (event) => event.isCurrentUser || event.department?.trim() === selectedDepartment
-    )
-  }, [calendarEvents, departmentFilter])
-
-  /**
-   * The shared rule: half-days, single sick days and 3E staff need no handover plan.
-   * A lead's approval rows carry the applicant; the user's own rows are their own.
-   */
-  const planRequiredFor = (
-    request: Pick<LeaveRequest, 'leaveType' | 'isHalfDay' | 'startDate' | 'endDate'> &
-      Partial<Pick<ApprovalRequest, 'employee'>>
-  ) =>
-    transitionPlanRequired({
-      leaveType: request.leaveType,
-      isHalfDay: request.isHalfDay,
-      startDate: new Date(request.startDate),
-      endDate: new Date(request.endDate),
-      department: request.employee ? request.employee.department : user?.department,
-    })
-
-  const transitionPlanReminderRequests = useMemo(() => {
-    const now = new Date()
-    now.setHours(0, 0, 0, 0)
-
-    return requests.filter((request) => {
-      if (!editableStatuses.has(request.status) && request.status !== 'APPROVED') return false
-      if (request.transitionPlanSubmittedAt) return false
-      if (!planRequiredFor(request)) return false
-      const start = parseInputDateAsLocal(toDateKey(request.startDate))
-      if (!start) return false
-      start.setHours(0, 0, 0, 0)
-      const dayDiff = Math.ceil((start.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-      return dayDiff >= 0 && dayDiff <= 3
-    })
-  }, [requests])
-
-  useEffect(() => {
-    if (transitionPlanReminderRequests.length > 0 && !reminderNoticeShown) {
-      toast.warning('Add transition plan for upcoming leave(s) before time off starts.')
-      setReminderNoticeShown(true)
-    }
-  }, [transitionPlanReminderRequests, reminderNoticeShown])
-
-  // Generate calendar days
-  const calendarDays = useMemo(() => {
-    const firstDay = new Date(currentYear, currentMonth, 1)
-    const lastDay = new Date(currentYear, currentMonth + 1, 0)
-    const startPadding = firstDay.getDay()
-    const totalDays = lastDay.getDate()
-
-    const days: { date: Date; isCurrentMonth: boolean }[] = []
-
-    // Previous month padding
-    for (let i = startPadding - 1; i >= 0; i--) {
-      const date = new Date(currentYear, currentMonth, -i)
-      days.push({ date, isCurrentMonth: false })
-    }
-
-    // Current month days
-    for (let i = 1; i <= totalDays; i++) {
-      const date = new Date(currentYear, currentMonth, i)
-      days.push({ date, isCurrentMonth: true })
-    }
-
-    // Next month padding
-    const remaining = 42 - days.length // 6 rows * 7 days
-    for (let i = 1; i <= remaining; i++) {
-      const date = new Date(currentYear, currentMonth + 1, i)
-      days.push({ date, isCurrentMonth: false })
-    }
-
-    return days
-  }, [currentMonth, currentYear])
-
-  // Get events for a specific date (timezone-safe: compare calendar dates only)
-  const toYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  const getEventsForDate = (date: Date) => {
-    const ymd = toYMD(date)
-    return filteredCalendarEvents.filter(event => {
-      const startYmd = toDateKey(event.startDate)
-      const endYmd = toDateKey(event.endDate)
-      if (!startYmd || !endYmd) return false
-      return ymd >= startYmd && ymd <= endYmd
-    })
-  }
-
-  const getReturnDateLabel = (startDate: string, endDate: string, isHalfDay = false) => {
-    if (isHalfDay) {
-      return formatApiDate(startDate)
-    }
-    const key = toDateKey(endDate)
-    if (!key) return ''
-    const [year, month, day] = key.split('-').map(Number)
-    // Expected return is the next business day after the last day off (skips weekends).
-    const returnDate = getNextBusinessDay(new Date(Date.UTC(year, month - 1, day)))
-    const returnKey = `${returnDate.getUTCFullYear()}-${String(returnDate.getUTCMonth() + 1).padStart(2, '0')}-${String(returnDate.getUTCDate()).padStart(2, '0')}`
-    return formatApiDate(returnKey)
-  }
-
-  const openDayEventsModal = (date: Date, events: CalendarEvent[]) => {
-    const sortedEvents = [...events].sort((a, b) => {
-      if (a.isCurrentUser !== b.isCurrentUser) return a.isCurrentUser ? -1 : 1
-      return a.employeeName.localeCompare(b.employeeName)
-    })
-    setSelectedDayDate(new Date(date))
-    setSelectedDayEvents(sortedEvents)
-    setIsDayEventsModalOpen(true)
-  }
-
-  const handleDateClick = (date: Date) => {
-    if (!selectingEnd) {
-      // Start new selection
-      setSelectedRange({ start: date, end: null })
-      setSelectingEnd(true)
-      setFormData({
-        ...formData,
-        startDate: formatDateForInput(date),
-        endDate: '',
-      })
-    } else {
-      // Complete selection
-      if (selectedRange.start && date >= selectedRange.start) {
-        setSelectedRange({ ...selectedRange, end: date })
-        setFormData({
-          ...formData,
-          endDate: formatDateForInput(date),
-        })
-        setSelectingEnd(false)
-        setIsModalOpen(true)
-      } else {
-        // Reset if end is before start
-        setSelectedRange({ start: date, end: null })
-        setFormData({
-          ...formData,
-          startDate: formatDateForInput(date),
-          endDate: '',
-        })
-      }
-    }
-  }
-
-  const isInSelectedRange = (date: Date) => {
-    if (!selectedRange.start) return false
-    if (!selectedRange.end) return date.toDateString() === selectedRange.start.toDateString()
-    return date >= selectedRange.start && date <= selectedRange.end
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
-
-    try {
-      const isHalfDay = formData.isHalfDay && isHalfDayEligibleLeaveType(formData.leaveType as 'CASUAL' | 'SICK' | 'ANNUAL')
-      const endDate = isHalfDay ? formData.startDate : formData.endDate
-
-      if (isHalfDay) {
-        if (!formData.halfDaySession) {
-          toast.error('Select first half or second half')
-          return
-        }
-        if (!formData.unavailableStartTime || !formData.unavailableEndTime) {
-          toast.error('Enter unavailable start and end time for half-day leave')
-          return
-        }
-        if (formData.unavailableStartTime >= formData.unavailableEndTime) {
-          toast.error('Unavailable end time must be after start time')
-          return
-        }
-      }
-
-      const payload = {
-        leaveType: formData.leaveType,
-        startDate: formData.startDate,
-        endDate,
-        isHalfDay,
-        requestTimezone: detectBrowserLeaveTimeZone(),
-        halfDaySession: isHalfDay ? formData.halfDaySession : undefined,
-        unavailableStartTime: isHalfDay ? formData.unavailableStartTime : undefined,
-        unavailableEndTime: isHalfDay ? formData.unavailableEndTime : undefined,
-        reason: formData.reason,
-        transitionPlan: formData.transitionPlan || undefined,
-        coverPersonIds: formData.coverPersonIds,
-        additionalNotifyIds: formData.additionalNotifyIds,
-      }
-
-      const res = await fetch('/api/leave/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      const data = await res.json()
-
-      if (data.success) {
-        // If the applicant filled the structured plan up front, submit it against the new
-        // request so it counts as done (and notifies the team lead). Non-fatal on failure —
-        // the reminder cron will still chase an unsubmitted plan.
-        const newId = data.request?.id
-        if (newId && canSubmitTransitionPlan(createTasks)) {
-          try {
-            await fetch(`/api/leave/requests/${newId}/transition-plan`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tasks: createTasks }),
-            })
-          } catch {
-            // ignore — plan can be submitted later from the request details
-          }
-        }
-        toast.success('Leave request submitted!')
-        setIsModalOpen(false)
-        setSelectedRange({ start: null, end: null })
-        setFormData({
-          leaveType: 'CASUAL',
-          isHalfDay: false,
-          halfDaySession: '',
-          unavailableStartTime: '',
-          unavailableEndTime: '',
-          startDate: '',
-          endDate: '',
-          reason: '',
-          transitionPlan: '',
-          coverPersonIds: [],
-          additionalNotifyIds: [],
-        })
-        setCreateTasks([])
-        loadData()
-        loadCalendarEvents()
-      } else {
-        toast.error(data.error || 'Failed to submit request')
-      }
-    } catch {
-      toast.error('Failed to submit request')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  const coerceTasks = (raw: unknown): TransitionTask[] => {
-    try {
-      return validateTransitionTasks(raw)
-    } catch {
-      return []
-    }
-  }
-
-  const openRequestDetails = (request: LeaveRequest) => {
-    setSelectedRequest(request)
-    setDetailTasks(coerceTasks(request.transitionPlanTasks))
-    setIsDetailsModalOpen(true)
-  }
-
-  useEffect(() => {
-    if (loading || !deepLinkedRequestId || handledDeepLinkRef.current === deepLinkedRequestId) return
-
-    handledDeepLinkRef.current = deepLinkedRequestId
-    setHighlightedApprovalRequestId('')
-    const target = resolveLeaveRequestDeepLinkTarget(
-      deepLinkedRequestId,
-      approvalQueue.map((request) => request.id),
-      requests.map((request) => request.id),
-    )
-
-    if (target === 'approval') {
-      setHighlightedApprovalRequestId(deepLinkedRequestId)
-      return
-    }
-
-    if (target === 'own') {
-      const request = requests.find((candidate) => candidate.id === deepLinkedRequestId)
-      if (request) openRequestDetails(request)
-      return
-    }
-
-    toast.info('This leave request is no longer waiting for your action, or you do not have access to it.')
-  }, [approvalQueue, deepLinkedRequestId, loading, requests])
-
-  useEffect(() => {
-    if (!highlightedApprovalRequestId) return
-
-    const frame = window.requestAnimationFrame(() => {
-      const requestCard = document.getElementById(`leave-approval-${highlightedApprovalRequestId}`)
-      requestCard?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      requestCard?.focus({ preventScroll: true })
-    })
-
-    return () => window.cancelAnimationFrame(frame)
-  }, [highlightedApprovalRequestId])
-
-  const savePlanDraft = async () => {
-    if (!selectedRequest) return
-    setPlanSavingDraft(true)
-    try {
-      const res = await fetch(`/api/leave/requests/${selectedRequest.id}/transition-plan`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: detailTasks }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        toast.success('Transition plan draft saved')
-        loadData()
-      } else {
-        toast.error(data.error || 'Failed to save draft')
-      }
-    } catch {
-      toast.error('Failed to save draft')
-    } finally {
-      setPlanSavingDraft(false)
-    }
-  }
-
-  const submitPlan = async () => {
-    if (!selectedRequest) return
-    if (!canSubmitTransitionPlan(detailTasks)) {
-      toast.error('Add at least one task before submitting')
-      return
-    }
-    setPlanSubmitting(true)
-    try {
-      const res = await fetch(`/api/leave/requests/${selectedRequest.id}/transition-plan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: detailTasks }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        toast.success('Transition plan submitted')
-        setIsDetailsModalOpen(false)
-        setSelectedRequest(null)
-        loadData()
-      } else {
-        toast.error(data.error || 'Failed to submit transition plan')
-      }
-    } catch {
-      toast.error('Failed to submit transition plan')
-    } finally {
-      setPlanSubmitting(false)
-    }
-  }
-
-  const handleTransitionPlanReview = async (requestId: string, action: 'APPROVE' | 'DISAPPROVE') => {
-    let reason = ''
-    if (action === 'DISAPPROVE') {
-      reason = (window.prompt('Reason for disapproving this transition plan:') || '').trim()
-      if (!reason) return
-    }
-    setPlanReviewProcessingId(requestId)
-    try {
-      const res = await fetch(`/api/leave/requests/${requestId}/transition-plan/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, reason }),
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        toast.success(action === 'APPROVE' ? 'Transition plan approved' : 'Transition plan disapproved')
-        loadData()
-      } else {
-        toast.error(data.error || 'Failed to review transition plan')
-      }
-    } catch {
-      toast.error('Failed to review transition plan')
-    } finally {
-      setPlanReviewProcessingId(null)
-    }
-  }
-
-  const openEditModal = (request: LeaveRequest) => {
-    setSelectedRequest(request)
-    setEditFormData({
-      id: request.id,
-      leaveType: request.leaveType,
-      isHalfDay: request.isHalfDay,
-      halfDaySession: request.halfDaySession || '',
-      unavailableStartTime: request.unavailableStartTime || '',
-      unavailableEndTime: request.unavailableEndTime || '',
-      startDate: toDateKey(request.startDate),
-      endDate: toDateKey(request.endDate),
-      reason: request.reason || '',
-      transitionPlan: request.transitionPlan || '',
-      coverPersonIds: getRequestCoverPeople(request).map((coverPerson) => coverPerson.id),
-      additionalNotifyIds: Array.isArray(request.additionalNotifyIds) ? request.additionalNotifyIds : [],
-    })
-    setIsEditModalOpen(true)
-  }
-
-  const handleUpdateRequest = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setUpdating(true)
-
-    try {
-      const isHalfDay = editFormData.isHalfDay && isHalfDayEligibleLeaveType(editFormData.leaveType)
-      const endDate = isHalfDay ? editFormData.startDate : editFormData.endDate
-
-      if (isHalfDay) {
-        if (!editFormData.halfDaySession) {
-          toast.error('Select first half or second half')
-          return
-        }
-        if (!editFormData.unavailableStartTime || !editFormData.unavailableEndTime) {
-          toast.error('Enter unavailable start and end time for half-day leave')
-          return
-        }
-        if (editFormData.unavailableStartTime >= editFormData.unavailableEndTime) {
-          toast.error('Unavailable end time must be after start time')
-          return
-        }
-      }
-
-      const res = await fetch('/api/leave/requests', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: editFormData.id,
-          leaveType: editFormData.leaveType,
-          isHalfDay,
-          requestTimezone: detectBrowserLeaveTimeZone(),
-          halfDaySession: isHalfDay ? editFormData.halfDaySession : undefined,
-          unavailableStartTime: isHalfDay ? editFormData.unavailableStartTime : undefined,
-          unavailableEndTime: isHalfDay ? editFormData.unavailableEndTime : undefined,
-          startDate: editFormData.startDate,
-          endDate,
-          reason: editFormData.reason,
-          transitionPlan: editFormData.transitionPlan || undefined,
-          coverPersonIds: editFormData.coverPersonIds,
-          additionalNotifyIds: editFormData.additionalNotifyIds,
-        }),
-      })
-
-      const data = await res.json()
-      if (data.success) {
-        toast.success('Leave request updated')
-        setIsEditModalOpen(false)
-        setSelectedRequest(null)
-        loadData()
-        loadCalendarEvents()
-      } else {
-        toast.error(data.error || 'Failed to update leave request')
-      }
-    } catch {
-      toast.error('Failed to update leave request')
-    } finally {
-      setUpdating(false)
-    }
-  }
-
-  const handleCancel = async (requestId: string) => {
-    if (!confirm('Are you sure you want to cancel this request?')) return
-
-    try {
-      const res = await fetch(`/api/leave/requests?id=${requestId}`, {
-        method: 'DELETE',
-      })
-
-      const data = await res.json()
-
-      if (data.success) {
-        toast.success('Request cancelled')
-        loadData()
-        loadCalendarEvents()
-      } else {
-        toast.error(data.error || 'Failed to cancel')
-      }
-    } catch {
-      toast.error('Failed to cancel')
-    }
-  }
-
-  const getDaysCount = (start: string, end: string, isHalfDay = false) => {
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-    return calculateLeaveDuration(startDate, endDate, isHalfDay)
-  }
-
-  const handleWfhSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setWfhSubmitting(true)
-
-    try {
-      const res = await fetch('/api/wfh/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          startDate: wfhFormData.startDate,
-          endDate: wfhFormData.endDate,
-          requestTimezone: detectBrowserLeaveTimeZone(),
-          reason: wfhFormData.reason,
-          workPlan: wfhFormData.workPlan || undefined,
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to submit WFH request')
-      }
-
-      toast.success('WFH request submitted')
-      setIsWfhModalOpen(false)
-      setWfhFormData({
-        startDate: '',
-        endDate: '',
-        reason: '',
-        workPlan: '',
-      })
-      await loadData()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to submit WFH request')
-    } finally {
-      setWfhSubmitting(false)
-    }
-  }
-
-  const handleCancelWfh = async (requestId: string) => {
-    if (!confirm('Are you sure you want to cancel this WFH request?')) return
-
-    try {
-      const res = await fetch(`/api/wfh/requests?id=${requestId}`, {
-        method: 'DELETE',
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to cancel WFH request')
-      }
-
-      toast.success('WFH request cancelled')
-      await loadData()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to cancel WFH request')
-    }
-  }
-
-  const clearSelection = () => {
-    setSelectedRange({ start: null, end: null })
-    setSelectingEnd(false)
-    setFormData({
-      ...formData,
-      startDate: '',
-      endDate: '',
-    })
-  }
-
-  if (loading) {
-    return (
-      <div className="p-6 sm:p-8 max-w-7xl mx-auto">
-        <LoadingScreen message="Loading..." />
-      </div>
-    )
-  }
-
+const CREATE: PanelMode = { kind: 'create' }
+const CLOSED: PanelState = { open: false, mode: CREATE, range: null }
+const SUBTITLE = "Plan leave, see who's around, and track your requests."
+const SUBTITLE_3E =
+  "Plan leave or work from home, see who's around, and track your requests. WFH does not use your leave balance."
+const REMINDER_TOAST = 'Add transition plan for upcoming leave(s) before time off starts.'
+const CALENDAR_ERROR = 'Could not load the calendar. Try another month or refresh.'
+
+function BalanceSkeleton() {
   return (
-    <div className="p-6 sm:p-8 max-w-7xl mx-auto">
-        {/* Page Title */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-display font-semibold text-foreground">Leave Management</h1>
-            <p className="text-muted-foreground">
-              {isThreeEUser
-                ? 'Apply for leave or request work from home. WFH does not consume leave balance.'
-                : 'Pick your start date and end date (last day off). Return date is the next day.'}
-            </p>
-          </div>
-          {isThreeEUser && (
-            <Button onClick={() => setIsWfhModalOpen(true)} className="self-start sm:self-auto">
-              <Home className="w-4 h-4" />
-              Request WFH
-            </Button>
-          )}
-        </div>
-
-        {transitionPlanReminderRequests.length > 0 && (
-          <Card className="mb-6 border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <TriangleAlert className="w-5 h-5 text-amber-600 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-medium text-amber-900 dark:text-amber-300">
-                    Transition plan reminder
-                  </p>
-                  <p className="text-sm text-amber-800/90 dark:text-amber-200 mt-1">
-                    {transitionPlanReminderRequests.length} upcoming leave request(s) are missing a transition plan.
-                    Please add it before your leave starts.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Leave Balance Cards */}
-        {balance && (
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            {(['CASUAL', 'SICK', 'ANNUAL'] as const).map((type) => {
-              const config = LEAVE_TYPE_CONFIG[type]
-              const Icon = config.icon
-              const remaining = balance.remaining[type.toLowerCase() as 'casual' | 'sick' | 'annual']
-              const total = balance[`${type.toLowerCase()}Days` as 'casualDays' | 'sickDays' | 'annualDays']
-              const decimalPlaces = getLeaveDecimalPlaces(remaining)
-
-              return (
-                <motion.div key={type} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                  <StatsCard
-                    title={config.label}
-                    value={remaining}
-                    suffix={`/ ${total} days`}
-                    decimalPlaces={decimalPlaces}
-                    icon={<Icon className={`w-4 h-4 ${config.color}`} />}
-                    className={`${config.bgLight} border-border`}
-                  />
-                </motion.div>
-              )
-            })}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Calendar */}
-          <div className="lg:col-span-2">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass rounded-card border border-border overflow-hidden"
-            >
-              <Card>
-                <CardContent className="p-0">
-                  {/* Calendar Header */}
-                  <div className="p-4 border-b border-border flex items-center justify-between">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        if (currentMonth === 0) {
-                          setCurrentMonth(11)
-                          setCurrentYear(currentYear - 1)
-                        } else {
-                          setCurrentMonth(currentMonth - 1)
-                        }
-                      }}
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </Button>
-                    <h2 className="text-lg font-display font-semibold text-foreground">
-                      {MONTHS[currentMonth]} {currentYear}
-                    </h2>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        if (currentMonth === 11) {
-                          setCurrentMonth(0)
-                          setCurrentYear(currentYear + 1)
-                        } else {
-                          setCurrentMonth(currentMonth + 1)
-                        }
-                      }}
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </Button>
-                  </div>
-
-                  <div className="px-4 py-3 border-b border-border flex items-center gap-3">
-                    <Label className="text-xs text-muted-foreground whitespace-nowrap">Department filter</Label>
-                    <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue placeholder="All departments" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ALL">All departments</SelectItem>
-                        {calendarDepartments.map((department) => (
-                          <SelectItem key={department} value={department}>
-                            {department}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Selection indicator */}
-                  {selectingEnd && (
-                    <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-500/10 border-b border-border flex items-center justify-between">
-                      <span className="text-sm text-indigo-600 dark:text-indigo-400">
-                        Select end date (last day off). You return the next day.
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-xs text-indigo-600 hover:text-indigo-700"
-                        onClick={clearSelection}
-                      >
-                        <X className="w-3 h-3 mr-1" /> Cancel
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Calendar Grid */}
-                  <div className="p-4">
-                    {/* Day headers */}
-                    <div className="grid grid-cols-7 mb-2">
-                      {DAYS.map(day => (
-                        <div key={day} className="text-center text-xs font-medium text-muted-foreground py-2">
-                          {day}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Calendar days */}
-                    <div className="grid grid-cols-7 gap-1">
-                      {calendarDays.map(({ date, isCurrentMonth }, index) => {
-                        const events = getEventsForDate(date)
-                        const isToday = date.toDateString() === new Date().toDateString()
-                        const isSelected = isInSelectedRange(date)
-                        const isWeekend = date.getDay() === 0 || date.getDay() === 6
-                        const isPast = date < new Date(new Date().setHours(0, 0, 0, 0))
-                        const canApplyOnDate = !isPast && isCurrentMonth
-
-                        return (
-                          <Button
-                            key={index}
-                            variant="ghost"
-                            className={`
-                              relative p-1 min-h-[70px] rounded-lg text-left h-auto font-normal justify-start transition-all
-                              ${!isCurrentMonth ? 'opacity-30' : ''}
-                              ${isPast ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted cursor-pointer'}
-                              ${isSelected ? 'bg-indigo-100 dark:bg-indigo-500/20 ring-2 ring-indigo-500' : ''}
-                              ${isToday && !isSelected ? 'bg-muted ring-1 ring-indigo-300' : ''}
-                            `}
-                            onClick={() => {
-                              if (canApplyOnDate) {
-                                handleDateClick(date)
-                              }
-                            }}
-                          >
-                            <span
-                              className={`
-                                text-sm font-medium
-                                ${isWeekend ? 'text-muted-foreground' : 'text-foreground'}
-                                ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : ''}
-                                ${isToday ? 'text-indigo-600' : ''}
-                              `}
-                            >
-                              {date.getDate()}
-                            </span>
-
-                            {/* Event indicators */}
-                            {events.length > 0 && (
-                              <div className="mt-1 space-y-0.5 w-full">
-                                {events.slice(0, 2).map((event, i) => (
-                                  <div
-                                    key={i}
-                                    className={`
-                                      text-[10px] px-1 py-0.5 rounded truncate
-                                      ${event.isCurrentUser
-                                        ? LEAVE_TYPE_CONFIG[event.leaveType].bg + ' text-white'
-                                        : 'bg-gray-200 dark:bg-gray-700 text-foreground'
-                                      }
-                                      ${event.status === 'PENDING' || event.status === 'LEAD_APPROVED' || event.status === 'HR_APPROVED'
-                                        ? 'opacity-60'
-                                        : ''
-                                      }
-                                    `}
-                                    title={`${event.employeeName} - ${LEAVE_TYPE_CONFIG[event.leaveType].label}${event.isHalfDay ? ` (${getHalfDaySessionLabel(event.halfDaySession)})` : ''}`}
-                                  >
-                                    {(event.isCurrentUser ? 'You' : event.employeeName.split(' ')[0]) + (event.isHalfDay ? ' 1/2' : '')}
-                                  </div>
-                                ))}
-                                {events.length > 2 && (
-                                  <div
-                                    className="text-[10px] text-muted-foreground px-1 underline-offset-2 hover:underline cursor-pointer"
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                      openDayEventsModal(date, events)
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.preventDefault()
-                                        e.stopPropagation()
-                                        openDayEventsModal(date, events)
-                                      }
-                                    }}
-                                  >
-                                    +{events.length - 2} more
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </Button>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Legend */}
-                  <div className="px-4 py-3 border-t border-border bg-muted/50">
-                    <div className="flex flex-wrap gap-4 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded bg-amber-500" />
-                        <span className="text-muted-foreground">Casual</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded bg-red-500" />
-                        <span className="text-muted-foreground">Sick</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded bg-emerald-500" />
-                        <span className="text-muted-foreground">Annual</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded bg-gray-300 dark:bg-gray-600" />
-                        <span className="text-muted-foreground">Team member</span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          </div>
-
-          {/* Sidebar - My Requests */}
-          <div>
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="glass rounded-card border border-border overflow-hidden"
-            >
-              <Card>
-                <CardContent className="p-0">
-                  <div className="p-4 border-b border-border flex items-center justify-between">
-                    <h3 className="font-display font-semibold text-foreground">My Leave Requests</h3>
-                    <Button
-                      variant="default"
-                      size="icon"
-                      onClick={() => setIsModalOpen(true)}
-                    >
-                      <Plus className="w-4 h-4" />
-                    </Button>
-                  </div>
-
-                  <div className="max-h-[400px] overflow-y-auto">
-                    {requests.length === 0 ? (
-                      <div className="p-6 text-center">
-                        <Calendar className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">No requests yet</p>
-                        <p className="text-xs text-muted-foreground mt-1">Click on calendar dates to apply</p>
-                      </div>
-                    ) : (
-                      <div className="divide-y divide-border">
-                        {requests.map((request) => {
-                          const typeConfig = LEAVE_TYPE_CONFIG[request.leaveType]
-                          const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
-                          const TypeIcon = typeConfig.icon
-                          const days = getDaysCount(request.startDate, request.endDate, request.isHalfDay)
-                          const canEdit = editableStatuses.has(request.status)
-
-                          return (
-                            <div key={request.id} className="p-3 hover:bg-muted/50 transition-colors">
-                              <div className="flex items-start gap-3">
-                                <div className={`w-8 h-8 rounded-lg ${typeConfig.bgLight} flex items-center justify-center flex-shrink-0`}>
-                                  <TypeIcon className={`w-4 h-4 ${typeConfig.color}`} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-0.5">
-                                    <span className="text-sm font-medium text-foreground">{typeConfig.label}</span>
-                                    <Badge variant="secondary" className={`${statusConfig.bg} ${statusConfig.color} border-0`}>
-                                      {statusConfig.label}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">
-                                    {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                    {' - '}
-                                    {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                    {' - '}{getDurationLabel(days)}
-                                  </p>
-                                  <p className="text-[11px] text-muted-foreground">
-                                    Return date: {getReturnDateLabel(request.startDate, request.endDate, request.isHalfDay)}
-                                  </p>
-                                  {request.isHalfDay && (
-                                    <p className="text-[11px] text-muted-foreground">
-                                      {getHalfDaySessionLabel(request.halfDaySession)} - {getHalfDayWindowLabel(request.unavailableStartTime, request.unavailableEndTime)}
-                                    </p>
-                                  )}
-
-                                  <div className="flex gap-3 mt-1 flex-wrap">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="text-[10px] h-auto p-0 text-primary hover:text-primary/80"
-                                      onClick={() => openRequestDetails(request)}
-                                    >
-                                      <Eye className="w-3 h-3 mr-1" />
-                                      View details
-                                    </Button>
-
-                                    {canEdit && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-[10px] h-auto p-0 text-amber-600 hover:text-amber-700"
-                                        onClick={() => openEditModal(request)}
-                                      >
-                                        <Edit3 className="w-3 h-3 mr-1" />
-                                        Edit
-                                      </Button>
-                                    )}
-
-                                    {canCancelRequest(request) && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-[10px] text-red-600 hover:text-red-700 h-auto p-0"
-                                        onClick={() => handleCancel(request.id)}
-                                      >
-                                        Cancel request
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Team Approval Queue */}
-            {approvalQueue.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="glass rounded-card border border-border overflow-hidden mt-4"
-              >
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="p-4 border-b border-border">
-                      <h3 className="font-display font-semibold text-foreground">Team Approval Queue</h3>
-                      <p className="text-xs text-muted-foreground mt-1">Requests waiting for your lead approval</p>
-                    </div>
-                    <div className="divide-y divide-border">
-                      {approvalQueue.map((request) => {
-                        const typeConfig = LEAVE_TYPE_CONFIG[request.leaveType]
-                        const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
-                        const TypeIcon = typeConfig.icon
-                        const days = getDaysCount(request.startDate, request.endDate, request.isHalfDay)
-                        const processing = approvalProcessingId === request.id
-
-                        return (
-                          <div
-                            key={request.id}
-                            id={`leave-approval-${request.id}`}
-                            tabIndex={-1}
-                            aria-current={highlightedApprovalRequestId === request.id ? 'true' : undefined}
-                            className={`scroll-mt-24 p-3 outline-none transition-colors ${
-                              highlightedApprovalRequestId === request.id
-                                ? 'bg-primary/5 ring-2 ring-inset ring-primary/60'
-                                : ''
-                            }`}
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className={`w-8 h-8 rounded-lg ${typeConfig.bgLight} flex items-center justify-center flex-shrink-0`}>
-                                <TypeIcon className={`w-4 h-4 ${typeConfig.color}`} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                {highlightedApprovalRequestId === request.id && (
-                                  <p className="mb-1 text-[11px] font-medium text-primary">Opened from email</p>
-                                )}
-                                <div className="flex items-center gap-2 mb-0.5">
-                                  <span className="text-sm font-medium text-foreground">{request.employee.name}</span>
-                                  <Badge variant="secondary" className={`${statusConfig.bg} ${statusConfig.color} border-0`}>
-                                    {statusConfig.label}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  {typeConfig.label} - {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                  {' - '}
-                                  {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                  {' - '}{getDurationLabel(days)}
-                                </p>
-                                {request.isHalfDay && (
-                                  <p className="text-[11px] text-muted-foreground">
-                                    {getHalfDaySessionLabel(request.halfDaySession)} - {getHalfDayWindowLabel(request.unavailableStartTime, request.unavailableEndTime)}
-                                  </p>
-                                )}
-                                <p className="text-[11px] text-muted-foreground truncate">{request.reason}</p>
-                                <div className="flex items-center gap-2 mt-2">
-                                  {request.status !== 'APPROVED' && (
-                                    <Button
-                                      size="sm"
-                                      className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700"
-                                      disabled={processing}
-                                      onClick={() => handleApprovalDecision(request.id, 'approve')}
-                                    >
-                                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                                      Approve
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    className="h-7 px-2.5 text-xs"
-                                    disabled={processing}
-                                    onClick={() => handleApprovalDecision(request.id, 'reject')}
-                                  >
-                                    <XCircle className="w-3.5 h-3.5 mr-1" />
-                                    {request.status === 'APPROVED' ? 'Disapprove' : 'Reject'}
-                                  </Button>
-                                </div>
-                                {request.transitionPlanSubmittedAt ? (
-                                  <div className="mt-3 rounded-lg border border-border bg-muted/40 p-3">
-                                    <p className="text-xs font-semibold text-foreground mb-2">Transition plan</p>
-                                    <TransitionPlanView
-                                      tasks={coerceTasks(request.transitionPlanTasks)}
-                                      submittedAt={request.transitionPlanSubmittedAt}
-                                      leadStatus={request.transitionPlanLeadStatus}
-                                      disapprovalReason={request.transitionPlanDisapprovalReason}
-                                      generalNotes={request.transitionPlan}
-                                    />
-                                    {request.transitionPlanLeadStatus !== 'APPROVED' && (
-                                      <div className="flex flex-wrap gap-2 mt-3">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-7 px-2.5 text-xs"
-                                          disabled={planReviewProcessingId === request.id}
-                                          onClick={() => handleTransitionPlanReview(request.id, 'APPROVE')}
-                                        >
-                                          Approve plan
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          className="h-7 px-2.5 text-xs text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-500/10"
-                                          disabled={planReviewProcessingId === request.id}
-                                          onClick={() => handleTransitionPlanReview(request.id, 'DISAPPROVE')}
-                                        >
-                                          Disapprove plan
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
-                                ) : planRequiredFor(request) ? (
-                                  <p className="mt-2 text-[11px] text-muted-foreground">
-                                    No transition plan submitted yet.
-                                  </p>
-                                ) : (
-                                  <p className="mt-2 text-[11px] text-muted-foreground">
-                                    No transition plan needed for this leave.
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-
-            {/* Team on Leave Today */}
-            {filteredCalendarEvents.filter(e => {
-              const todayYmd = formatDateForInput(new Date())
-              const startYmd = toDateKey(e.startDate)
-              const endYmd = toDateKey(e.endDate)
-              if (!startYmd || !endYmd) return false
-              return todayYmd >= startYmd && todayYmd <= endYmd && !e.isCurrentUser && e.status === 'APPROVED'
-            }).length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="glass rounded-card border border-border overflow-hidden mt-4"
-              >
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="p-4 border-b border-border">
-                      <h3 className="font-display font-semibold text-foreground flex items-center gap-2">
-                        <Users className="w-4 h-4" />
-                        Out Today
-                      </h3>
-                    </div>
-                    <div className="p-3 space-y-2">
-                      {filteredCalendarEvents.filter(e => {
-                        const todayYmd = formatDateForInput(new Date())
-                        const startYmd = toDateKey(e.startDate)
-                        const endYmd = toDateKey(e.endDate)
-                        if (!startYmd || !endYmd) return false
-                        return todayYmd >= startYmd && todayYmd <= endYmd && !e.isCurrentUser && e.status === 'APPROVED'
-                      }).map(event => (
-                        <div key={event.id} className="flex items-center gap-2 text-sm">
-                          <div className={`w-2 h-2 rounded-full ${LEAVE_TYPE_CONFIG[event.leaveType].bg}`} />
-                          <span className="text-foreground">{event.employeeName}</span>
-                          <span className="text-muted-foreground text-xs">
-                            ({LEAVE_TYPE_CONFIG[event.leaveType].label}{event.isHalfDay ? `, ${getHalfDaySessionLabel(event.halfDaySession)}` : ''})
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </div>
-        </div>
-
-        {showWfhSection && (
-          <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {showMyWfhCard && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="glass rounded-card border border-border overflow-hidden"
-              >
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="p-4 border-b border-border flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="font-display font-semibold text-foreground">My WFH Requests</h3>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Separate from leave balances. Available for 3E team members only.
-                        </p>
-                      </div>
-                      {isThreeEUser && (
-                        <Button variant="default" size="icon" onClick={() => setIsWfhModalOpen(true)}>
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-
-                    <div className="max-h-[400px] overflow-y-auto">
-                      {wfhRequests.length === 0 ? (
-                        <div className="p-6 text-center">
-                          <Home className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
-                          <p className="text-sm text-muted-foreground">
-                            {isThreeEUser ? 'No WFH requests yet' : 'No WFH requests'}
-                          </p>
-                          {isThreeEUser && (
-                            <p className="text-xs text-muted-foreground mt-1">Use the plus button to submit one.</p>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="divide-y divide-border">
-                          {wfhRequests.map((request) => {
-                            const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
-                            const days = calculateWfhDays(new Date(request.startDate), new Date(request.endDate))
-
-                            return (
-                              <div key={request.id} className="p-3 hover:bg-muted/50 transition-colors">
-                                <div className="flex items-start gap-3">
-                                  <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-500/10 flex items-center justify-center flex-shrink-0">
-                                    <Home className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                      <span className="text-sm font-medium text-foreground">Work From Home</span>
-                                      <Badge variant="secondary" className={`${statusConfig.bg} ${statusConfig.color} border-0`}>
-                                        {statusConfig.label}
-                                      </Badge>
-                                    </div>
-                                    <p className="text-xs text-muted-foreground">
-                                      {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                      {' - '}
-                                      {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                      {' - '}{getDurationLabel(days)}
-                                    </p>
-                                    <p className="text-sm text-foreground mt-2">{request.reason}</p>
-                                    {request.workPlan && (
-                                      <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
-                                        Work plan: {request.workPlan}
-                                      </p>
-                                    )}
-
-                                    {canCancelWfhRequest(request) && (
-                                      <div className="flex gap-3 mt-2 flex-wrap">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="text-[10px] text-red-600 hover:text-red-700 h-auto p-0"
-                                          onClick={() => handleCancelWfh(request.id)}
-                                        >
-                                          Cancel request
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-
-            {wfhApprovalQueue.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-                className="glass rounded-card border border-border overflow-hidden"
-              >
-                <Card>
-                  <CardContent className="p-0">
-                    <div className="p-4 border-b border-border">
-                      <h3 className="font-display font-semibold text-foreground">WFH Approval Queue</h3>
-                      <p className="text-xs text-muted-foreground mt-1">Requests waiting for your review</p>
-                    </div>
-                    <div className="divide-y divide-border">
-                      {wfhApprovalQueue.map((request) => {
-                        const statusConfig = STATUS_CONFIG[request.status] || STATUS_CONFIG.PENDING
-                        const days = calculateWfhDays(new Date(request.startDate), new Date(request.endDate))
-                        const processing = wfhApprovalProcessingId === request.id
-
-                        return (
-                          <div key={request.id} className="p-3">
-                            <div className="flex items-start gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-sky-100 dark:bg-sky-500/10 flex items-center justify-center flex-shrink-0">
-                                <Home className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-sm font-medium text-foreground">{request.employee?.name || 'Team member'}</span>
-                                  <Badge variant="secondary" className={`${statusConfig.bg} ${statusConfig.color} border-0`}>
-                                    {statusConfig.label}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  {request.employee?.department || 'No department'} • {formatApiDate(request.startDate, { month: 'short', day: 'numeric' })}
-                                  {' - '}
-                                  {formatApiDate(request.endDate, { month: 'short', day: 'numeric' })}
-                                  {' • '}{getDurationLabel(days)}
-                                </p>
-                                <p className="text-sm text-foreground mt-2">{request.reason}</p>
-                                {request.workPlan && (
-                                  <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">
-                                    Work plan: {request.workPlan}
-                                  </p>
-                                )}
-
-                                <div className="flex gap-2 mt-3">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleWfhApprovalDecision(request.id, 'approve')}
-                                    disabled={processing}
-                                    className="bg-emerald-600 hover:bg-emerald-700"
-                                  >
-                                    <CheckCircle2 className="w-4 h-4" />
-                                    {processing ? 'Working...' : 'Approve'}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleWfhApprovalDecision(request.id, 'reject')}
-                                    disabled={processing}
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                    Reject
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )}
-          </div>
-        )}
-      {/* Apply Leave Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); clearSelection(); }} title="Apply for Leave" size="lg">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Leave Type */}
-          <div>
-            <Label className="mb-2">Leave Type</Label>
-            <div className="grid grid-cols-3 gap-3">
-              {(['CASUAL', 'SICK', 'ANNUAL'] as const).map((type) => {
-                const config = LEAVE_TYPE_CONFIG[type]
-                const Icon = config.icon
-                const remaining = balance?.remaining[type.toLowerCase() as 'casual' | 'sick' | 'annual'] || 0
-
-                return (
-                  <Button
-                    key={type}
-                    type="button"
-                    variant="outline"
-                    className={`h-auto flex flex-col gap-1 p-3 ${
-                      formData.leaveType === type
-                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10'
-                        : ''
-                    }`}
-                    onClick={() =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        leaveType: type,
-                        ...(type === 'ANNUAL'
-                          ? {
-                              isHalfDay: false,
-                              halfDaySession: '',
-                              unavailableStartTime: '',
-                              unavailableEndTime: '',
-                            }
-                          : {}),
-                      }))
-                    }
-                  >
-                    <Icon className={`w-5 h-5 ${config.color} mx-auto`} />
-                    <span className="text-sm font-medium text-foreground">{config.label}</span>
-                    <span className="text-xs text-muted-foreground">{remaining} days left</span>
-                  </Button>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border p-3 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <Label className="mb-1">Half-Day Leave</Label>
-                <p className="text-xs text-muted-foreground">
-                  Available for Casual and Sick only. Half-day leave counts as 0.5 day.
-                </p>
-              </div>
-              <Checkbox
-                checked={formData.isHalfDay}
-                disabled={!isHalfDayEligibleLeaveType(formData.leaveType as 'CASUAL' | 'SICK' | 'ANNUAL')}
-                onCheckedChange={(checked) => {
-                  const nextChecked = checked === true
-                  setFormData((prev) => ({
-                    ...prev,
-                    isHalfDay: nextChecked,
-                    endDate: nextChecked && prev.startDate ? prev.startDate : prev.endDate,
-                    halfDaySession: nextChecked ? prev.halfDaySession : '',
-                    unavailableStartTime: nextChecked ? prev.unavailableStartTime : '',
-                    unavailableEndTime: nextChecked ? prev.unavailableEndTime : '',
-                  }))
-                }}
-              />
-            </div>
-
-            {formData.isHalfDay && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <Label className="mb-2">Session</Label>
-                  <Select
-                    value={formData.halfDaySession}
-                    onValueChange={(value: 'FIRST_HALF' | 'SECOND_HALF') =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        halfDaySession: value,
-                        unavailableStartTime:
-                          prev.unavailableStartTime ||
-                          (value === 'FIRST_HALF' ? '09:00' : '14:00'),
-                        unavailableEndTime:
-                          prev.unavailableEndTime ||
-                          (value === 'FIRST_HALF' ? '13:00' : '18:00'),
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select session" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {HALF_DAY_SESSION_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="unavailableStartTime" className="mb-2">Unavailable From</Label>
-                  <Input
-                    id="unavailableStartTime"
-                    type="time"
-                    required={formData.isHalfDay}
-                    value={formData.unavailableStartTime}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, unavailableStartTime: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="unavailableEndTime" className="mb-2">Unavailable To</Label>
-                  <Input
-                    id="unavailableEndTime"
-                    type="time"
-                    required={formData.isHalfDay}
-                    value={formData.unavailableEndTime}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, unavailableEndTime: e.target.value }))}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="startDate" className="mb-2">Start Date (first day off)</Label>
-              <Input
-                id="startDate"
-                type="date"
-                required
-                value={formData.startDate}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    startDate: e.target.value,
-                    ...(prev.isHalfDay ? { endDate: e.target.value } : {}),
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="endDate" className="mb-2">End Date (last day off)</Label>
-              <Input
-                id="endDate"
-                type="date"
-                required
-                value={formData.isHalfDay ? formData.startDate : formData.endDate}
-                min={formData.startDate}
-                disabled={formData.isHalfDay}
-                onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-              />
-            </div>
-          </div>
-          {(formData.endDate || (formData.isHalfDay && formData.startDate)) && (
-            <p className="text-xs text-muted-foreground -mt-2">
-              Expected return date: {getReturnDateLabel(formData.startDate, formData.endDate || formData.startDate, formData.isHalfDay)}
-            </p>
-          )}
-
-          {/* Reason */}
-          <div>
-            <Label htmlFor="reason" className="mb-2">Reason</Label>
-            <Textarea
-              id="reason"
-              required
-              rows={2}
-              value={formData.reason}
-              onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-              placeholder="Brief description of why you need this leave..."
-            />
-          </div>
-
-          {/* Transition Plan */}
-          <div>
-            <Label className="mb-1">
-              Transition Plan
-              <span className="text-muted-foreground font-normal ml-1">(optional, can be added later)</span>
-            </Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              List each thing that needs covering while you are away. Filling it here submits it
-              with your request; otherwise you can add it from the request details before your leave.
-            </p>
-            <TransitionPlanTable tasks={createTasks} onChange={setCreateTasks} />
-          </div>
-
-          <div>
-            <Label htmlFor="transitionPlan" className="mb-2">
-              General handover notes
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <Textarea
-              id="transitionPlan"
-              rows={3}
-              value={formData.transitionPlan}
-              onChange={(e) => setFormData({ ...formData, transitionPlan: e.target.value })}
-              placeholder="Any extra context for whoever covers your work."
-            />
-          </div>
-
-          <div>
-            <Label className="mb-2">
-              Cover People
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              Selected cover teammates will be notified by email.
-            </p>
-            <MemberMultiSelect
-              members={availableNotifyUsers}
-              selectedIds={formData.coverPersonIds}
-              onChange={(ids) => setFormData((prev) => ({ ...prev, coverPersonIds: ids }))}
-              placeholder="Search cover teammates by name or department..."
-              emptyPoolText="No other team members"
-            />
-          </div>
-
-          {/* Additional notify (email only, not approval) */}
-          <div>
-            <Label className="mb-2">
-              Notify additional team members
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              These people will receive an email notification. Approval still goes to your lead and HR only.
-            </p>
-            <MemberMultiSelect
-              members={availableNotifyUsers}
-              selectedIds={formData.additionalNotifyIds}
-              onChange={(ids) => setFormData((prev) => ({ ...prev, additionalNotifyIds: ids }))}
-              placeholder="Search by name or department..."
-              emptyPoolText="No other team members"
-            />
-          </div>
-
-          {/* Submit */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => { setIsModalOpen(false); clearSelection(); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={submitting}
-            >
-              {submitting ? 'Submitting...' : 'Submit Request'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal
-        isOpen={isWfhModalOpen}
-        onClose={() => {
-          setIsWfhModalOpen(false)
-          setWfhFormData({
-            startDate: '',
-            endDate: '',
-            reason: '',
-            workPlan: '',
-          })
-        }}
-        title="Request Work From Home"
-        size="lg"
-      >
-        <form onSubmit={handleWfhSubmit} className="space-y-4">
-          <div className="rounded-lg border border-sky-500/20 bg-sky-50/60 dark:bg-sky-500/10 p-3">
-            <p className="text-sm text-sky-900 dark:text-sky-200">
-              WFH requests are separate from leave. They do not consume your leave balance.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="wfh-start-date" className="mb-2">Start Date</Label>
-              <Input
-                id="wfh-start-date"
-                type="date"
-                required
-                value={wfhFormData.startDate}
-                onChange={(e) => setWfhFormData((prev) => ({ ...prev, startDate: e.target.value }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="wfh-end-date" className="mb-2">End Date</Label>
-              <Input
-                id="wfh-end-date"
-                type="date"
-                required
-                min={wfhFormData.startDate}
-                value={wfhFormData.endDate}
-                onChange={(e) => setWfhFormData((prev) => ({ ...prev, endDate: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="wfh-reason" className="mb-2">Reason</Label>
-            <Textarea
-              id="wfh-reason"
-              required
-              rows={2}
-              value={wfhFormData.reason}
-              onChange={(e) => setWfhFormData((prev) => ({ ...prev, reason: e.target.value }))}
-              placeholder="Why are you requesting WFH for these dates?"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="wfh-work-plan" className="mb-2">
-              Work Plan
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <Textarea
-              id="wfh-work-plan"
-              rows={3}
-              value={wfhFormData.workPlan}
-              onChange={(e) => setWfhFormData((prev) => ({ ...prev, workPlan: e.target.value }))}
-              placeholder="Outline your expected availability, meetings, or key deliverables."
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setIsWfhModalOpen(false)
-                setWfhFormData({
-                  startDate: '',
-                  endDate: '',
-                  reason: '',
-                  workPlan: '',
-                })
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={wfhSubmitting}>
-              {wfhSubmitting ? 'Submitting...' : 'Submit WFH Request'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal
-        isOpen={isDayEventsModalOpen}
-        onClose={() => {
-          setIsDayEventsModalOpen(false)
-          setSelectedDayDate(null)
-          setSelectedDayEvents([])
-        }}
-        title={
-          selectedDayDate
-            ? `Team on leave - ${selectedDayDate.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}`
-            : 'Team on leave'
-        }
-        size="md"
-      >
-        <div className="space-y-4">
-          {selectedDayEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No leave events for this date.</p>
-          ) : (
-            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-              {selectedDayEvents.map((event) => {
-                const typeConfig = LEAVE_TYPE_CONFIG[event.leaveType]
-                const statusConfig = STATUS_CONFIG[event.status] || STATUS_CONFIG.PENDING
-                return (
-                  <div
-                    key={`${event.id}-${event.employeeId}`}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {event.isCurrentUser ? 'You' : event.employeeName}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {typeConfig.label}
-                        {event.department ? ` - ${event.department}` : ''}
-                        {event.isHalfDay ? ` - ${getHalfDaySessionLabel(event.halfDaySession)}` : ''}
-                      </p>
-                      {event.isHalfDay && (
-                        <p className="text-[11px] text-muted-foreground truncate">
-                          {getHalfDayWindowLabel(event.unavailableStartTime, event.unavailableEndTime)}
-                        </p>
-                      )}
-                    </div>
-                    <Badge variant="secondary" className={`${statusConfig.bg} ${statusConfig.color} border-0`}>
-                      {statusConfig.label}
-                    </Badge>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsDayEventsModalOpen(false)
-                setSelectedDayDate(null)
-                setSelectedDayEvents([])
-              }}
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={isDetailsModalOpen}
-        onClose={() => {
-          setIsDetailsModalOpen(false)
-          setSelectedRequest(null)
-        }}
-        title="Leave Request Details"
-        size="lg"
-      >
-        {selectedRequest && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-muted-foreground">Leave Type</Label>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {LEAVE_TYPE_CONFIG[selectedRequest.leaveType].label}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Status</Label>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {(STATUS_CONFIG[selectedRequest.status] || STATUS_CONFIG.PENDING).label}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">Start Date (first day off)</Label>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {formatApiDate(selectedRequest.startDate)}
-                </p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground">End Date (last day off)</Label>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {formatApiDate(selectedRequest.endDate)}
-                </p>
-              </div>
-            </div>
-
-              <div>
-                <Label className="text-muted-foreground">Expected Return Date</Label>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {getReturnDateLabel(selectedRequest.startDate, selectedRequest.endDate, selectedRequest.isHalfDay)}
-                </p>
-              </div>
-
-              <div>
-                <Label className="text-muted-foreground">Duration</Label>
-                <p className="text-sm font-medium text-foreground mt-1">
-                  {getDurationLabel(getDaysCount(selectedRequest.startDate, selectedRequest.endDate, selectedRequest.isHalfDay))}
-                </p>
-              </div>
-
-              {selectedRequest.isHalfDay && (
-                <div>
-                  <Label className="text-muted-foreground">Half-Day Details</Label>
-                  <p className="text-sm text-foreground mt-1">
-                    {getHalfDaySessionLabel(selectedRequest.halfDaySession)} - {getHalfDayWindowLabel(selectedRequest.unavailableStartTime, selectedRequest.unavailableEndTime)}
-                  </p>
-                </div>
-              )}
-
-            <div>
-              <Label className="text-muted-foreground">Reason</Label>
-              <p className="text-sm text-foreground mt-1 whitespace-pre-wrap">
-                {selectedRequest.reason || 'No reason provided'}
-              </p>
-            </div>
-
-            <div>
-              <Label className="text-muted-foreground">Transition Plan</Label>
-              {(() => {
-                const submitted = Boolean(selectedRequest.transitionPlanSubmittedAt)
-                const disapproved = selectedRequest.transitionPlanLeadStatus === 'DISAPPROVED'
-                const closed = selectedRequest.status === 'REJECTED' || selectedRequest.status === 'CANCELLED'
-                const editable = !closed && isLeaveNotStarted(selectedRequest.startDate) && (!submitted || disapproved)
-
-                if (editable) {
-                  return (
-                    <div className="mt-2 space-y-3">
-                      {disapproved && selectedRequest.transitionPlanDisapprovalReason?.trim() && (
-                        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                          <span className="font-medium">Team Lead asked for changes:</span>{' '}
-                          {selectedRequest.transitionPlanDisapprovalReason}
-                        </div>
-                      )}
-                      <TransitionPlanTable tasks={detailTasks} onChange={setDetailTasks} />
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={savePlanDraft}
-                          disabled={planSavingDraft || planSubmitting}
-                        >
-                          {planSavingDraft ? 'Saving...' : 'Save draft'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={submitPlan}
-                          disabled={planSubmitting || !canSubmitTransitionPlan(detailTasks)}
-                        >
-                          {planSubmitting
-                            ? 'Submitting...'
-                            : submitted
-                              ? 'Resubmit plan'
-                              : 'Submit transition plan'}
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                }
-
-                return (
-                  <div className="mt-2">
-                    <TransitionPlanView
-                      tasks={coerceTasks(selectedRequest.transitionPlanTasks)}
-                      submittedAt={selectedRequest.transitionPlanSubmittedAt}
-                      leadStatus={selectedRequest.transitionPlanLeadStatus}
-                      disapprovalReason={selectedRequest.transitionPlanDisapprovalReason}
-                      generalNotes={selectedRequest.transitionPlan}
-                    />
-                  </div>
-                )
-              })()}
-            </div>
-
-            <div>
-              <Label className="text-muted-foreground">Cover People</Label>
-              <p className="text-sm text-foreground mt-1">
-                {getRequestCoverPeople(selectedRequest).map((coverPerson) => coverPerson.name).join(', ') || 'None selected'}
-              </p>
-            </div>
-
-            {Array.isArray(selectedRequest.additionalNotifyIds) && selectedRequest.additionalNotifyIds.length > 0 && (
-              <div>
-                <Label className="text-muted-foreground">Additional Notifications</Label>
-                <p className="text-sm text-foreground mt-1">
-                  {users
-                    .filter((u) => selectedRequest.additionalNotifyIds?.includes(u.id))
-                    .map((u) => u.name)
-                    .join(', ') || 'None'}
-                </p>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-3 pt-2">
-              {editableStatuses.has(selectedRequest.status) && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsDetailsModalOpen(false)
-                    openEditModal(selectedRequest)
-                  }}
-                >
-                  Edit Request
-                </Button>
-              )}
-              {canCancelRequest(selectedRequest) && (
-                <Button
-                  variant="outline"
-                  className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900/40 dark:hover:bg-red-500/10"
-                  onClick={async () => {
-                    setIsDetailsModalOpen(false)
-                    await handleCancel(selectedRequest.id)
-                  }}
-                >
-                  Cancel Request
-                </Button>
-              )}
-              <Button onClick={() => setIsDetailsModalOpen(false)}>Close</Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        isOpen={isEditModalOpen}
-        onClose={() => {
-          setIsEditModalOpen(false)
-          setSelectedRequest(null)
-        }}
-        title="Edit Leave Request"
-        size="lg"
-      >
-        <form onSubmit={handleUpdateRequest} className="space-y-4">
-          <div>
-            <Label className="mb-2">Leave Type</Label>
-            <Select
-              value={editFormData.leaveType}
-              onValueChange={(value: 'CASUAL' | 'SICK' | 'ANNUAL') =>
-                setEditFormData((prev) => ({
-                  ...prev,
-                  leaveType: value,
-                  ...(value === 'ANNUAL'
-                    ? {
-                        isHalfDay: false,
-                        halfDaySession: '',
-                        unavailableStartTime: '',
-                        unavailableEndTime: '',
-                      }
-                    : {}),
-                }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="CASUAL">Casual</SelectItem>
-                <SelectItem value="SICK">Sick</SelectItem>
-                <SelectItem value="ANNUAL">Annual</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="rounded-lg border border-border p-3 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <Label className="mb-1">Half-Day Leave</Label>
-                <p className="text-xs text-muted-foreground">
-                  Available for Casual and Sick only. Half-day leave counts as 0.5 day.
-                </p>
-              </div>
-              <Checkbox
-                checked={editFormData.isHalfDay}
-                disabled={!isHalfDayEligibleLeaveType(editFormData.leaveType)}
-                onCheckedChange={(checked) => {
-                  const nextChecked = checked === true
-                  setEditFormData((prev) => ({
-                    ...prev,
-                    isHalfDay: nextChecked,
-                    endDate: nextChecked && prev.startDate ? prev.startDate : prev.endDate,
-                    halfDaySession: nextChecked ? prev.halfDaySession : '',
-                    unavailableStartTime: nextChecked ? prev.unavailableStartTime : '',
-                    unavailableEndTime: nextChecked ? prev.unavailableEndTime : '',
-                  }))
-                }}
-              />
-            </div>
-
-            {editFormData.isHalfDay && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <Label className="mb-2">Session</Label>
-                  <Select
-                    value={editFormData.halfDaySession}
-                    onValueChange={(value: 'FIRST_HALF' | 'SECOND_HALF') =>
-                      setEditFormData((prev) => ({
-                        ...prev,
-                        halfDaySession: value,
-                        unavailableStartTime:
-                          prev.unavailableStartTime ||
-                          (value === 'FIRST_HALF' ? '09:00' : '14:00'),
-                        unavailableEndTime:
-                          prev.unavailableEndTime ||
-                          (value === 'FIRST_HALF' ? '13:00' : '18:00'),
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select session" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {HALF_DAY_SESSION_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="edit-unavailable-start-time" className="mb-2">Unavailable From</Label>
-                  <Input
-                    id="edit-unavailable-start-time"
-                    type="time"
-                    required={editFormData.isHalfDay}
-                    value={editFormData.unavailableStartTime}
-                    onChange={(e) =>
-                      setEditFormData((prev) => ({ ...prev, unavailableStartTime: e.target.value }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="edit-unavailable-end-time" className="mb-2">Unavailable To</Label>
-                  <Input
-                    id="edit-unavailable-end-time"
-                    type="time"
-                    required={editFormData.isHalfDay}
-                    value={editFormData.unavailableEndTime}
-                    onChange={(e) =>
-                      setEditFormData((prev) => ({ ...prev, unavailableEndTime: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="edit-start-date" className="mb-2">Start Date (first day off)</Label>
-              <Input
-                id="edit-start-date"
-                type="date"
-                required
-                value={editFormData.startDate}
-                onChange={(e) =>
-                  setEditFormData((prev) => ({
-                    ...prev,
-                    startDate: e.target.value,
-                    ...(prev.isHalfDay ? { endDate: e.target.value } : {}),
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-end-date" className="mb-2">End Date (last day off)</Label>
-              <Input
-                id="edit-end-date"
-                type="date"
-                required
-                min={editFormData.startDate}
-                value={editFormData.isHalfDay ? editFormData.startDate : editFormData.endDate}
-                disabled={editFormData.isHalfDay}
-                onChange={(e) => setEditFormData((prev) => ({ ...prev, endDate: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          {(editFormData.endDate || (editFormData.isHalfDay && editFormData.startDate)) && (
-            <p className="text-xs text-muted-foreground -mt-2">
-              Expected return date: {getReturnDateLabel(editFormData.startDate, editFormData.endDate || editFormData.startDate, editFormData.isHalfDay)}
-            </p>
-          )}
-
-          <div>
-            <Label htmlFor="edit-reason" className="mb-2">Reason</Label>
-            <Textarea
-              id="edit-reason"
-              required
-              rows={2}
-              value={editFormData.reason}
-              onChange={(e) => setEditFormData((prev) => ({ ...prev, reason: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="edit-transition-plan" className="mb-1">
-              General handover notes
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              The structured transition plan is managed from the request details.
-            </p>
-            <Textarea
-              id="edit-transition-plan"
-              rows={3}
-              value={editFormData.transitionPlan}
-              onChange={(e) => setEditFormData((prev) => ({ ...prev, transitionPlan: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <Label className="mb-2">
-              Cover People
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <p className="text-xs text-muted-foreground mb-2">
-              Selected cover teammates will be notified by email.
-            </p>
-            <MemberMultiSelect
-              members={availableNotifyUsers}
-              selectedIds={editFormData.coverPersonIds}
-              onChange={(ids) => setEditFormData((prev) => ({ ...prev, coverPersonIds: ids }))}
-              placeholder="Search cover teammates by name or department..."
-              emptyPoolText="No other team members"
-            />
-          </div>
-
-          <div>
-            <Label className="mb-2">
-              Notify additional team members
-              <span className="text-muted-foreground font-normal ml-1">(optional)</span>
-            </Label>
-            <MemberMultiSelect
-              members={availableNotifyUsers}
-              selectedIds={editFormData.additionalNotifyIds}
-              onChange={(ids) => setEditFormData((prev) => ({ ...prev, additionalNotifyIds: ids }))}
-              placeholder="Search by name or department..."
-              emptyPoolText="No other team members"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setIsEditModalOpen(false)
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={updating}>
-              {updating ? 'Updating...' : 'Save Changes'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-36 rounded-card" />
+      ))}
     </div>
   )
 }
 
+export default function LeavePage() {
+  const user = useLayoutUser()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const { openRequest, requestId } = parseTimeOffParams(searchParams)
+  const data = useTimeOffData(true)
+  const { loading, snapshot, reload, reloadCalendar, calendar } = data
+
+  const [departmentFilter, setDepartmentFilter] = useState('ALL')
+  const [panel, setPanel] = useState<PanelState>(CLOSED)
+  const [pendingPanel, setPendingPanel] = useState<PanelState | null>(null)
+  const panelDirtyRef = useRef(false)
+  const [detailsId, setDetailsId] = useState<string | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<LeaveRequest | null>(null)
+  const [wfhOpen, setWfhOpen] = useState(false)
+  const [highlightedId, setHighlightedId] = useState('')
+  const handledDeepLinkRef = useRef('')
+  const handledOpenRef = useRef(false)
+  const reminderShownRef = useRef(false)
+
+  const viewerDepartment = user?.department ?? null
+  const isThreeE = isThreeEDepartment(user?.department)
+  const balanceYear = new Date().getFullYear()
+  const reminders = planReminderRequests(snapshot.requests, viewerDepartment)
+
+  // The details dialog always shows the latest copy of its request, and closes if it is gone.
+  const detailsRequest = detailsId ? snapshot.requests.find((r) => r.id === detailsId) ?? null : null
+  if (detailsId && !loading && !detailsRequest) setDetailsId(null)
+
+  const reloadAll = useCallback(async () => {
+    await Promise.all([reload(), reloadCalendar()])
+  }, [reload, reloadCalendar])
+
+  // Switching the open panel to another request (or to a new one) asks before discarding a filled form.
+  const requestPanel = (next: PanelState) => {
+    const current = { open: panel.open, modeKey: panelModeKey(panel.mode), dirty: panelDirtyRef.current }
+    const action = panelSwitchAction(current, panelModeKey(next.mode))
+    if (action === 'open') setPanel(next)
+    else if (action === 'confirm') setPendingPanel(next)
+  }
+  const requestPanelRef = useRef(requestPanel)
+  requestPanelRef.current = requestPanel
+  const openCreate = () => requestPanel({ open: true, mode: CREATE, range: null })
+  const closePanel = () => setPanel(CLOSED)
+  const onRangeCommit = (range: Range) =>
+    setPanel((p) => (p.open ? { ...p, range } : { open: true, mode: CREATE, range }))
+  const onSaved = () => {
+    closePanel()
+    void reloadAll()
+  }
+  const openEdit = (r: LeaveRequest) => {
+    setDetailsId(null)
+    requestPanel({ open: true, mode: { kind: 'edit', request: r }, range: null })
+  }
+  const askCancel = (r: LeaveRequest) => {
+    setDetailsId(null)
+    setCancelTarget(r)
+  }
+  const confirmCancel = async (r: LeaveRequest) => {
+    const res = await cancelLeave(r.id)
+    if (!res.ok) {
+      toast.error(res.error)
+      return
+    }
+    toast.success('Request cancelled')
+    // A cancelled request can no longer be edited.
+    setPanel((p) => (p.open && p.mode.kind === 'edit' && p.mode.request.id === r.id ? CLOSED : p))
+    await reloadAll()
+  }
+
+  useEffect(() => {
+    if (reminders.length > 0 && !reminderShownRef.current) {
+      reminderShownRef.current = true
+      toast.warning(REMINDER_TOAST)
+    }
+  }, [reminders.length])
+
+  useScrollToHash('my-requests', !loading)
+  // Deep links: `requestId` once per id, then `request=1` (dropped from the URL once handled).
+  useEffect(() => {
+    if (!openRequest) handledOpenRef.current = false
+    if (loading) return
+    if (requestId && handledDeepLinkRef.current !== requestId) {
+      handledDeepLinkRef.current = requestId
+      setHighlightedId('')
+      const target = deepLinkTarget(requestId, snapshot.approvals, snapshot.requests)
+      if (target === 'approval') setHighlightedId(requestId)
+      else if (target === 'own') setDetailsId(requestId)
+      else toast.info(DEEP_LINK_UNAVAILABLE)
+    }
+    if (openRequest && !handledOpenRef.current) {
+      handledOpenRef.current = true
+      if (!requestId) requestPanelRef.current({ open: true, mode: CREATE, range: null })
+      const next = new URLSearchParams(searchParams.toString())
+      next.delete('request')
+      const query = next.toString()
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
+    }
+  }, [loading, requestId, openRequest, snapshot.approvals, snapshot.requests, searchParams, pathname, router])
+
+  const actions = (
+    <>
+      {isThreeE && (
+        <Button variant="outline" disabled={loading} onClick={() => setWfhOpen(true)}>
+          <Home className="h-4 w-4" aria-hidden="true" />
+          Request WFH
+        </Button>
+      )}
+      <Button disabled={loading} onClick={openCreate}>
+        <Plus className="h-4 w-4" aria-hidden="true" />
+        Request leave
+      </Button>
+    </>
+  )
+
+  return (
+    <PageContainer>
+      <PageHeader
+        dateLine={formatDate(localDayKey(new Date()))}
+        title="Time off"
+        subtitle={isThreeE ? SUBTITLE_3E : SUBTITLE}
+        actions={actions}
+      />
+
+      {reminders.length > 0 && <PlanReminder count={reminders.length} onAdd={() => setDetailsId(reminders[0].id)} />}
+
+      {loading ? (
+        <BalanceSkeleton />
+      ) : (
+        snapshot.balance && (
+          <BalanceCards
+            cards={buildBalanceCards(snapshot.balance, snapshot.requests, balanceYear)}
+            next={nextLeave(snapshot.requests)}
+            onOpenRequest={setDetailsId}
+          />
+        )
+      )}
+
+      {/* No transform or z-index here: below lg the panel is a fixed z-50 layer above the z-40 top bar. */}
+      <div className={`mt-8 grid gap-6 ${panel.open ? 'lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start' : ''}`}>
+        <div className="min-w-0 space-y-2">
+          {/* Range selection opens the panel, which needs the balance and directory: wait for them. */}
+          {loading ? (
+            <Skeleton className="h-[36rem] rounded-xl" aria-hidden="true" />
+          ) : (
+            <TeamCalendar
+              year={calendar.year}
+              month={calendar.month}
+              onMonthChange={data.setMonth}
+              events={calendar.events}
+              holidays={calendar.holidays}
+              birthdays={calendar.birthdays}
+              users={snapshot.users}
+              viewerDepartment={viewerDepartment}
+              departmentFilter={departmentFilter}
+              onDepartmentFilterChange={setDepartmentFilter}
+              selection={panel.open ? panel.range : null}
+              onRangeCommit={onRangeCommit}
+              panelOpen={panel.open}
+            />
+          )}
+          {data.calendarError && <p className="text-sm text-muted-foreground">{CALENDAR_ERROR}</p>}
+        </div>
+        <RequestPanel
+          open={panel.open}
+          mode={panel.mode}
+          initialRange={panel.range}
+          balance={snapshot.balance}
+          balanceYear={balanceYear}
+          viewerDepartment={viewerDepartment}
+          viewerId={user?.id ?? ''}
+          users={snapshot.users}
+          holidayKeysFor={data.holidayKeysFor}
+          onClose={closePanel}
+          onSaved={onSaved}
+          onDirtyChange={(dirty) => { panelDirtyRef.current = dirty }}
+        />
+      </div>
+
+      {loading ? (
+        <div className="mt-8 grid gap-6 lg:grid-cols-2" aria-hidden="true">
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
+        </div>
+      ) : (
+        <>
+          <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
+            <MyRequests requests={snapshot.requests} onView={(r) => setDetailsId(r.id)} onEdit={openEdit} onCancel={askCancel} />
+            <ApprovalQueue requests={snapshot.approvals} highlightedId={highlightedId} onChanged={reloadAll} />
+            <OutTodayCard outToday={data.outToday} viewerId={user?.id ?? ''} />
+          </div>
+          <div className="mt-6">
+            <WfhSection
+              isThreeE={isThreeE}
+              requests={snapshot.wfhRequests}
+              approvals={snapshot.wfhApprovals}
+              onRequest={() => setWfhOpen(true)}
+              onChanged={reload}
+            />
+          </div>
+        </>
+      )}
+
+      <RequestDetailsDialog
+        request={detailsRequest}
+        users={snapshot.users}
+        onClose={() => setDetailsId(null)}
+        onEdit={openEdit}
+        onCancel={askCancel}
+        onChanged={() => void reload()}
+      />
+      <ConfirmDialog
+        isOpen={cancelTarget !== null}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={() => {
+          if (cancelTarget) void confirmCancel(cancelTarget)
+        }}
+        title="Cancel this leave request?"
+        message="Any days already taken from your balance go back, and the leave comes off the calendar."
+        confirmText="Cancel request"
+        cancelText="Keep it"
+        variant="danger"
+      />
+      <ConfirmDialog
+        isOpen={pendingPanel !== null}
+        onClose={() => setPendingPanel(null)}
+        onConfirm={() => { if (pendingPanel) setPanel(pendingPanel) }}
+        title="Discard this request?"
+        message={panel.mode.kind === 'edit' ? 'Your changes to this request will be lost.' : 'The dates and details you entered will be lost.'}
+        confirmText="Discard"
+        cancelText="Keep editing"
+        variant="danger"
+      />
+      <WfhRequestDialog open={wfhOpen} onClose={() => setWfhOpen(false)} onSubmitted={reload} />
+    </PageContainer>
+  )
+}

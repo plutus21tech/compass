@@ -1,4 +1,5 @@
 import { projectTaskCalendarDayKey } from '@/lib/project-progress'
+import { formatDate, formatDateRange } from '@/lib/format-date'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -151,7 +152,6 @@ export function validateSprintCompletionPlan(input: {
 
 /* Client display helpers. Sprint dates travel as YYYY-MM-DD strings. */
 
-const SPRINT_DAY_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 
 /** Today's calendar day in the project timezone, as YYYY-MM-DD. */
 export function todaySprintDate(now = new Date()) {
@@ -172,12 +172,14 @@ export function sprintDaysLeft(endDate: Date | string, now = new Date()) {
   return Math.round((sprintDateKey(endDate) - sprintDateKey(todaySprintDate(now))) / DAY_MS)
 }
 
-export function formatSprintDay(value: Date | string) {
-  return SPRINT_DAY_FORMAT.format(new Date(sprintDateKey(value)))
+/** "Mon 5 Oct", with the year when it isn't the current one. */
+export function formatSprintDay(value: Date | string, now: Date = new Date()) {
+  return formatDate(new Date(sprintDateKey(value)), { now })
 }
 
-export function formatSprintRange(sprint: SprintDates) {
-  return `${formatSprintDay(sprint.startDate)} – ${formatSprintDay(sprint.endDate)}`
+/** "Mon 5 – Sun 18 Oct", "Mon 26 Oct – Sun 8 Nov". */
+export function formatSprintRange(sprint: SprintDates, now: Date = new Date()) {
+  return formatDateRange(new Date(sprintDateKey(sprint.startDate)), new Date(sprintDateKey(sprint.endDate)), { now })
 }
 
 /** Where unfinished work goes by default when a sprint is completed: the current sprint, else the next upcoming one. */

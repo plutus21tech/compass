@@ -28,31 +28,27 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import Papa from 'papaparse'
-import { Users, Plus, Search, Upload, Edit2, Trash2, UserCheck, Shield, Key, Eye, EyeOff, RotateCcw, XCircle } from 'lucide-react'
+import { Users, Plus, Search, Upload, Edit2, Trash2, UserCheck, Shield, Key, Eye, EyeOff, RotateCcw, XCircle, Tags } from 'lucide-react'
+import { TeamTagsManager } from '@/components/admin/team-tags/TeamTagsManager'
+import { pickerTeams, teamLabel } from '@/lib/teams/catalog'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
+import { prefillFromTeamTag, type PersonAttributes } from '@/lib/academy/attributes'
+import { applyPrefill } from '@/lib/academy/profile-input'
+import { parseNewUserOnboarding } from '@/lib/academy/new-user-onboarding'
+import { AttributeFields } from './_components/AttributeFields'
 
 const MotionTableRow = motion(TableRow)
 
-type TeamTagValue =
-  | 'PAKISTAN'
-  | 'MOROCCO'
-  | 'COLOMBIA'
-  | 'INDONESIA'
-  | 'ECUADOR'
-  | 'NOBLE'
-  | 'THREE_E_PAKISTAN'
-  | 'THREE_E_MOROCCO'
+const EMPTY_ATTRIBUTES: PersonAttributes = {
+  officeLocation: null,
+  remoteCountry: null,
+  workMode: null,
+  contractType: null,
+  employmentStatus: null,
+}
 
-/** Drives which Handbook content a person sees. Exactly one per user. */
-const TEAM_TAG_OPTIONS: { value: TeamTagValue; label: string }[] = [
-  { value: 'PAKISTAN', label: 'Pakistan Team' },
-  { value: 'MOROCCO', label: 'Morocco Team' },
-  { value: 'COLOMBIA', label: 'Colombia Team' },
-  { value: 'INDONESIA', label: 'Indonesia Team' },
-  { value: 'ECUADOR', label: 'Ecuador Team' },
-  { value: 'NOBLE', label: 'Noble Team' },
-  { value: 'THREE_E_PAKISTAN', label: '3E Pakistan Team' },
-  { value: 'THREE_E_MOROCCO', label: '3E Morocco Team' },
-]
+/** A TeamTagDefinition code. HR manages the list via "Team tags" on this page. */
+type TeamTagValue = string
 
 interface User {
   id: string
@@ -79,6 +75,8 @@ interface User {
     status: 'PENDING' | 'ONBOARDING' | 'COMPLETED'
   } | null
   createdAt: string
+  attributes?: PersonAttributes
+  missingAttributes?: Array<keyof PersonAttributes>
   payrollProfile?: {
     id: string
     officialEmail: string | null
@@ -152,10 +150,14 @@ interface AvailableNewHire {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([])
+  const { catalog: teamCatalog, reload: reloadTeamCatalog } = useTeamCatalog()
+  const [isTeamTagsOpen, setIsTeamTagsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterRole, setFilterRole] = useState<string>('')
   const [filterDepartment, setFilterDepartment] = useState<string>('')
+  const [filterMissing, setFilterMissing] = useState(false)
+  const [attributeForm, setAttributeForm] = useState<PersonAttributes>(EMPTY_ATTRIBUTES)
   
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
@@ -180,6 +182,7 @@ export default function UsersPage() {
     teamTag: '',
     isNewHire: false,
     newHireId: '',
+    joiningDate: '',
   })
   const [payrollMeta, setPayrollMeta] = useState<PayrollMeta>({
     departments: [],
@@ -240,6 +243,12 @@ export default function UsersPage() {
   }
 
   const handleOpenModal = (user?: User) => {
+    // Suggestions fill empty fields only; nothing is saved until HR saves the dialog.
+    setAttributeForm(
+      user
+        ? applyPrefill(user.attributes ?? EMPTY_ATTRIBUTES, prefillFromTeamTag(user.teamTag))
+        : EMPTY_ATTRIBUTES,
+    )
     if (user) {
       setSelectedUser(user)
       setFormData({
@@ -253,6 +262,7 @@ export default function UsersPage() {
         teamTag: user.teamTag || '',
         isNewHire: false,
         newHireId: user.newHireRecord?.id || '',
+        joiningDate: '',
       })
       setPayrollForm({
         payrollDepartmentId: user.payrollProfile?.departmentId || '',
@@ -283,6 +293,7 @@ export default function UsersPage() {
         teamTag: '',
         isNewHire: false,
         newHireId: '',
+        joiningDate: '',
       })
       setPayrollForm({
         payrollDepartmentId: '',
@@ -348,11 +359,17 @@ export default function UsersPage() {
     setSalaryLineDrafts((prev) => prev.filter((_, i) => i !== index))
   }
 
+  // Ticked with no record picked: Compass creates the hire record, so the form carries what the course needs.
+  const startsNewOnboarding = !selectedUser && formData.isNewHire && !formData.newHireId
+  const onboardingCheck = startsNewOnboarding
+    ? parseNewUserOnboarding({ joiningDate: formData.joiningDate, ...attributeForm })
+    : null
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name.trim()) { toast.error('Name is required'); return }
-    if (!selectedUser && formData.isNewHire && !formData.newHireId) {
-      toast.error('Please select a new hire record')
+    if (startsNewOnboarding && onboardingCheck && !onboardingCheck.ok) {
+      toast.error(onboardingCheck.error)
       return
     }
     if (!selectedUser && formData.isNewHire && !formData.email.trim()) {
@@ -404,6 +421,7 @@ export default function UsersPage() {
             role: formData.role,
             benefitCategoryId: formData.benefitCategoryId || null,
             teamTag: formData.teamTag || null,
+            ...attributeForm,
             payrollProfile,
           }
         : {
@@ -417,12 +435,20 @@ export default function UsersPage() {
             teamTag: formData.teamTag || null,
             isNewHire: formData.isNewHire,
             newHireId: formData.isNewHire ? formData.newHireId || null : null,
+            ...(startsNewOnboarding ? { joiningDate: formData.joiningDate, ...attributeForm } : {}),
             payrollProfile,
           }
       const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
-      if (data.error) { toast.error(data.error) } 
-      else { toast.success(selectedUser ? 'User updated' : 'User created'); setIsModalOpen(false); loadUsers() }
+      if (data.error) { toast.error(data.error) }
+      else {
+        if (selectedUser) toast.success('User updated')
+        else if (data.onboarding?.released) toast.success("User created. They'll start the Onboarding Academy when they first sign in.")
+        else if (data.onboarding) toast.warning(`User created, but the course isn't released yet: ${data.onboarding.reason}`)
+        else toast.success('User created')
+        setIsModalOpen(false)
+        loadUsers()
+      }
     } catch (error) { toast.error('Failed to save user') }
     finally { setSaving(false) }
   }
@@ -570,8 +596,11 @@ export default function UsersPage() {
       u.discordId?.toLowerCase().includes(searchTerm.toLowerCase())
     const matchRole = !filterRole || u.role === filterRole
     const matchDept = !filterDepartment || u.department === filterDepartment
-    return matchSearch && matchRole && matchDept
+    const matchMissing = !filterMissing || (u.missingAttributes?.length ?? 0) > 0
+    return matchSearch && matchRole && matchDept && matchMissing
   })
+  const missingCount = users.filter((u) => (u.missingAttributes?.length ?? 0) > 0).length
+
 
   if (loading) {
     return (
@@ -588,7 +617,10 @@ export default function UsersPage() {
             <h1 className="text-2xl font-bold text-foreground font-display">User Management</h1>
             <p className="text-muted-foreground mt-1">{users.length} users total</p>
           </div>
-          <div className="flex gap-3 mt-4 md:mt-0">
+          <div className="flex flex-wrap gap-3 mt-4 md:mt-0">
+            <Button variant="outline" onClick={() => setIsTeamTagsOpen(true)}>
+              <Tags className="w-4 h-4" /> Team tags
+            </Button>
             <Button variant="outline" onClick={() => setIsImportModalOpen(true)}>
               <Upload className="w-4 h-4" /> Import CSV
             </Button>
@@ -635,6 +667,15 @@ export default function UsersPage() {
                     {departments.map(d => <SelectItem key={d} value={d!}>{d}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                <Button
+                  type="button"
+                  variant={filterMissing ? 'default' : 'outline'}
+                  size="sm"
+                  aria-pressed={filterMissing}
+                  onClick={() => setFilterMissing((on) => !on)}
+                >
+                  Missing attributes ({missingCount})
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -759,6 +800,12 @@ export default function UsersPage() {
         </motion.div>
 
       {/* Add/Edit Modal */}
+      <TeamTagsManager
+        isOpen={isTeamTagsOpen}
+        onClose={() => setIsTeamTagsOpen(false)}
+        onChanged={() => void reloadTeamCatalog()}
+      />
+
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedUser ? 'Edit User' : 'Add User'}>
         <form onSubmit={handleSubmit} className="space-y-4 max-h-[72vh] overflow-y-auto pr-1">
           <div>
@@ -816,9 +863,11 @@ export default function UsersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">Not set</SelectItem>
-                {TEAM_TAG_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
+                {/* Archived tags are not offered, except the one this person already has. */}
+                {pickerTeams(teamCatalog, formData.teamTag ? [formData.teamTag] : []).map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {teamLabel(teamCatalog, code)}
+                    {!teamCatalog.active.includes(code) && ' (archived)'}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -827,6 +876,10 @@ export default function UsersPage() {
               Controls which Handbook content this person sees.
             </p>
           </div>
+
+          {selectedUser && (
+            <AttributeFields value={attributeForm} onChange={setAttributeForm} />
+          )}
 
           <div>
             <Label className="mb-1">Benefit Category</Label>
@@ -854,7 +907,7 @@ export default function UsersPage() {
                 <div>
                   <p className="text-sm font-medium text-foreground">New hire (requires onboarding)</p>
                   <p className="text-xs text-muted-foreground">
-                    Locks the user to onboarding until quiz pass
+                    They&apos;ll start the Onboarding Academy when they first sign in.
                   </p>
                 </div>
                 <Switch
@@ -871,7 +924,7 @@ export default function UsersPage() {
 
               {formData.isNewHire && (
                 <div>
-                  <Label className="mb-1">Linked New Hire Record *</Label>
+                  <Label className="mb-1">Link an existing new-hire record (optional)</Label>
                   <Select
                     value={formData.newHireId || '__none__'}
                     onValueChange={handleSelectNewHire}
@@ -880,7 +933,7 @@ export default function UsersPage() {
                       <SelectValue placeholder="Select new hire record" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__">Select...</SelectItem>
+                      <SelectItem value="__none__">None: create one for them</SelectItem>
                       {availableNewHires.map((hire) => (
                         <SelectItem key={hire.id} value={hire.id}>
                           {hire.name} - {hire.email}
@@ -888,6 +941,28 @@ export default function UsersPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {startsNewOnboarding && (
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="new-hire-joining-date" className="mb-1">Joining date *</Label>
+                    <Input
+                      id="new-hire-joining-date"
+                      type="date"
+                      value={formData.joiningDate}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, joiningDate: e.target.value }))}
+                    />
+                  </div>
+                  <AttributeFields value={attributeForm} onChange={setAttributeForm} />
+                  <p className="text-xs text-muted-foreground">
+                    These decide which modules they see. Buddy, calls, team and core hours are optional; add them later on
+                    their new-hire page.
+                  </p>
+                  {onboardingCheck && !onboardingCheck.ok && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400" role="status">{onboardingCheck.error}</p>
+                  )}
                 </div>
               )}
             </div>

@@ -9,6 +9,7 @@ import {
   NOTICE_LEAD_DAYS,
 } from '@/lib/leave-transition-plan'
 import { autoCancelLeaveForMissingTransitionPlan } from '@/lib/leave-auto-cancel'
+import { notifyLeave } from '@/lib/notifications/leave'
 import {
   sendTransitionPlanReminderNotification,
   sendTransitionPlanEscalation,
@@ -267,6 +268,8 @@ export async function runTransitionPlanReminders(
 
   for (const requestId of toRemind) {
     const outcome = await sendTransitionPlanReminderNotification(requestId)
+    // The bell row goes out whatever happened to the email (dedupe keys stop repeats).
+    await notifyLeave(requestId, 'PLAN_REMINDER', { dedupeKey: `plan-reminder:${requestId}:${today.toISOString().slice(0, 10)}` })
     if (outcome.success) {
       result.reminded += 1
     } else if ('error' in outcome && outcome.error) {
@@ -288,6 +291,7 @@ export async function runTransitionPlanReminders(
 
   for (const { id, deadline } of toNotice) {
     const outcome = await sendTransitionPlanDeadlineNotice(id, deadline)
+    await notifyLeave(id, 'PLAN_DEADLINE_NOTICE', { deadline, dedupeKey: `plan-notice:${id}` })
     if (outcome.success) {
       result.noticed += 1
     } else if ('error' in outcome && outcome.error) {
@@ -298,6 +302,7 @@ export async function runTransitionPlanReminders(
 
   for (const { id, deadline } of toWarn) {
     const outcome = await sendTransitionPlanFinalWarning(id, deadline)
+    await notifyLeave(id, 'PLAN_FINAL_WARNING', { deadline, dedupeKey: `plan-final-warning:${id}` })
     if (outcome.success) {
       result.warned += 1
     } else if ('error' in outcome && outcome.error) {

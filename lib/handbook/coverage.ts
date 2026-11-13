@@ -1,5 +1,5 @@
-import type { HandbookCategory, TeamTag } from '@prisma/client'
-import { ALL_TEAMS, INTERNAL_TEAMS, type AudienceGroup } from './teams'
+import type { HandbookCategory } from '@prisma/client'
+import type { AudienceGroup, TeamCatalog, TeamTag } from '@/lib/teams/catalog'
 import type { PageInput } from './audience'
 
 /**
@@ -37,15 +37,21 @@ export type CoverageSummary = {
  * One cell per page x team. Three states, not two: without separating a
  * decision from an omission, permanently-intentional gaps would flag forever
  * and real omissions would hide in the noise.
+ *
+ * `teams` are the columns -- the catalog's active tags. An archived team is no
+ * longer something HR needs to write content for, so it would only add noise.
  */
-export function computeCoverage(pages: AdminPageInput[]): CoverageRow[] {
+export function computeCoverage(
+  pages: AdminPageInput[],
+  teams: readonly TeamTag[]
+): CoverageRow[] {
   return pages.map((page) => ({
     pageId: page.id,
     slug: page.slug,
     title: page.title,
     category: page.category,
     isPublished: page.isPublished,
-    cells: ALL_TEAMS.map((team): CoverageCell => {
+    cells: teams.map((team): CoverageCell => {
       const variant = page.variants.find((v) => v.audiences.includes(team))
       if (variant) {
         // Coverage beats the annotation: if a variant addresses this team, the
@@ -77,12 +83,19 @@ export function summarizeCoverage(rows: CoverageRow[]): CoverageSummary {
  * its audience state as string[], and a narrower signature here would force a
  * cast at every call site to buy nothing.
  */
-export function matchGroup(teams: readonly string[]): AudienceGroup | null {
-  const set = new Set(teams)
-  if (set.size === ALL_TEAMS.length && ALL_TEAMS.every((t) => set.has(t))) {
-    return 'EVERYONE'
-  }
-  if (set.size === INTERNAL_TEAMS.length && INTERNAL_TEAMS.every((t) => set.has(t))) {
+export function matchGroup(
+  teams: readonly string[],
+  catalog: Pick<TeamCatalog, 'active' | 'internal'>
+): AudienceGroup | null {
+  // Compared against active tags only: whether an archived tag is still on the
+  // variant should not change what HR is told the audience is.
+  const set = new Set(teams.filter((t) => catalog.active.includes(t)))
+  const covers = (group: readonly string[]) =>
+    set.size === group.length && group.every((t) => set.has(t))
+
+  if (set.size === 0) return null
+  if (covers(catalog.active)) return 'EVERYONE'
+  if (covers(catalog.internal.filter((t) => catalog.active.includes(t)))) {
     return 'PLUTUS21_INTERNAL'
   }
   return null

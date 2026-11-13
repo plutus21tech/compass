@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { canManageOnboarding } from '@/lib/permissions'
 import { sendTeamLeadFormSubmittedNotification } from '@/lib/email'
+import { buildLeadDraftData, buildLeadSubmitData } from '@/lib/academy/setup'
 
 interface RouteContext {
   params: Promise<{ newHireId: string }>
@@ -74,6 +75,10 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const body = await request.json()
     const submit = body.submit === true
 
+    const result = submit ? buildLeadSubmitData(record.teamLeadForm, body) : buildLeadDraftData(body)
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 })
+    const leadInputData = result.data
+
     const updated = await prisma.teamLeadForm.update({
       where: { newHireId },
       data: {
@@ -83,6 +88,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         ...(typeof body.earlyKpis === 'string' ? { earlyKpis: body.earlyKpis.trim() || null } : {}),
         ...(typeof body.availableOnDate === 'string' ? { availableOnDate: body.availableOnDate.trim() || null } : {}),
         ...(typeof body.resources === 'string' ? { resources: body.resources.trim() || null } : {}),
+        ...leadInputData,
         ...(submit ? { submittedAt: new Date() } : {}),
       },
     })

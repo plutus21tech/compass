@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { formatKarachiDate } from '@/lib/weekly/format'
 import type { FormStatusValue, FormSummaryView, FormsResponse } from '@/lib/weekly/view-types'
 import { errorMessage, weeklyRequest } from '../weekly-api'
+import { TablesPanel } from '../form-tables/QuarterEvaluationsWorkspace'
 import { FORM_LABELS, FormEditor } from './FormEditor'
 
 const STATUS_LABELS: Record<FormStatusValue, string> = {
@@ -31,6 +32,18 @@ export function FormsSection() {
     void load()
   }, [load])
 
+  if (data?.partner) {
+    // Partners fill their evaluations in the same tables HR sees; either can save a row.
+    return (
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <h2 className="font-semibold">End-of-quarter evaluations</h2>
+          <p className="text-sm text-muted-foreground">Score everyone 1 to 4 per question (quarter steps like 2.75 are fine). Rows save as you go; submit a row when it is complete. HR sees the same tables and can help fill them in.</p>
+          <TablesPanel kind="PARTNER" mine />
+        </CardContent>
+      </Card>
+    )
+  }
   if (!data || data.forms.length === 0) return null
   const done = data.forms.filter((f) => f.status === 'SUBMITTED' || f.status === 'CLOSED_BY_OTHER').length
   return (

@@ -5,12 +5,13 @@ import { sendLeaveRequestNotification } from '@/lib/email'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import {
-  calculateLeaveDuration,
   canCancelLeave,
   isValidLeaveDateRange,
 } from '@/lib/leave-utils'
 import { restoreCancelledLeaveBalance } from '@/lib/leave-balance'
+import { chargeableLeaveDays, withLeaveDays } from '@/lib/leave-holiday-store'
 import { stripHtml } from '@/lib/sanitize'
+import { notifyLeaveFor } from '@/lib/notifications/leave'
 import { normalizeLeaveTimeZone } from '@/lib/leave-timezone'
 import { isAdminRole } from '@/lib/permissions'
 import { removeLeaveCalendarEvent, syncLeaveCalendarEvent } from '@/lib/google-calendar'
@@ -140,6 +141,8 @@ const leaveRequestUpdateSchema = applyLeavePayloadValidations(leaveRequestPayloa
 
 const leaveStatusSchema = z.enum(LEAVE_STATUSES)
 
+const NO_WORKING_DAYS = 'Selected range does not include any working days (Mon-Fri, excluding holidays).'
+
 async function attachCoverPeople<T extends {
   coverPersonIds?: unknown
   coverPerson?: { id: string; name: string } | null
@@ -231,9 +234,9 @@ export async function GET(request: NextRequest) {
         orderBy: [{ startDate: 'asc' }, { createdAt: 'asc' }],
       })
 
-      return NextResponse.json({ requests: await attachCoverPeople(requests) })
+      return NextResponse.json({ requests: await attachCoverPeople(await withLeaveDays(prisma, requests)) })
     }
-    
+
     // Build where clause
     const where: {
       employeeId?: string | { in: string[] }
@@ -319,7 +322,7 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       })
 
-      return NextResponse.json({ requests: await attachCoverPeople(requests) })
+      return NextResponse.json({ requests: await attachCoverPeople(await withLeaveDays(prisma, requests)) })
     }
 
     // One person's own list reads as a timeline, so it is ordered by when the leave
@@ -343,7 +346,7 @@ export async function GET(request: NextRequest) {
         : { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ requests: await attachCoverPeople(requests) })
+    return NextResponse.json({ requests: await attachCoverPeople(await withLeaveDays(prisma, requests)) })
   } catch (error) {
     console.error('Failed to fetch leave requests:', error)
     return NextResponse.json({ error: 'Failed to fetch requests' }, { status: 500 })
@@ -419,12 +422,10 @@ export async function POST(request: NextRequest) {
     // Calculate days requested
     const start = new Date(startDate)
     const end = new Date(endDate)
-    const daysRequested = calculateLeaveDuration(start, end, isHalfDay)
+    // Holidays that apply to the employee's team are not charged.
+    const daysRequested = await chargeableLeaveDays(prisma, { employeeId: targetEmployeeId, startDate: start, endDate: end, isHalfDay })
     if (daysRequested <= 0) {
-      return NextResponse.json(
-        { error: 'Selected range does not include any working leave duration (Mon-Fri).' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: NO_WORKING_DAYS }, { status: 400 })
     }
 
     // Check leave balance against the leave start year.
@@ -648,12 +649,9 @@ export async function PUT(request: NextRequest) {
     }
     const start = new Date(startDate)
     const end = new Date(endDate)
-    const daysRequested = calculateLeaveDuration(start, end, isHalfDay)
+    const daysRequested = await chargeableLeaveDays(prisma, { employeeId: targetEmployeeId, startDate: start, endDate: end, isHalfDay })
     if (daysRequested <= 0) {
-      return NextResponse.json(
-        { error: 'Selected range does not include any working leave duration (Mon-Fri).' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: NO_WORKING_DAYS }, { status: 400 })
     }
     const balanceYear = start.getFullYear()
 
@@ -800,6 +798,10 @@ export async function DELETE(request: NextRequest) {
         await removeLeaveCalendarEvent(requestId)
       } catch (e) {
         console.error('Failed to remove leave event from Google Calendar:', e)
+      }
+
+      if (active && leaveRequest.employeeId !== user.id) {
+        await notifyLeaveFor(leaveRequest, 'LEAVE_CANCELLED', { link: '/leave' })
       }
 
       return NextResponse.json({ success: true })

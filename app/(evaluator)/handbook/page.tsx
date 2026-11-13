@@ -11,7 +11,10 @@ import { HandbookHero } from '@/components/handbook/HandbookHero'
 import { HandbookRow } from '@/components/handbook/HandbookRow'
 import { HandbookHubSkeleton } from '@/components/handbook/HandbookSkeletons'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
-import { ALL_TEAMS, TEAM_LABELS } from '@/lib/handbook/teams'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
+import { pickerTeams, teamLabel as labelForTeam } from '@/lib/handbook/teams'
+import { useTeamCatalog } from '@/lib/teams/use-team-catalog'
 import { filterPages } from '@/lib/handbook/search'
 import type { HubPage } from '@/lib/handbook/audience'
 import { isAdminRole } from '@/lib/permissions'
@@ -54,6 +57,7 @@ function HandbookHubInner() {
   const [untagged, setUntagged] = useState(false)
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  const { catalog } = useTeamCatalog()
 
   useEffect(() => {
     const qs = previewTeam ? `?previewTeam=${encodeURIComponent(previewTeam)}` : ''
@@ -73,20 +77,21 @@ function HandbookHubInner() {
 
   // The server decides what the preview shows; this label only reflects it.
   const previewLabel =
-    previewTeam && previewTeam !== 'UNTAGGED'
-      ? TEAM_LABELS[previewTeam as keyof typeof TEAM_LABELS]
-      : null
+    previewTeam && previewTeam !== 'UNTAGGED' ? labelForTeam(catalog, previewTeam) : null
   const teamLabel =
-    previewLabel ?? (user?.teamTag ? TEAM_LABELS[user.teamTag as keyof typeof TEAM_LABELS] : null)
+    previewLabel ?? (user?.teamTag ? labelForTeam(catalog, user.teamTag) : null)
   const firstName = user?.name?.split(' ')[0] ?? null
 
   const featured = visible.filter((p) => p.category === 'START_HERE')
   const rest = CATEGORY_ORDER.filter((c) => c !== 'START_HERE')
 
   return (
-    <div className="p-6 sm:p-8 max-w-7xl mx-auto">
-      {user && isAdminRole(user.role) && (
-        <div className="flex flex-wrap items-center gap-2 mb-6 rounded-lg border border-border bg-muted/40 px-3 py-2">
+    <PageContainer>
+      <PageHeader
+        title="Handbook"
+        actions={
+          user && isAdminRole(user.role) ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2">
           <span className="text-xs font-medium text-muted-foreground mr-1">Preview as</span>
           <Link
             href="/handbook"
@@ -110,7 +115,7 @@ function HandbookHubInner() {
           >
             Untagged
           </Link>
-          {ALL_TEAMS.map((team) => (
+          {pickerTeams(catalog).map((team) => (
             <Link
               key={team}
               href={`/handbook?previewTeam=${team}`}
@@ -121,11 +126,13 @@ function HandbookHubInner() {
                   : 'border-border text-muted-foreground hover:bg-muted'
               )}
             >
-              {TEAM_LABELS[team]}
+              {labelForTeam(catalog, team)}
             </Link>
           ))}
         </div>
-      )}
+      ) : undefined
+        }
+      />
 
       <HandbookHero
         firstName={firstName}
@@ -222,7 +229,7 @@ function HandbookHubInner() {
             ))}
         </>
       )}
-    </div>
+    </PageContainer>
   )
 }
 

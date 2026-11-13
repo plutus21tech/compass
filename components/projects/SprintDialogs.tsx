@@ -76,7 +76,7 @@ function DateField({ id, label, value, min, disabled, describedBy, onChange }: {
             className="flex h-9 w-full items-center gap-2 rounded-lg border border-input bg-transparent px-3 text-left text-sm tabular-nums shadow-sm transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted-foreground disabled:hover:bg-muted/40"
           >
             <CalendarIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="truncate">{formatSprintDay(value)}, {value.slice(0, 4)}</span>
+            <span className="truncate">{formatSprintDay(value)}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="z-[80] w-auto p-0">
@@ -157,7 +157,7 @@ export function SprintFormDialog({
   const parsed = validateSprintInput({ name: name.trim() || 'x', startDate: start, endDate: end, length })
   const dateError = parsed.ok ? null : parsed.error === 'endDate cannot be before startDate' ? 'The end date cannot be before the start date' : parsed.error
   const hint = length === 'custom'
-    ? `Pick any end date. ${formatSprintDay(start)} – ${formatSprintDay(end)} is ${span} ${span === 1 ? 'day' : 'days'}.`
+    ? `Pick any end date. ${formatSprintRange({ startDate: start, endDate: end })} is ${span} ${span === 1 ? 'day' : 'days'}.`
     : `Ends ${formatSprintDay(end)}. Choose Custom dates to set the end yourself.`
 
   const pickLength = (next: SprintLength) => {

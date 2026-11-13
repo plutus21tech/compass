@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth'
 import { stripHtml } from '@/lib/sanitize'
+import { missingAttributes } from '@/lib/academy/attributes'
+import { contactFieldError, selfAttributeGate, selfContactExtrasShape } from '@/lib/academy/profile-input'
+import { getPersonAttributes } from '@/lib/academy/service/attributes'
 import {
   AVATAR_ACCESSORIES,
   AVATAR_ACCENT_COLORS,
@@ -24,7 +27,7 @@ const sanitizedShortText = (max: number) =>
     .optional()
     .transform((value) => (typeof value === 'string' ? stripHtml(value) : value))
 
-const profileUpdateSchema = z.object({
+const profileShape = {
   email: z.string().trim().email().max(255).nullable().optional(),
   discordId: sanitizedShortText(100),
   avatarSkinTone: hexColor.nullable().optional(),
@@ -36,7 +39,32 @@ const profileUpdateSchema = z.object({
   avatarHeadCoveringType: z.enum(AVATAR_HEAD_COVERING_TYPES).nullable().optional(),
   avatarHeadCoveringColor: hexColor.refine((value) => AVATAR_HIJAB_COLORS.includes(value as any)).nullable().optional(),
   avatarAccessories: z.array(z.enum(AVATAR_ACCESSORIES)).max(3).nullable().optional(),
-}).strict()
+}
+
+// The profile fields plus the two contact fields the Academy collects.
+const profileUpdateSchema = z.object({ ...profileShape, ...selfContactExtrasShape }).strict()
+
+export async function GET() {
+  try {
+    const currentUser = await getSession()
+    if (!currentUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const [contact, attributes] = await Promise.all([
+      prisma.user.findUniqueOrThrow({
+        where: { id: currentUser.id },
+        select: { discordUsername: true, linkedinUrl: true },
+      }),
+      getPersonAttributes(prisma, currentUser.id),
+    ])
+    return NextResponse.json({
+      user: { ...contact, ...attributes, missingAttributes: missingAttributes(attributes) },
+    })
+  } catch (error) {
+    console.error('Failed to load profile details:', error)
+    return NextResponse.json({ error: 'Failed to load profile details' }, { status: 500 })
+  }
+}
 
 export async function PUT(request: NextRequest) {
   try {
@@ -46,20 +74,24 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json()
+    if (selfAttributeGate(body) === 'forbidden') {
+      return NextResponse.json({ error: 'Only HR can change these details' }, { status: 403 })
+    }
     const parsed = profileUpdateSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Invalid profile payload', details: parsed.error.issues },
+        { error: contactFieldError(parsed.error) ?? 'Invalid profile payload', details: parsed.error.issues },
         { status: 400 }
       )
     }
 
     // Only write keys explicitly present in the request so omitted fields stay untouched.
     const data: Record<string, unknown> = {}
-    for (const key of Object.keys(parsed.data) as Array<keyof typeof parsed.data>) {
+    const fields: Record<string, unknown> = parsed.data
+    for (const key of Object.keys(fields)) {
       if (key in body) {
-        const value = parsed.data[key]
-        if (key === 'email' || key === 'discordId') {
+        const value = fields[key]
+        if (key === 'email' || key === 'discordId' || key === 'discordUsername' || key === 'linkedinUrl') {
           // Normalize empty strings to null for optional unique fields.
           data[key] = typeof value === 'string' && value.trim() === '' ? null : value ?? null
         } else {
@@ -87,6 +119,8 @@ export async function PUT(request: NextRequest) {
         name: true,
         email: true,
         discordId: true,
+        discordUsername: true,
+        linkedinUrl: true,
         department: true,
         position: true,
         role: true,

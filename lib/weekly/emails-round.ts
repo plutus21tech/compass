@@ -59,11 +59,35 @@ export function renderFinalWeekEmail(input: { name: string; openCount: number; c
   }
 }
 
-/** HR's own nudge from the Progress tab. */
-export function renderHrReminderEmail(input: { name: string; openCount: number; appUrl: string }): Email {
+/** HR's own nudge from the Progress tab. overdueCount: open questions from earlier weeks, which get a red warning. */
+export function renderHrReminderEmail(input: { name: string; openCount: number; overdueCount: number; appUrl: string }): Email {
+  const link = `${base(input.appUrl)}${MY_PAGE}`
+  if (input.overdueCount <= 0) {
+    return {
+      subject: `Reminder from HR: ${plural(input.openCount, 'evaluation question')} waiting`,
+      html: layout(input.name, [escapeHtml(`You have ${plural(input.openCount, 'open evaluation question')}. Each takes a few seconds.`)], link, 'Answer now'),
+    }
+  }
+  const fromEarlier = input.overdueCount === input.openCount ? 'all from earlier weeks' : `${input.overdueCount} from earlier weeks`
   return {
-    subject: `Reminder from HR: ${plural(input.openCount, 'evaluation question')} waiting`,
-    html: layout(input.name, [escapeHtml(`You have ${plural(input.openCount, 'open evaluation question')}. Each takes a few seconds.`)], `${base(input.appUrl)}${MY_PAGE}`, 'Answer now'),
+    subject: `Overdue: ${plural(input.overdueCount, 'evaluation question')} from earlier weeks`,
+    html: layout(input.name, [
+      escapeHtml(`You have ${plural(input.openCount, 'open evaluation question')}, ${fromEarlier}. Each takes a few seconds.`),
+    ], link, 'Answer now', redNotice(
+      `You are overdue on ${plural(input.overdueCount, 'evaluation question')}`,
+      'This will be reflected at the time of profit sharing.',
+    )),
+  }
+}
+
+/** A partner hears once that their end-of-quarter tables are open; HR can fill the same rows. */
+export function renderPartnerTablesOpenEmail(input: { name: string; periodName: string; closesOn: string; appUrl: string }): Email {
+  return {
+    subject: `Your ${input.periodName} end-of-quarter evaluations are open`,
+    html: layout(input.name, [
+      escapeHtml(`Your ${input.periodName} evaluations are open: one table per group, scored 1 to 4 per question. Rows save as you go; submit a row when it is complete.`),
+      escapeHtml(`HR sees the same tables and can help fill them in. Please finish by ${input.closesOn}, when the round closes.`),
+    ], `${base(input.appUrl)}${MY_PAGE}`, 'Open my evaluations'),
   }
 }
 

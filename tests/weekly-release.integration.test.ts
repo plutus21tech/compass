@@ -4,7 +4,7 @@ import { prisma } from '../lib/db'
 import { setOptIn } from '../lib/weekly/service/cycles'
 import { WeeklyError } from '../lib/weekly/service/errors'
 import { pairWindowsView, setPairWindow } from '../lib/weekly/service/pair-windows'
-import { releaseWeek } from '../lib/weekly/service/release'
+import { releaseIfCaughtUp, releaseWeek } from '../lib/weekly/service/release'
 import { answerAs } from './helpers/weekly-answers'
 import { at, HR_ACTOR, startedCycle } from './helpers/weekly-fixtures'
 import { resetWeeklyTestData, seedWeeklyBase, W, WEEKLY_DB_READY, WEEKLY_DB_TEST, weeklyActor } from './helpers/weekly-test-db'
@@ -73,6 +73,36 @@ test('a person with an open question is not asked about again; the evaluator get
   // Week 3: both of everyone's questions are still open, so nothing piles up.
   await releaseWeek(cycleId, 3, at(3))
   assert.equal(await prisma.weeklyPrompt.count(), 6)
+})
+
+test('someone who catches up mid-week gets that week’s questions as soon as their last carried one is answered', WEEKLY_DB_TEST, async () => {
+  await releaseWeek(cycleId, 1, at(1))
+  await releaseWeek(cycleId, 2, at(2))
+  // Monday of week 3: the lead's two questions are still open, so week 3 gives them nothing.
+  await releaseWeek(cycleId, 3, at(3))
+  const carried = await prisma.weeklyPrompt.findMany({ where: { evaluatorId: W.lead.id }, orderBy: { weekIndex: 'asc' } })
+  assert.equal(carried.length, 2)
+  await answerAs(carried[0], 3, at(3, 1))
+  assert.equal(await releaseIfCaughtUp(W.lead.id, carried[0].id, at(3, 1)), 0, 'one carried question is still open')
+  await answerAs(carried[1], 3, at(3, 1))
+  assert.equal(await releaseIfCaughtUp(W.lead.id, carried[1].id, at(3, 1)), 1, 'caught up: this week’s question now')
+  const week3 = await prisma.weeklyPrompt.findMany({ where: { evaluatorId: W.lead.id, weekIndex: 3 } })
+  assert.equal(week3.length, 1)
+  assert.equal((await prisma.weeklyRelease.findFirstOrThrow({ where: { evaluatorId: W.lead.id, weekIndex: 3 } })).promptCount, 1)
+  // Neither a repeat nor the daily run adds more, and nobody else is touched.
+  assert.equal(await releaseIfCaughtUp(W.lead.id, carried[1].id, at(3, 2)), 0)
+  await releaseWeek(cycleId, 3, at(3, 2))
+  assert.equal(await prisma.weeklyPrompt.count({ where: { weekIndex: 3 } }), 1)
+})
+
+test('two catch-up releases at once add the week’s questions only once', WEEKLY_DB_TEST, async () => {
+  await releaseWeek(cycleId, 1, at(1))
+  await releaseWeek(cycleId, 2, at(2))
+  await releaseWeek(cycleId, 3, at(3))
+  const carried = await prisma.weeklyPrompt.findMany({ where: { evaluatorId: W.lead.id } })
+  for (const p of carried) await answerAs(p, 3, at(3, 1))
+  await Promise.all([releaseIfCaughtUp(W.lead.id, carried[1].id, at(3, 1)), releaseIfCaughtUp(W.lead.id, carried[1].id, at(3, 1))])
+  assert.equal(await prisma.weeklyPrompt.count({ where: { evaluatorId: W.lead.id, weekIndex: 3 } }), 1)
 })
 
 test('a leaver’s questions are cancelled, as evaluator and as the person asked about', WEEKLY_DB_TEST, async () => {

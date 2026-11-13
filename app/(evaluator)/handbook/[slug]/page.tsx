@@ -11,6 +11,8 @@ import { EmptyState } from '@/components/composed/EmptyState'
 import { ShimmerButton } from '@/components/magicui/shimmer-button'
 import { HandbookMarkdown } from '@/components/handbook/HandbookMarkdown'
 import { HandbookDetailSkeleton } from '@/components/handbook/HandbookSkeletons'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 
 type Detail = {
   slug: string
@@ -68,7 +70,7 @@ function HandbookDetailInner({ params }: { params: Promise<{ slug: string }> }) 
 
   if (notFound || !detail) {
     return (
-      <div className="p-6 sm:p-8 max-w-4xl mx-auto">
+      <PageContainer width="reading">
         <EmptyState
           icon={<FileQuestion className="h-10 w-10" />}
           title="Not available for your team"
@@ -79,7 +81,7 @@ function HandbookDetailInner({ params }: { params: Promise<{ slug: string }> }) 
             </Link>
           }
         />
-      </div>
+      </PageContainer>
     )
   }
 
@@ -88,24 +90,22 @@ function HandbookDetailInner({ params }: { params: Promise<{ slug: string }> }) 
   const isLetter = detail.layout === 'LETTER'
 
   return (
-    <div className="p-6 sm:p-8 max-w-4xl mx-auto">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
+    <PageContainer width="reading">
+      <Link
+        href={backHref}
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
-        <Link
-          href={backHref}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          The Handbook
-        </Link>
-        <h1 className="text-2xl sm:text-3xl font-display font-light tracking-tight text-foreground flex items-center gap-3">
-          <Icon className="h-7 w-7 text-primary shrink-0" />
-          {detail.title}
-        </h1>
-      </motion.div>
+        <ArrowLeft className="h-4 w-4" />
+        The Handbook
+      </Link>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            <Icon className="h-7 w-7 shrink-0 text-primary" />
+            {detail.title}
+          </span>
+        }
+      />
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -138,7 +138,7 @@ function HandbookDetailInner({ params }: { params: Promise<{ slug: string }> }) 
           </CardContent>
         </Card>
       </motion.div>
-    </div>
+    </PageContainer>
   )
 }
 

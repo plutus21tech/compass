@@ -3,6 +3,7 @@ import { guardWeeklyMutation, requireWeeklySession } from '@/lib/weekly/http'
 import { weeklyErrorResponse } from '@/lib/weekly/http-errors'
 import { actorFromUser } from '@/lib/weekly/service/context'
 import { markNotObserved, resolveSubject } from '@/lib/weekly/service/inbox'
+import { releaseIfCaughtUpSafely } from '@/lib/weekly/service/release'
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -12,6 +13,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const subject = await resolveSubject(actor, request.nextUrl.searchParams.get('as'))
     const { id } = await context.params
     await markNotObserved(actor, subject, id, new Date())
+    // Before replying, so the inbox the page reloads already shows this week's questions.
+    await releaseIfCaughtUpSafely(subject.evaluatorId, id, new Date())
     return NextResponse.json({ success: true })
   } catch (error) {
     return weeklyErrorResponse(error)

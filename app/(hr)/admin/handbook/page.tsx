@@ -16,6 +16,7 @@ const stagger = {
 export default function AdminHandbookPage() {
   const [coverage, setCoverage] = useState<CoverageRow[]>([])
   const [summary, setSummary] = useState<CoverageSummary | null>(null)
+  const [teams, setTeams] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function AdminHandbookPage() {
         }
         setCoverage(d.coverage || [])
         setSummary(d.summary || null)
+        setTeams(d.teams || [])
       })
       .catch(() => toast.error('Failed to load handbook'))
       .finally(() => setLoading(false))
@@ -84,7 +86,7 @@ export default function AdminHandbookPage() {
             <span className="text-amber-600 dark:text-amber-400">⚠</span> Needs a decision
           </span>
         </div>
-        <CoverageGrid rows={coverage} />
+        <CoverageGrid rows={coverage} teams={teams} />
       </motion.div>
     </div>
   )

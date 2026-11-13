@@ -17,6 +17,12 @@ interface Props {
   placeholder?: string
   /** Shown when the pool itself is empty (no one to pick). */
   emptyPoolText?: string
+  /** At most this many people; at the limit the search is disabled. Unlimited when omitted. */
+  max?: number
+  /** Accessible name for the search input. */
+  inputLabel?: string
+  /** Id for the search input, so a visible label can point at it. */
+  inputId?: string
 }
 
 /**
@@ -30,8 +36,12 @@ export function MemberMultiSelect({
   onChange,
   placeholder = 'Search by name or department...',
   emptyPoolText = 'No team members available',
+  max,
+  inputLabel,
+  inputId,
 }: Props) {
   const [query, setQuery] = useState('')
+  const atLimit = max !== undefined && selectedIds.length >= max
 
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
@@ -55,7 +65,7 @@ export function MemberMultiSelect({
   }, [members, selectedIds, query])
 
   const add = (id: string) => {
-    if (selectedIds.includes(id)) return
+    if (atLimit || selectedIds.includes(id)) return
     onChange([...selectedIds, id])
     setQuery('')
   }
@@ -89,11 +99,14 @@ export function MemberMultiSelect({
           </span>
         ))}
         <input
-          value={query}
+          id={inputId}
+          aria-label={inputLabel}
+          value={atLimit ? '' : query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={selectedMembers.length > 0 ? 'Add another...' : placeholder}
-          className="min-w-[8rem] flex-1 bg-transparent py-0.5 text-sm outline-none placeholder:text-muted-foreground"
+          disabled={atLimit}
+          placeholder={atLimit ? `Up to ${max} people` : selectedMembers.length > 0 ? 'Add another...' : placeholder}
+          className="min-w-[8rem] flex-1 bg-transparent py-0.5 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
         />
       </div>
 
@@ -110,7 +123,8 @@ export function MemberMultiSelect({
               type="button"
               key={m.id}
               onClick={() => add(m.id)}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted/80"
+              disabled={atLimit}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted/80 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="text-sm text-foreground">{m.name}</span>
               {m.department && <span className="text-xs text-muted-foreground">({m.department})</span>}

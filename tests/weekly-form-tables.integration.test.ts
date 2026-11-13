@@ -2,7 +2,8 @@ import test, { after, afterEach, before, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { prisma } from '../lib/db'
 import { WeeklyError } from '../lib/weekly/service/errors'
-import { formsProgress, formTables, saveTableRow } from '../lib/weekly/service/form-tables'
+import { formsProgress, formTables, myPartnerTables, saveTableRow } from '../lib/weekly/service/form-tables'
+import { formsOpenMessages } from '../lib/weekly/service/notifications'
 import { formsView } from '../lib/weekly/service/forms'
 import { aggregateCycle } from '../lib/weekly/service/aggregate'
 import { loadCycle } from '../lib/weekly/service/cycles'
@@ -89,7 +90,7 @@ test('the table opens with the end-of-quarter forms, refuses edits once the quar
   await assert.rejects(saveTableRow(HR_ACTOR, row, at(12)), /locked/)
 })
 
-test('partners: their own account has no forms or weekly questions; HR fills every evaluation of theirs in tables', WEEKLY_DB_TEST, async () => {
+test('partners: their own account has no forms or weekly questions; their evaluations are in tables HR can fill', WEEKLY_DB_TEST, async () => {
   process.env.WEEKLY_HR_FILLED_PARTNERS = F.chief.name
   await prisma.evaluatorMapping.create({ data: { evaluatorId: F.chief.id, evaluateeId: W.lead.id, relationshipType: 'TEAM_LEAD' } })
   assert.deepEqual((await formsView(weeklyActor(F.chief), at(12))).forms, [])
@@ -115,11 +116,47 @@ test('partners: their own account has no forms or weekly questions; HR fills eve
   await assert.rejects(formTables(weeklyActor(F.chief), 'PARTNER', at(12)), isStatus(403))
 })
 
-test('a partner with unfinished evaluations makes HR, not the partner, the one reminded', WEEKLY_DB_TEST, async () => {
+test('a partner with unfinished evaluations keeps HR on the daily reminder, and hears once themselves', WEEKLY_DB_TEST, async () => {
   process.env.WEEKLY_HR_FILLED_PARTNERS = F.chief.name
-  const { pendingEvaluatorIds } = await formsProgress(periodId)
-  assert.ok(!pendingEvaluatorIds.includes(F.chief.id))
+  const { pendingEvaluatorIds, pendingPartnerIds } = await formsProgress(periodId)
+  assert.ok(!pendingEvaluatorIds.includes(F.chief.id), 'not on the daily reminder')
   assert.ok(pendingEvaluatorIds.includes(W.hr.id) && pendingEvaluatorIds.includes(F.hr2.id))
+  assert.deepEqual(pendingPartnerIds, [F.chief.id])
+  const messages = await formsOpenMessages(await loadCycle(cycleId), at(12), 'https://compass.example')
+  const mine = messages.filter((m) => m.userId === F.chief.id)
+  assert.equal(mine.length, 1)
+  assert.equal(mine[0].dedupeKey, `weekly-forms-open:${F.chief.id}:partner:${cycleId}`, 'once a round, not once a day')
+  assert.match(mine[0].render(F.chief.name).subject, /end-of-quarter evaluations are open/)
+})
+
+test('a partner fills their own tables; HR sees the same rows, with who saved each last', WEEKLY_DB_TEST, async () => {
+  process.env.WEEKLY_HR_FILLED_PARTNERS = F.chief.name
+  const chief = weeklyActor(F.chief)
+  assert.equal((await formsView(chief, at(12))).partner, true)
+  assert.notEqual((await formsView(weeklyActor(W.ana), at(12))).partner, true)
+  await assert.rejects(myPartnerTables(weeklyActor(W.ana), at(12)), isStatus(404), 'partners only')
+
+  const mine = await myPartnerTables(chief, at(12))
+  assert.equal(mine.open, true)
+  const hrView = await formTables(HR_ACTOR, 'PARTNER', at(12))
+  assert.deepEqual(mine.tables.map((t) => [t.relationshipType, t.rows.map((r) => r.evaluateeId)]), hrView.tables.map((t) => [t.relationshipType, t.rows.map((r) => r.evaluateeId)]), 'the same tables HR sees')
+
+  const cLevel = await ids('C_LEVEL')
+  const row = { kind: 'PARTNER' as const, evaluatorId: F.chief.id, relationshipType: 'C_LEVEL' as const, evaluateeId: W.ana.id }
+  await saveTableRow(chief, { ...row, ratings: cLevel.map((questionId, i) => ({ questionId, ratingValue: i === 0 ? 3 : null })), submit: false }, at(12))
+  let shared = (await formTables(HR_ACTOR, 'PARTNER', at(12))).tables.find((t) => t.relationshipType === 'C_LEVEL')!.rows.find((r) => r.evaluateeId === W.ana.id)!
+  assert.deepEqual([shared.status, shared.ratings[cLevel[0]], shared.lastSavedBy], ['DRAFT', 3, F.chief.name], 'HR sees the partner’s draft')
+
+  await saveTableRow(HR_ACTOR, { ...row, ratings: cLevel.map((questionId) => ({ questionId, ratingValue: 3 })), submit: true }, at(12, 2))
+  shared = (await myPartnerTables(chief, at(12, 2))).tables.find((t) => t.relationshipType === 'C_LEVEL')!.rows.find((r) => r.evaluateeId === W.ana.id)!
+  assert.deepEqual([shared.status, shared.lastSavedBy], ['SUBMITTED', W.hr.name], 'the partner sees HR finished it')
+
+  // A partner saves only their own rows, in the running round, never an HR row.
+  await assert.rejects(saveTableRow(chief, { ...row, kind: 'HR', relationshipType: 'HR', ratings: [], submit: false } as never, at(12)), isStatus(404))
+  await assert.rejects(saveTableRow(chief, { ...row, evaluatorId: W.lead.id, ratings: [], submit: false }, at(12)), isStatus(404))
+  await assert.rejects(saveTableRow(chief, { ...row, periodId, ratings: [], submit: false }, at(12)), isStatus(404))
+  await assert.rejects(saveTableRow(weeklyActor(W.ana), { ...row, ratings: [], submit: false }, at(12)), isStatus(403), 'nobody else')
+  await assert.rejects(saveTableRow(chief, { ...row, ratings: [{ questionId: cLevel[0], ratingValue: 2 }], submit: false }, at(3)), /open on/, 'not before the forms open')
 })
 
 test('a partner’s weekly answers from before they were HR-filled are left out of the close, so HR’s rows are the record', WEEKLY_DB_TEST, async () => {

@@ -9,7 +9,8 @@ import {
   computeNetPaid,
   type PaymentCategory,
 } from '@/lib/payroll/payments'
-import type { Prisma, TeamTag } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
+import type { TeamTag } from '@/lib/teams/catalog'
 import { holidayDatesForTeam } from '@/lib/holidays'
 
 export type InputBucket = Record<string, number>

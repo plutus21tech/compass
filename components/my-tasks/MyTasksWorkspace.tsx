@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -142,13 +144,12 @@ export function MyTasksWorkspace() {
   )
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-[1300px] mx-auto space-y-4">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-display font-light tracking-tight text-foreground">My Tasks</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {activeTaskCount} active tasks across {new Set(tasks.map((task) => task.project.id)).size} projects
-        </p>
-      </div>
+    <PageContainer width="wide" className="space-y-4">
+      <PageHeader
+        title="My work"
+        subtitle={`${activeTaskCount} active tasks across ${new Set(tasks.map((task) => task.project.id)).size} projects`}
+        className="mb-0"
+      />
 
       <Card className="border-border/60">
         <CardContent className="p-4 space-y-3">
@@ -233,6 +234,6 @@ export function MyTasksWorkspace() {
           <MyTasksFilesView projects={projects} selectedProjectId={projectIdParam} />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageContainer>
   )
 }

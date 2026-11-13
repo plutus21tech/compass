@@ -1,7 +1,7 @@
 'use client'
 
 import { SidebarLayout } from '@/components/layout/SidebarLayout'
-import { EMPLOYEE_SIDEBAR } from '@/components/layout/AppSidebar'
+import { EMPLOYEE_SIDEBAR } from '@/components/layout/sidebar-config'
 
 export default function OALayout({ children }: { children: React.ReactNode }) {
   return (

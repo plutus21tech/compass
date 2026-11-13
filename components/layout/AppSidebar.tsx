@@ -9,162 +9,17 @@ import { CompanyBrandMark } from '@/components/brand/CompanyBrandMark'
 import { CompanyBrandLockup } from '@/components/brand/CompanyBrandLockup'
 import { useCompanyBranding } from '@/components/providers/company-branding-provider'
 import {
-  ADMIN_INSIGHTS_NAV_ITEMS,
-  type AdminInsightsHref,
-} from '@/lib/admin-insights-navigation'
-import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Home,
-  ClipboardCheck,
-  Calendar,
-  FolderKanban,
-  Monitor,
-  User,
-  Users,
-  Network,
-  Handshake,
-  Radio,
-  HelpCircle,
-  Sliders,
-  BarChart3,
-  FileText,
   Wallet,
-  Settings,
   Shield,
   Eye,
-  CheckSquare,
-  PackageSearch,
-  Building2,
-  BookOpen,
-  type LucideIcon,
 } from 'lucide-react'
+import type { NavItem, NavGroup, SidebarConfig } from './sidebar-config'
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface NavItem {
-  label: string
-  href: string
-  icon: LucideIcon
-  badge?: string | number
-  /** Highlight for every path under this prefix, when it differs from href. */
-  activePrefix?: string
-}
-
-export interface NavGroup {
-  label: string
-  items: NavItem[]
-  defaultOpen?: boolean
-}
-
-export type SidebarConfig = {
-  items: NavItem[]
-  groups: NavGroup[]
-}
-
-// ─── Employee sidebar config ─────────────────────────────────────────────────
-
-export const EMPLOYEE_SIDEBAR: SidebarConfig = {
-  items: [
-    { label: 'Home', href: '/dashboard', icon: Home },
-    { label: 'My Tasks', href: '/my-tasks', icon: CheckSquare },
-    { label: 'Evaluations', href: '/evaluations/weekly', icon: ClipboardCheck, activePrefix: '/evaluations' },
-    { label: 'Leave', href: '/leave', icon: Calendar },
-    { label: 'Projects', href: '/projects', icon: FolderKanban },
-    { label: 'Device Support', href: '/device-support', icon: Monitor },
-    { label: 'Office', href: '/office', icon: Building2 },
-    { label: 'Handbook', href: '/handbook', icon: BookOpen },
-    { label: 'Profile', href: '/profile', icon: User },
-  ],
-  groups: [],
-}
-
-export const ONBOARDING_SIDEBAR: SidebarConfig = {
-  items: [
-    { label: 'Onboarding', href: '/onboarding', icon: ClipboardCheck },
-    { label: 'Profile', href: '/profile', icon: User },
-  ],
-  groups: [],
-}
-
-export const SECURITY_SIDEBAR: SidebarConfig = {
-  items: [
-    { label: 'Home', href: '/security', icon: Home },
-    { label: 'Device Tickets', href: '/security/device-tickets', icon: Monitor },
-    { label: 'Assets', href: '/security/assets', icon: PackageSearch },
-    { label: 'Onboarding', href: '/security/onboarding', icon: ClipboardCheck },
-    { label: 'Office', href: '/office', icon: Building2 },
-    { label: 'Profile', href: '/profile', icon: User },
-  ],
-  groups: [],
-}
-
-// ─── Admin sidebar config ────────────────────────────────────────────────────
-
-const ADMIN_INSIGHTS_ICONS: Record<AdminInsightsHref, LucideIcon> = {
-  '/admin/analytics': BarChart3,
-  '/admin/employee-360': Radio,
-}
-
-export const ADMIN_SIDEBAR: SidebarConfig = {
-  items: [
-    { label: 'Dashboard', href: '/admin', icon: Home },
-  ],
-  groups: [
-    {
-      label: 'People',
-      defaultOpen: true,
-      items: [
-        { label: 'Users', href: '/admin/users', icon: Users },
-        { label: 'Org Chart', href: '/admin/org-chart', icon: Network },
-      ],
-    },
-    {
-      label: 'Performance',
-      defaultOpen: true,
-      items: [
-        { label: 'Weightages', href: '/admin/settings', icon: Sliders },
-        { label: 'Reports', href: '/admin/reports', icon: FileText },
-      ],
-    },
-    {
-      label: 'Operations',
-      defaultOpen: false,
-      items: [
-        { label: 'Clients', href: '/admin/clients', icon: Handshake },
-        { label: 'Leave', href: '/admin/leave', icon: Calendar },
-        { label: 'Device Tickets', href: '/admin/device-tickets', icon: Monitor },
-        { label: 'Assets', href: '/admin/assets', icon: PackageSearch },
-        { label: 'Payroll', href: '/admin/payroll', icon: Wallet },
-        { label: 'Subscription Management', href: '/admin/subscriptions', icon: Wallet },
-        { label: 'Office', href: '/office', icon: Building2 },
-        { label: 'Handbook', href: '/admin/handbook', icon: BookOpen },
-      ],
-    },
-    {
-      label: 'Onboarding',
-      defaultOpen: false,
-      items: [
-        { label: 'Dashboard', href: '/admin/onboarding', icon: Home },
-        { label: 'Positions', href: '/admin/onboarding/positions', icon: Users },
-        { label: 'New Hires', href: '/admin/onboarding/new-hires', icon: User },
-        { label: 'Modules', href: '/admin/onboarding/modules', icon: ClipboardCheck },
-        { label: 'Quiz', href: '/admin/onboarding/quiz', icon: HelpCircle },
-        { label: 'Benefits', href: '/admin/onboarding/benefits', icon: Wallet },
-        { label: 'Settings', href: '/admin/onboarding/config', icon: Settings },
-      ],
-    },
-    {
-      label: 'Insights',
-      defaultOpen: false,
-      items: ADMIN_INSIGHTS_NAV_ITEMS.map((item) => ({
-        ...item,
-        icon: ADMIN_INSIGHTS_ICONS[item.href],
-      })),
-    },
-  ],
-}
+export type { NavItem, NavGroup, SidebarConfig } from './sidebar-config'
+export { EMPLOYEE_SIDEBAR, ONBOARDING_SIDEBAR, SECURITY_SIDEBAR, ADMIN_SIDEBAR } from './sidebar-config'
 
 // ─── NavItem Component ───────────────────────────────────────────────────────
 
@@ -275,6 +130,34 @@ function SidebarNavGroup({
   )
 }
 
+// Always-open section with a plain heading (no chevron, no button).
+function SidebarStaticGroup({
+  group,
+  collapsed,
+  pathname,
+}: {
+  group: NavGroup
+  collapsed: boolean
+  pathname: string
+}) {
+  return (
+    <div>
+      {collapsed ? (
+        <div className="mx-auto my-1 h-px w-6 bg-border" />
+      ) : (
+        <div className="px-3 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+          {group.label}
+        </div>
+      )}
+      <div className="space-y-0.5 py-0.5">
+        {group.items.map((item) => (
+          <SidebarNavItem key={item.href} item={item} collapsed={collapsed} pathname={pathname} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Sidebar ────────────────────────────────────────────────────────────
 
 interface AppSidebarProps {
@@ -288,22 +171,6 @@ interface AppSidebarProps {
 export function AppSidebar({ config, collapsed, onToggle, userRole, className }: AppSidebarProps) {
   const pathname = usePathname()
   const { branding } = useCompanyBranding()
-  const topLevelItems = [...config.items]
-
-  if (userRole === 'EXECUTION' && !topLevelItems.some((item) => item.href === '/execution/subscriptions')) {
-    const executionItem: NavItem = {
-      label: 'Subscription Management',
-      href: '/execution/subscriptions',
-      icon: Wallet,
-    }
-    const profileIndex = topLevelItems.findIndex((item) => item.href === '/profile')
-    if (profileIndex >= 0) {
-      topLevelItems.splice(profileIndex, 0, executionItem)
-    } else {
-      topLevelItems.push(executionItem)
-    }
-  }
-
   return (
     <aside
       className={cn(
@@ -335,9 +202,10 @@ export function AppSidebar({ config, collapsed, onToggle, userRole, className }:
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+      <nav className="flex flex-1 flex-col overflow-y-auto px-2 py-3">
+        <div className="space-y-1">
         {/* Top-level items */}
-        {topLevelItems.map((item) => (
+        {config.items.map((item) => (
           <SidebarNavItem
             key={item.href}
             item={item}
@@ -347,14 +215,24 @@ export function AppSidebar({ config, collapsed, onToggle, userRole, className }:
         ))}
 
         {/* Grouped items */}
-        {config.groups.map((group) => (
-          <SidebarNavGroup
-            key={group.label}
-            group={group}
-            collapsed={collapsed}
-            pathname={pathname}
-          />
-        ))}
+        {config.groups.map((group) =>
+          group.collapsible === false ? (
+            <SidebarStaticGroup key={group.label} group={group} collapsed={collapsed} pathname={pathname} />
+          ) : (
+            <SidebarNavGroup key={group.label} group={group} collapsed={collapsed} pathname={pathname} />
+          ),
+        )}
+
+        </div>
+
+        {/* Pinned items sit at the bottom of the menu, above the footer */}
+        {config.pinned && config.pinned.length > 0 && (
+          <div data-pinned className="mt-auto space-y-0.5 border-t border-border pt-2">
+            {config.pinned.map((item) => (
+              <SidebarNavItem key={item.href} item={item} collapsed={collapsed} pathname={pathname} />
+            ))}
+          </div>
+        )}
       </nav>
 
       {/* Footer: role switcher + collapse toggle */}

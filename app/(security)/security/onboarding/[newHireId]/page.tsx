@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { LoadingScreen } from '@/components/composed/LoadingScreen'
 import { ArrowLeft } from 'lucide-react'
+import { MyChecklist } from '@/components/academy/hr/MyChecklist'
 
 interface ChecklistData {
   equipmentReady: boolean
@@ -144,6 +145,8 @@ export default function SecurityChecklistPage() {
               ? `Checklist completed on ${new Date(checklist.completedAt).toLocaleString()}`
               : 'Checklist will mark complete once all boxes are checked.'}
           </p>
+
+          {newHireId && <MyChecklist newHireId={newHireId} />}
         </CardContent>
       </Card>
       </motion.div>

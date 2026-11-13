@@ -75,7 +75,7 @@ function QuestionField({ q, answer, onChange }: { q: SurveyQuestionView; answer:
   )
 }
 
-/** UX spec, section 11: this week's company sentiment question, confidential to HR and never part of a score. */
+/** UX spec, section 11: this month's company sentiment questions, confidential to HR and never part of a score. */
 export function PulseSurveyCard() {
   const [data, setData] = useState<MySurveyResponse | null>(null)
   const [answers, setAnswers] = useState<Record<string, Answer>>({})

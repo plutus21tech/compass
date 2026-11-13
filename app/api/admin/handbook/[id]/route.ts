@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { isAdminRole } from '@/lib/permissions'
 import { prisma } from '@/lib/db'
-import { ALL_TEAMS } from '@/lib/handbook/teams'
+import { checkTeamTags } from '@/lib/teams/load'
 
 const VALID_LAYOUTS = ['POLICY', 'LETTER'] as const
 
@@ -42,14 +42,12 @@ export async function PUT(
     }
 
     if (intentionalGapTeams) {
-      const invalid = intentionalGapTeams.filter(
-        (t) => !(ALL_TEAMS as readonly string[]).includes(t)
-      )
-      if (invalid.length) {
-        return NextResponse.json(
-          { error: `Invalid team(s): ${invalid.join(', ')}` },
-          { status: 400 }
-        )
+      if (!Array.isArray(intentionalGapTeams)) {
+        return NextResponse.json({ error: 'intentionalGapTeams must be a list' }, { status: 400 })
+      }
+      const check = await checkTeamTags(intentionalGapTeams)
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 })
       }
     }
 

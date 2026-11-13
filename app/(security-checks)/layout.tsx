@@ -1,7 +1,7 @@
 'use client'
 
 import { SidebarLayout } from '@/components/layout/SidebarLayout'
-import { ADMIN_SIDEBAR, EMPLOYEE_SIDEBAR, ONBOARDING_SIDEBAR, SECURITY_SIDEBAR } from '@/components/layout/AppSidebar'
+import { ADMIN_SIDEBAR, EMPLOYEE_SIDEBAR, ONBOARDING_SIDEBAR, SECURITY_SIDEBAR } from '@/components/layout/sidebar-config'
 
 // Shared by employees (their own checks) and the Security / Console Admin
 // console, so Security Admins and HR keep their own console sidebars here.

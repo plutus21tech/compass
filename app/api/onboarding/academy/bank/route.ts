@@ -1,0 +1,38 @@
+import { after, NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
+import { academyErrorResponse, guardAcademyMutation, requireAcademySession } from '@/lib/academy/http'
+import { readOwnBankStatus, saveBankDetails } from '@/lib/academy/service/fields'
+import { notifyFirstPaymentSave, notifyPaymentDetailsChanged } from '@/lib/academy/service/notify-oa'
+
+const NO_STORE = { 'Cache-Control': 'no-store' }
+
+function failure(error: unknown): NextResponse {
+  const response = academyErrorResponse(error)
+  response.headers.set('Cache-Control', 'no-store')
+  return response
+}
+
+/** Only { saved, ibanMasked }: the hire never reads their bank values back. */
+export async function GET() {
+  try {
+    const user = await requireAcademySession()
+    return NextResponse.json({ success: true, data: await readOwnBankStatus(prisma, user.id) }, { headers: NO_STORE })
+  } catch (error) {
+    return failure(error)
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const user = await requireAcademySession()
+    await guardAcademyMutation(request, user.id)
+    const { isUpdate } = await saveBankDetails(prisma, user.id, await request.json())
+    if (isUpdate) after(() => notifyPaymentDetailsChanged(user.id, user.name))
+    // On an update too: if the first notice failed, this is its retry. Its key stops a repeat.
+    after(() => notifyFirstPaymentSave(prisma, user.id, user.name))
+    // Writes never echo details back.
+    return NextResponse.json({ success: true }, { headers: NO_STORE })
+  } catch (error) {
+    return failure(error)
+  }
+}
