@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { PersonLink } from '@/components/people/PersonLink'
 import { formatDays } from '@/lib/format-count'
 import { formatDateRange } from '@/lib/format-date'
 import { cancelWfh, decideWfh } from '@/lib/time-off/api'
@@ -166,7 +167,11 @@ export function WfhSection({ isThreeE, requests, approvals, onRequest, onChanged
                     <WfhIcon />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{r.employee?.name || 'Team member'}</span>
+                        {r.employee ? (
+                          <PersonLink personId={r.employee.id} className="text-sm font-medium text-foreground">{r.employee.name}</PersonLink>
+                        ) : (
+                          <span className="text-sm font-medium text-foreground">Team member</span>
+                        )}
                         <Badge variant="secondary" className={`${status.bg} ${status.color} border-0`}>
                           {status.label}
                         </Badge>

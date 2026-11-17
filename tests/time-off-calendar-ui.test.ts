@@ -43,6 +43,27 @@ test("a colleague's annual leave chip is emerald and shows only the first name",
   assert.doesNotMatch(html, /Castillo</)
 })
 
+test('a name on the calendar opens that person\'s profile and is not a tab stop', () => {
+  const html = renderCell(cellWith([event({ employeeId: 'u-rhea', employeeName: 'Rhea Castillo' })]))
+  assert.match(html, /<a[^>]*href="\/people\/u-rhea"[^>]*>Rhea<\/a>/)
+  assert.match(html, /<a[^>]*tabindex="-1"[^>]*href="\/people\/u-rhea"|<a[^>]*href="\/people\/u-rhea"[^>]*tabindex="-1"/)
+})
+
+test('a birthday on the calendar opens that person\'s profile', () => {
+  const cell = cellWith([])
+  const html = renderToStaticMarkup(
+    createElement(CalendarDayCell, {
+      cell,
+      holidays: [],
+      birthdays: [{ userId: 'u-noor', name: 'Noor Example', day: 19 }],
+      selected: false,
+      tabbable: true,
+      onMoreClick: () => {},
+    })
+  )
+  assert.match(html, /<a[^>]*href="\/people\/u-noor"[^>]*>Noor&#x27;s birthday<\/a>/)
+})
+
 test('own chips say You and carry the primary ring; pending chips are faded', () => {
   const html = renderCell(cellWith([event({ isCurrentUser: true, status: 'PENDING', employeeName: 'Ammar Hassan' })]))
   assert.match(html, />You</)

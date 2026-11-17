@@ -117,7 +117,9 @@ test('next out in your department', WEEKLY_DB_TEST, async () => {
   await leave('hom-viewer', '2031-03-15', '2031-03-15', 'APPROVED')
   await leave('hom-omar', '2031-03-14', '2031-03-14', 'APPROVED')
   const overview = await loadHomeOverview(viewer, NOW)
-  assert.deepEqual(overview.nextOutInDepartment, { name: 'Mina Arlow', startDate: '2031-03-20' })
+  const { id: nextOutId, ...nextOut } = overview.nextOutInDepartment ?? { id: '' }
+  assert.deepEqual(nextOut, { name: 'Mina Arlow', startDate: '2031-03-20' })
+  assert.ok(nextOutId.length > 0, 'the next-out person carries an id so Home can link to their profile')
   assert.equal(overview.department, 'Design')
 })
 

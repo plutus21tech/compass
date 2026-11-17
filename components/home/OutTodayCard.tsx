@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/composed/UserAvatar'
+import { PersonLink } from '@/components/people/PersonLink'
 import { formatDate } from '@/lib/format-date'
 import { homeSummary } from '@/lib/home/summary'
 import { othersOutToday, type HomeOverview, type OutPerson, type TeamUpcomingRow } from '@/lib/home/out-today'
@@ -58,7 +59,13 @@ function Body({ overview, upcoming, people }: BodyProps) {
         {dept ? (
           <span className={dept.allIn ? 'text-emerald-600 dark:text-emerald-400' : undefined}>{dept.text}</span>
         ) : null}
-        {next ? ` ${next.name.split(' ')[0]} is next out on ${formatDate(next.startDate)}.` : null}
+        {next ? (
+          <>
+            {' '}
+            <PersonLink personId={next.id} className="text-foreground">{next.name.split(' ')[0]}</PersonLink>
+            {` is next out on ${formatDate(next.startDate)}.`}
+          </>
+        ) : null}
       </p>
       {upcoming.length > 0 ? (
         <p className="mt-1 text-sm text-muted-foreground">{teamLeavePhrase(upcoming)}</p>
@@ -74,7 +81,9 @@ function Footer({ people, onSeeWho }: { people: OutPerson[]; onSeeWho: () => voi
     <>
       <div className="flex items-center -space-x-1.5">
         {shown.map((p) => (
-          <UserAvatar key={p.id} name={p.name} size="xs" className="ring-2 ring-card" />
+          <PersonLink key={p.id} personId={p.id} aria-label={`${p.name}'s profile`} className="rounded-full">
+            <UserAvatar name={p.name} size="xs" className="ring-2 ring-card" />
+          </PersonLink>
         ))}
         {extra > 0 ? (
           <span className="inline-flex h-6 items-center rounded-full bg-muted px-1.5 text-[10px] font-semibold ring-2 ring-card">

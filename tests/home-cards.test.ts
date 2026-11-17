@@ -27,7 +27,7 @@ function overview(patch: Partial<HomeOverview> = {}): Source<HomeOverview> {
       outToday: { count: people.length, people },
       department: 'Design',
       departmentOutToday: 0,
-      nextOutInDepartment: { name: 'Mina Rao', startDate: '2026-11-26' },
+      nextOutInDepartment: { id: 'u-mina', name: 'Mina Rao', startDate: '2026-11-26' },
       teamLabel: 'Pakistan team',
       nextHoliday: { date: '2026-12-25', name: 'Quaid-e-Azam Day', daysAway: 44 },
       upcomingHolidays: [{ date: '2026-12-25', name: 'Quaid-e-Azam Day', daysAway: 44 }],
@@ -46,7 +46,9 @@ test('out today: count, department sentence and next out', () => {
   assert.match(html, />6</)
   assert.match(html, /people out/)
   assert.match(html, /Everyone in Design is in today\./)
-  assert.match(html, /Mina is next out on Thu 26 Nov\./)
+  assert.match(html, /<a[^>]*href="\/people\/u-mina"[^>]*>Mina<\/a>/)
+  assert.match(html, / is next out on Thu 26 Nov\./)
+  assert.match(html, /aria-label="[^"]*profile"/)
   assert.match(html, /href="\/leave"/)
   assert.match(html, /See who/)
 })

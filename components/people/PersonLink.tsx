@@ -6,13 +6,16 @@ export interface PersonLinkProps {
   personId: string
   children: React.ReactNode
   className?: string
+  /** For links whose content is not text, such as an avatar. */
+  'aria-label'?: string
 }
 
 /** A person's name that opens their profile. */
-export function PersonLink({ personId, children, className }: PersonLinkProps) {
+export function PersonLink({ personId, children, className, 'aria-label': ariaLabel }: PersonLinkProps) {
   return (
     <Link
       href={profilePath(personId)}
+      aria-label={ariaLabel}
       className={cn('rounded-sm hover:text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40', className)}
     >
       {children}

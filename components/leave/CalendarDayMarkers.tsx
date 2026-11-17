@@ -1,5 +1,9 @@
 'use client'
 
+import type { SyntheticEvent } from 'react'
+import Link from 'next/link'
+import { profilePath } from '@/lib/people/profile-rules'
+
 /**
  * Holiday and birthday markers on the leave calendar. Styled apart from leave events
  * (outlined, not filled) so nobody reads a holiday as someone's leave.
@@ -20,6 +24,9 @@ export interface CalendarBirthday {
 }
 
 export const birthdayLabel = (name: string) => `${name}'s birthday`
+
+/** A click on a link inside a calendar day opens the profile; it must not start a date selection. */
+const stopSelection = (event: SyntheticEvent): void => event.stopPropagation()
 
 const HOLIDAY_CLASS =
   'text-[10px] px-1 py-0.5 rounded truncate border border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300'
@@ -47,10 +54,19 @@ export function CalendarDayMarkers({
         </div>
       ))}
       {firstBirthday && (
-        <div className={BIRTHDAY_CLASS} title={birthdayTitle}>
+        <Link
+          href={profilePath(firstBirthday.userId)}
+          tabIndex={-1}
+          draggable={false}
+          className={`block hover:underline ${BIRTHDAY_CLASS}`}
+          title={birthdayTitle}
+          onPointerDown={stopSelection}
+          onPointerUp={stopSelection}
+          onClick={stopSelection}
+        >
           {birthdayLabel(firstBirthday.name.split(' ')[0])}
           {otherBirthdays.length > 0 ? ` +${otherBirthdays.length}` : ''}
-        </div>
+        </Link>
       )}
     </div>
   )

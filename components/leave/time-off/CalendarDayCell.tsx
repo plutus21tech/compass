@@ -1,6 +1,8 @@
 'use client'
 
 import { CalendarDayMarkers, type CalendarBirthday, type CalendarHoliday } from '@/components/leave/CalendarDayMarkers'
+import Link from 'next/link'
+import { profilePath } from '@/lib/people/profile-rules'
 import type { DayCell } from '@/lib/time-off/calendar-grid'
 import type { CalendarEvent } from '@/lib/time-off/types'
 import { halfDaySessionLabel, LEAVE_TYPE_STYLE } from './leave-style'
@@ -35,10 +37,21 @@ function LeaveChip({ event }: { event: CalendarEvent }) {
     event.isCurrentUser ? 'ring-1 ring-primary' : '',
   ]
   const text = `${chipName(event)}${event.isHalfDay ? ' ½' : ''}`
+  // A link to the person's profile. It must not start a date selection, so pointer events
+  // stop here; tabIndex -1 keeps the grid's one-tab-stop keyboard behaviour.
   return (
-    <div className={classes.filter(Boolean).join(' ')} title={chipTitle(event)}>
+    <Link
+      href={profilePath(event.employeeId)}
+      tabIndex={-1}
+      draggable={false}
+      className={`block hover:underline ${classes.filter(Boolean).join(' ')}`}
+      title={chipTitle(event)}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       {text}
-    </div>
+    </Link>
   )
 }
 
