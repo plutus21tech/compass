@@ -36,7 +36,7 @@ export interface HomeOverview {
   outToday: OutTodayView
   department: string | null
   departmentOutToday: number | null
-  nextOutInDepartment: { name: string; startDate: string } | null
+  nextOutInDepartment: { id: string; name: string; startDate: string } | null
   teamLabel: string | null
   nextHoliday: HolidayView | null
   upcomingHolidays: HolidayView[]

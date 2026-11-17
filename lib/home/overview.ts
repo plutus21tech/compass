@@ -76,7 +76,7 @@ export async function loadHomeOverview(
             startDate: { gt: todayDate, lte: dayDate(addDays(today, NEXT_OUT_WINDOW_DAYS)) },
           },
           orderBy: { startDate: 'asc' },
-          select: { startDate: true, employee: { select: { name: true } } },
+          select: { startDate: true, employeeId: true, employee: { select: { name: true } } },
         })
       : Promise.resolve(null),
     viewer.teamTag ? loadHolidays(db, viewer.teamTag, today) : Promise.resolve([]),
@@ -100,7 +100,7 @@ export async function loadHomeOverview(
     department,
     departmentOutToday,
     nextOutInDepartment: nextOut
-      ? { name: nextOut.employee.name, startDate: dayKeyOf(nextOut.startDate) }
+      ? { id: nextOut.employeeId, name: nextOut.employee.name, startDate: dayKeyOf(nextOut.startDate) }
       : null,
     teamLabel: viewer.teamTag && catalog ? `${teamShortLabel(catalog, viewer.teamTag)} team` : null,
     nextHoliday: holidays[0] ?? null,

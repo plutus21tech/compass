@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { TransitionPlanView } from '@/components/leave/TransitionPlanView'
+import { PersonLink } from '@/components/people/PersonLink'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -126,7 +127,7 @@ export function ApprovalQueue({ requests, highlightedId, onChanged }: ApprovalQu
                 <div className="min-w-0 flex-1">
                   {highlighted && <p className="mb-1 text-[11px] font-medium text-primary">Opened from email</p>}
                   <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{r.employee.name}</span>
+                    <PersonLink personId={r.employee.id} className="text-sm font-medium text-foreground">{r.employee.name}</PersonLink>
                     <Badge variant="secondary" className={`${status.bg} ${status.color} border-0`}>
                       {status.label}
                     </Badge>
