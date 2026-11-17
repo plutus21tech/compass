@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { PersonLink } from '@/components/people/PersonLink'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatDateRange } from '@/lib/format-date'
 import { LEAVE_TYPE_LABEL, LEAVE_TYPE_TONE } from '@/lib/leave-type-style'
@@ -30,7 +31,9 @@ function PersonRow({ person }: { person: OutPerson }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
       <div>
-        <p className="text-sm font-medium">{person.name}</p>
+        <p className="text-sm font-medium">
+          <PersonLink personId={person.id}>{person.name}</PersonLink>
+        </p>
         {person.department ? <p className="text-xs text-muted-foreground">{person.department}</p> : null}
       </div>
       <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
@@ -46,7 +49,9 @@ function UpcomingRow({ row }: { row: TeamUpcomingRow }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
       <div>
-        <p className="text-sm font-medium">{row.employee.name}</p>
+        <p className="text-sm font-medium">
+          <PersonLink personId={row.employee.id}>{row.employee.name}</PersonLink>
+        </p>
         <p className="text-xs text-muted-foreground">{formatDateRange(row.startDate, row.endDate)}</p>
       </div>
       <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">

@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { isThreeEDepartment } from '@/lib/company-branding'
 import { ACTIVE_PERSON_WHERE, companyPeopleWhere } from '@/lib/people/directory'
+import { profilePath } from '@/lib/people/profile-rules'
 import { toHubResponse, type PageInput } from '@/lib/handbook/audience'
 import { filterPages } from '@/lib/handbook/search'
 import { getAllPages } from '@/lib/handbook/queries'
@@ -89,7 +90,7 @@ export async function searchPeople(
       name: row.name,
       position: row.position,
       department: row.department,
-      href: `/people?focus=${row.id}`,
+      href: profilePath(row.id),
     }))
 }
 

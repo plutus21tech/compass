@@ -5,6 +5,7 @@ import { Handle, Position, type NodeProps } from 'reactflow'
 import { Building2 } from 'lucide-react'
 import type { CompanyNodeData, PersonNodeData } from '@/lib/people/company-map'
 import { cn } from '@/lib/utils'
+import { PersonLink } from './PersonLink'
 
 /** Node data as rendered: the scene's data plus the search/focus highlight. */
 export type PersonFlowData = PersonNodeData & { highlighted: boolean }
@@ -17,7 +18,7 @@ export function joinNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
-function PersonNodeView({ data }: NodeProps<PersonFlowData>) {
+function PersonNodeView({ id, data }: NodeProps<PersonFlowData>) {
   const classes = cn(
     'w-[220px] rounded-xl border border-border bg-card px-4 py-3 text-left text-foreground shadow-sm transition-shadow',
     data.isViewer && 'ring-2 ring-primary',
@@ -27,7 +28,10 @@ function PersonNodeView({ data }: NodeProps<PersonFlowData>) {
     <div className={classes} data-viewer={data.isViewer || undefined}>
       <Handle type="target" position={Position.Top} className={HANDLE_CLASS} isConnectable={false} />
       <div className="flex items-start justify-between gap-2">
-        <p className="truncate text-sm font-semibold">{data.name}</p>
+        <p className="truncate text-sm font-semibold">
+          {/* The node id is the person's id. nodrag/nopan keep the click from moving the map. */}
+          <PersonLink personId={id} className="nodrag nopan">{data.name}</PersonLink>
+        </p>
         {data.isViewer ? (
           <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
             You

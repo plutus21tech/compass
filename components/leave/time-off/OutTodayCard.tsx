@@ -1,4 +1,5 @@
 import { Users } from 'lucide-react'
+import { PersonLink } from '@/components/people/PersonLink'
 import { othersOutToday, type OutTodayView } from '@/lib/home/out-today'
 import { halfDaySessionLabel, LEAVE_TYPE_STYLE } from './leave-style'
 
@@ -31,7 +32,7 @@ export function OutTodayCard({ outToday, viewerId }: OutTodayCardProps) {
           return (
             <li key={person.id} className="flex items-center gap-2 text-sm">
               <span className={`h-2 w-2 rounded-full ${type.dot}`} aria-hidden />
-              <span className="text-foreground">{person.name}</span>
+              <PersonLink personId={person.id} className="text-foreground">{person.name}</PersonLink>
               <span className="text-xs text-muted-foreground">
                 ({type.label}
                 {person.isHalfDay ? `, ${halfDaySessionLabel(person.halfDaySession)}` : ''})

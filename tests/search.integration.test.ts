@@ -54,7 +54,7 @@ test("people search keeps null-department colleagues and stays in the viewer's c
 test('people results carry no private fields', WEEKLY_DB_TEST, async () => {
   const result = await searchPeople(viewer, 'quillon')
   assert.deepEqual(Object.keys(result[0]).sort(), ['department', 'href', 'id', 'name', 'position'])
-  assert.equal(result[0].href, `/people?focus=${result[0].id}`)
+  assert.equal(result[0].href, `/people/${result[0].id}`)
 })
 
 test('your work finds your projects and open tasks only', WEEKLY_DB_TEST, async () => {
