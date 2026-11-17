@@ -77,7 +77,7 @@ test('loadCalendarMonth calls the calendar endpoint', async () => {
   stub(() => json({ events: [{ id: 'e' }], holidays: [], birthdays: [] }))
   const r = await loadCalendarMonth(2026, 10)
   assert.equal(calls[0][0], '/api/leave/calendar?month=10&year=2026')
-  assert.deepEqual(r, { ok: true, data: { events: [{ id: 'e' }], holidays: [], birthdays: [] } })
+  assert.deepEqual(r, { ok: true, data: { events: [{ id: 'e' }], holidays: [], birthdays: [], allHolidays: [], holidayTeams: [] } })
 })
 
 const route = (overrides: Record<string, () => Response> = {}) => (url: string) => {

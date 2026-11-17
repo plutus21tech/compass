@@ -9,6 +9,8 @@ export interface CalendarHoliday {
   id: string
   date: string // YYYY-MM-DD
   name: string
+  /** Who observes it; set only when other teams' holidays are on screen. */
+  teams?: string
 }
 
 export interface CalendarBirthday {
@@ -40,7 +42,7 @@ export function CalendarDayMarkers({
   return (
     <div className="mt-1 space-y-0.5 w-full">
       {holidays.map((holiday) => (
-        <div key={holiday.id} className={HOLIDAY_CLASS} title={`Holiday: ${holiday.name}`}>
+        <div key={holiday.id} className={HOLIDAY_CLASS} title={holiday.teams ? `Holiday: ${holiday.name} (${holiday.teams})` : `Holiday: ${holiday.name}`}>
           {holiday.name}
         </div>
       ))}

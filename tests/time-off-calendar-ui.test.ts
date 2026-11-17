@@ -173,3 +173,34 @@ test('Escape cancels a range in progress and is ignored when idle', () => {
 test('the hint sits in a polite live region', () => {
   assert.match(renderCalendar(), /aria-live="polite"/)
 })
+
+const MARKERS = {
+  holidays: [{ id: 'h1', date: '2026-11-09', name: 'Iqbal Day' }],
+  birthdays: [{ userId: 'u9', name: 'Noor Example', day: 12 }],
+}
+const PAKISTAN = [{ code: 'PAKISTAN', label: 'Pakistan Team' }]
+
+test('the calendar offers a show filter and, with holidays on screen, a team picker', () => {
+  const html = renderCalendar({ ...MARKERS, holidayTeams: PAKISTAN })
+  assert.match(html, /aria-label="Show on the calendar"/)
+  for (const label of ['Everything', 'Leave', 'Public holidays', 'Birthdays']) assert.match(html, new RegExp(`>${label}<`))
+  assert.match(html, /aria-label="Public holidays for"/)
+  assert.match(html, />Rhea</)
+  assert.match(html, />Iqbal Day</)
+  assert.match(html, />Noor&#x27;s birthday</)
+})
+
+test('showing only public holidays hides leave and birthdays', () => {
+  const html = renderCalendar({ ...MARKERS, initialShow: 'HOLIDAYS' })
+  assert.match(html, />Iqbal Day</)
+  assert.doesNotMatch(html, />Rhea</)
+  assert.doesNotMatch(html, />Noor&#x27;s birthday</)
+})
+
+test('showing only birthdays hides leave, holidays and the team picker', () => {
+  const html = renderCalendar({ ...MARKERS, initialShow: 'BIRTHDAYS', holidayTeams: PAKISTAN })
+  assert.match(html, />Noor&#x27;s birthday</)
+  assert.doesNotMatch(html, />Rhea</)
+  assert.doesNotMatch(html, />Iqbal Day</)
+  assert.doesNotMatch(html, /aria-label="Public holidays for"/)
+})

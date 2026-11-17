@@ -69,7 +69,7 @@ function UpcomingSection({ rows }: { rows: TeamUpcomingRow[] }) {
       </ul>
       {more > 0 ? (
         <Link href="/leave" className="mt-2 inline-block text-sm text-primary hover:underline">
-          and {more} more on the Time off page
+          and {more} more on the Calendar page
         </Link>
       ) : null}
     </section>

@@ -1,19 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/auth'
-import { birthdaysInMonth } from '@/lib/leave-holidays'
+import { birthdaysInMonth, leaveHolidayAppliesTo } from '@/lib/leave-holidays'
+import { isArchived } from '@/lib/teams/catalog'
+import { loadTeamCatalog } from '@/lib/teams/load'
 import { leaveDateKey } from '@/lib/leave-utils'
 
-/** Holidays in the month that apply to the viewer's own team -- the ones that affect their leave. */
-async function loadViewerHolidays(teamTag: string | null, startOfMonth: Date, endOfMonth: Date) {
-  if (!teamTag) return []
-  // Same rule as leaveHolidayAppliesTo: the holiday lists the viewer's team.
-  const holidays = await prisma.leaveHoliday.findMany({
-    where: { date: { gte: startOfMonth, lte: endOfMonth }, teamTags: { has: teamTag } },
-    select: { id: true, date: true, name: true },
-    orderBy: { date: 'asc' },
-  })
-  return holidays.map((holiday) => ({ id: holiday.id, date: leaveDateKey(holiday.date), name: holiday.name }))
+/**
+ * The month's holidays, three ways:
+ * - `holidays`: the viewer's own team's -- the only ones that affect their leave.
+ * - `allHolidays`: every team's, with the teams observing each, for the calendar's team filter.
+ * - `holidayTeams`: the teams that filter offers (current teams, plus any a holiday here still carries).
+ */
+async function loadMonthHolidays(teamTag: string | null, startOfMonth: Date, endOfMonth: Date) {
+  const [rows, catalog] = await Promise.all([
+    prisma.leaveHoliday.findMany({
+      where: { date: { gte: startOfMonth, lte: endOfMonth } },
+      select: { id: true, date: true, name: true, teamTags: true },
+      orderBy: { date: 'asc' },
+    }),
+    loadTeamCatalog(),
+  ])
+  const allHolidays = rows.map((row) => ({
+    id: row.id,
+    date: leaveDateKey(row.date),
+    name: row.name,
+    teamTags: row.teamTags,
+  }))
+  const holidays = allHolidays
+    .filter((holiday) => leaveHolidayAppliesTo(holiday, teamTag))
+    .map(({ id, date, name }) => ({ id, date, name }))
+  const used = new Set(allHolidays.flatMap((holiday) => holiday.teamTags))
+  const holidayTeams = catalog.definitions
+    .filter((definition) => !isArchived(definition) || used.has(definition.code))
+    .map((definition) => ({ code: definition.code, label: definition.label }))
+  return { holidays, allHolidays, holidayTeams }
 }
 
 /** Everyone's birthdays in the month: name and day only, never a year. */
@@ -91,12 +112,12 @@ export async function GET(request: NextRequest) {
       isCurrentUser: request.employeeId === user.id,
     }))
 
-    const [holidays, birthdays] = await Promise.all([
-      loadViewerHolidays(user.teamTag, startOfMonth, endOfMonth),
+    const [monthHolidays, birthdays] = await Promise.all([
+      loadMonthHolidays(user.teamTag, startOfMonth, endOfMonth),
       loadMonthBirthdays(year, month),
     ])
 
-    return NextResponse.json({ events, holidays, birthdays })
+    return NextResponse.json({ events, ...monthHolidays, birthdays })
   } catch (error) {
     console.error('Failed to fetch calendar data:', error)
     return NextResponse.json({ error: 'Failed to fetch calendar' }, { status: 500 })
