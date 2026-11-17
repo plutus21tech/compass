@@ -1,5 +1,6 @@
 'use client'
 
+import { PersonLink } from '@/components/people/PersonLink'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
@@ -36,7 +37,7 @@ export function DayLeaveDialog({ open, dayKey, events, onClose }: DayLeaveDialog
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground">
-                      {event.isCurrentUser ? 'You' : event.employeeName}
+                      <PersonLink personId={event.employeeId}>{event.isCurrentUser ? 'You' : event.employeeName}</PersonLink>
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {LEAVE_TYPE_STYLE[event.leaveType].label}

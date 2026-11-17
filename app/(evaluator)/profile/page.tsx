@@ -51,6 +51,7 @@ import {
   type AvatarHeadCoveringType,
   type AvatarOutfitType,
 } from '@/shared/avatar-v2'
+import { drawAvatarPreview } from '@/lib/avatar-pixels'
 import { isValidEmailAddress } from '@/lib/email-address'
 import { ATTRIBUTE_LABELS, attributeValueLabel } from '@/lib/academy/labels'
 
@@ -65,136 +66,7 @@ const WEEKDAYS = [
 ] as const
 type DigestFrequency = 'DAILY' | 'WEEKLY'
 
-// ─── Avatar Preview Drawing (matches OfficeSprites.ts character renderer) ────
-
-function parseHex(hex: string): [number, number, number] {
-  const c = hex.replace('#', '')
-  return [parseInt(c.substring(0, 2), 16), parseInt(c.substring(2, 4), 16), parseInt(c.substring(4, 6), 16)]
-}
-function toHex(r: number, g: number, b: number): string {
-  const cl = (v: number) => Math.max(0, Math.min(255, Math.round(v)))
-  return '#' + [r, g, b].map(v => cl(v).toString(16).padStart(2, '0')).join('')
-}
-function lighten(c: string, n: number): string { const [r, g, b] = parseHex(c); return toHex(r + n, g + n, b + n) }
-function darken(c: string, n: number): string { const [r, g, b] = parseHex(c); return toHex(r - n, g - n, b - n) }
-
-type PFn = (x: number, y: number, w: number, h: number, color: string) => void
-
-function hairCategoryToStyleIndex(category: AvatarHairCategory): number {
-  switch (category) {
-    case 'short':   return 0
-    case 'tied':    return 1
-    case 'medium':  return 2
-    case 'long':    return 3
-    case 'curly':   return 4
-    case 'covered': return 0
-  }
-}
-
-function drawHairPreview(p: PFn, dir: 'down', style: number, color: string) {
-  const hi = lighten(color, 15)
-  const lo = darken(color, 10)
-  switch (style) {
-    case 0: p(7,1,6,3,color); p(8,0,4,1,color); p(7,1,6,1,hi); break
-    case 1: p(7,2,6,2,color); p(8,0,1,2,color); p(10,-1,1,3,color); p(12,0,1,2,color); p(7,2,6,1,hi); break
-    case 2: p(6,1,7,3,color); p(6,0,5,1,color); p(6,1,2,1,hi); break
-    case 3: p(6,1,8,3,color); p(7,0,6,1,color); p(7,0,4,1,hi); p(6,4,1,6,color); p(13,4,1,6,color); break
-    case 4: p(6,0,8,4,color); p(5,1,1,3,color); p(14,1,1,3,color); p(7,0,6,1,hi); p(7,1,1,1,hi); p(11,2,1,1,hi); p(9,0,1,1,lo); p(13,1,1,1,lo); break
-  }
-}
-
-function drawHijabPreview(p: PFn, color: string) {
-  p(6,1,8,4,color)
-  p(6,4,1,6,color)
-  p(13,4,1,6,color)
-  p(7,0,6,1,lighten(color,14))
-  p(6,3,1,5,darken(color,14))
-  p(13,3,1,5,darken(color,14))
-}
-
-function drawGlassesPreview(p: PFn) {
-  p(7,6,3,1,'#1f2937')
-  p(11,6,3,1,'#1f2937')
-  p(10,6,1,1,'#1f2937')
-}
-
-function drawAvatarPreview(
-  canvas: HTMLCanvasElement,
-  skinColor: string,
-  hairColor: string,
-  options: {
-    bodyFrame: AvatarBodyFrame
-    outfitType: AvatarOutfitType
-    outfitColor: string
-    outfitAccentColor: string
-    hairCategory: AvatarHairCategory
-    headCoveringType: AvatarHeadCoveringType
-    headCoveringColor: string
-    accessories: AvatarAccessory[]
-  },
-) {
-  const W = 20, H = 28, SCALE = 4
-  const SW = W * SCALE, SH = H * SCALE
-  canvas.width = SW
-  canvas.height = SH
-  const ctx = canvas.getContext('2d')!
-  ctx.imageSmoothingEnabled = false
-  ctx.clearRect(0, 0, SW, SH)
-
-  const p: PFn = (x, y, w, h, color) => {
-    ctx.fillStyle = color
-    ctx.fillRect(x * SCALE, y * SCALE, w * SCALE, h * SCALE)
-  }
-  const shoeColor = '#383838', pantsColor = '#484858', beltColor = '#3a3a3a'
-
-  const bodyFrame = options.bodyFrame
-  const previewBodyType: 'male' | 'female' = bodyFrame === 'feminine' ? 'female' : 'male'
-  const outfitColor = options.outfitColor
-  const hairStyle = hairCategoryToStyleIndex(options.hairCategory)
-  if (options.headCoveringType === 'hijab') drawHijabPreview(p, options.headCoveringColor)
-  else drawHairPreview(p, 'down', hairStyle, hairColor)
-  // Head
-  p(7,4,6,5,skinColor)
-  // Eyebrows
-  p(7,5,2,1,darken(hairColor,10)); p(11,5,2,1,darken(hairColor,10))
-  // Eyes
-  p(8,6,2,2,'#282828'); p(11,6,2,2,'#282828'); p(8,6,1,1,'#ffffff'); p(12,6,1,1,'#ffffff')
-  if (options.accessories.includes('glasses')) drawGlassesPreview(p)
-  // Neck
-  p(9,9,2,1,skinColor)
-  // Body
-  const bodyW = previewBodyType === 'female' ? 8 : 10
-  const bodyX = previewBodyType === 'female' ? 6 : 5
-  p(bodyX,10,bodyW,7,outfitColor); p(bodyX,15,bodyW,2,darken(outfitColor,18))
-  if (options.outfitType === 'blazer' || options.outfitType === 'suit') {
-    p(bodyX,10,2,7,darken(outfitColor,10)); p(bodyX+bodyW-2,10,2,7,darken(outfitColor,10))
-    p(bodyX+3,10,bodyW-6,7,'#f8fafc'); p(9,11,2,5,options.outfitAccentColor)
-  } else if (options.outfitType === 'hoodie') {
-    p(bodyX+1,9,bodyW-2,2,darken(outfitColor,8)); p(8,12,1,3,options.outfitAccentColor); p(11,12,1,3,options.outfitAccentColor)
-  } else if (options.outfitType === 'kurta') {
-    p(bodyX-1,14,bodyW+2,5,outfitColor); p(9,10,2,8,options.outfitAccentColor)
-  } else {
-    p(8,10,4,1,darken(outfitColor,10)); p(9,10,2,1,lighten(outfitColor,8))
-  }
-  if (previewBodyType === 'male' && options.outfitType === 'shirt') p(11,12,2,2,darken(outfitColor,8))
-  // Arms
-  p(bodyX-2,11,2,5,skinColor); p(bodyX+bodyW,11,2,5,skinColor)
-  // Belt
-  p(bodyX,17,bodyW,1,beltColor)
-  if (options.accessories.includes('badge')) {
-    p(bodyX + bodyW - 3, 12, 2, 2, '#f8fafc')
-    p(bodyX + bodyW - 2, 13, 1, 1, options.outfitAccentColor)
-  }
-  if (options.accessories.includes('watch')) p(bodyX - 2, 15, 1, 1, options.outfitAccentColor)
-  // Pants
-  const pantsX = previewBodyType === 'female' ? 6 : 5
-  const pantsW = previewBodyType === 'female' ? 8 : 10
-  p(pantsX,18,pantsW,4,pantsColor); p(9,18,2,4,darken(pantsColor,5))
-  // Legs / shoes
-  p(pantsX+1,22,3,2,pantsColor); p(pantsX+pantsW-4,22,3,2,pantsColor)
-  p(pantsX+1,24,3,2,shoeColor); p(pantsX+pantsW-4,24,3,2,shoeColor)
-  p(pantsX+1,24,3,1,lighten(shoeColor,15)); p(pantsX+pantsW-4,24,3,1,lighten(shoeColor,15))
-}
+// The avatar preview is drawn by lib/avatar-pixels.ts, shared with the profile page.
 
 
 interface AcademyProfile {
@@ -304,7 +176,9 @@ export default function ProfilePage() {
   // Redraw avatar preview when any avatar setting changes (v2 only).
   const redrawAvatar = useCallback(() => {
     if (canvasRef.current) {
-      drawAvatarPreview(canvasRef.current, avatarSkinTone, avatarHairColor, {
+      drawAvatarPreview(canvasRef.current, {
+        skinColor: avatarSkinTone,
+        hairColor: avatarHairColor,
         bodyFrame: avatarBodyFrame,
         outfitType: avatarOutfitType,
         outfitColor: avatarOutfitColor,

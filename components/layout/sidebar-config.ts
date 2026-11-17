@@ -79,7 +79,7 @@ export const EMPLOYEE_SIDEBAR: SidebarConfig = {
       collapsible: false,
       items: [
         { label: 'Home', href: '/dashboard', icon: Home, keywords: ['dashboard'] },
-        { label: 'Time off', href: '/leave', icon: Calendar, keywords: ['leave', 'holiday', 'wfh', 'work from home', 'vacation'] },
+        { label: 'Calendar', href: '/leave', icon: Calendar, keywords: ['time off', 'leave', 'birthday', 'holiday', 'wfh', 'work from home', 'vacation'] },
         { label: 'Evaluations', href: '/evaluations/weekly', icon: ClipboardCheck, activePrefix: '/evaluations', keywords: ['weekly', 'questions', 'review'] },
       ],
     },

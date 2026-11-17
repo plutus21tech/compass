@@ -6,6 +6,7 @@ import { UserAvatar } from '@/components/composed/UserAvatar'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { PersonLink } from './PersonLink'
 
 const LOAD_ERROR = 'Could not load your team. Try again.'
 
@@ -74,7 +75,9 @@ function TeamRow({ member, highlighted }: { member: TeamMember; highlighted: boo
     >
       <UserAvatar name={member.name} size="sm" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{member.name}</p>
+        <p className="truncate text-sm font-medium text-foreground">
+          <PersonLink personId={member.id}>{member.name}</PersonLink>
+        </p>
         <p className="truncate text-xs text-muted-foreground">{member.position || member.department || 'Team member'}</p>
       </div>
       <p className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">

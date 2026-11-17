@@ -10,6 +10,7 @@ import {
 } from '@/lib/time-off/api'
 import { monthsBetween } from '@/lib/time-off/calendar-grid'
 import { notePublicHolidayFailures } from '@/lib/time-off/holiday-warnings'
+import type { HolidayTeamOption, TeamHoliday } from '@/lib/time-off/calendar-filters'
 import type { CalendarEvent } from '@/lib/time-off/types'
 
 const EMPTY_SNAPSHOT: TimeOffSnapshot = {
@@ -29,6 +30,8 @@ interface CalendarState {
   events: CalendarEvent[]
   holidays: CalendarHoliday[]
   birthdays: CalendarBirthday[]
+  allHolidays: TeamHoliday[]
+  holidayTeams: HolidayTeamOption[]
 }
 
 const cacheKey = (year: number, month: number) => `${year}-${month}`
@@ -41,7 +44,7 @@ export function useTimeOffData(enabled: boolean) {
   const [outToday, setOutToday] = useState<OutTodayView | null>(null)
   const [calendar, setCalendar] = useState<CalendarState>(() => {
     const now = new Date()
-    return { year: now.getFullYear(), month: now.getMonth(), events: [], holidays: [], birthdays: [] }
+    return { year: now.getFullYear(), month: now.getMonth(), events: [], holidays: [], birthdays: [], allHolidays: [], holidayTeams: [] }
   })
   const [calendarError, setCalendarError] = useState(false)
   const holidayCache = useRef<Map<string, string[]>>(new Map())

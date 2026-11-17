@@ -1,5 +1,6 @@
 import type { CalendarBirthday, CalendarHoliday } from '@/components/leave/CalendarDayMarkers'
 import type { OutTodayView } from '@/lib/home/out-today'
+import type { HolidayTeamOption, TeamHoliday } from '@/lib/time-off/calendar-filters'
 import type { TransitionTask } from '@/lib/leave-transition-plan'
 import type {
   ApprovalRequest, CalendarEvent, DirectoryUser, LeaveBalance, LeaveRequest, WfhRequest,
@@ -20,6 +21,9 @@ export interface CalendarMonthData {
   events: CalendarEvent[]
   holidays: CalendarHoliday[]
   birthdays: CalendarBirthday[]
+  /** Every team's holidays in the month, for the calendar's team filter. Never used to charge leave. */
+  allHolidays: TeamHoliday[]
+  holidayTeams: HolidayTeamOption[]
 }
 
 const LOAD_ERROR = 'Could not load your time off. Refresh to try again.'
@@ -136,7 +140,13 @@ export async function loadCalendarMonth(year: number, month: number): Promise<Ap
   if (!r.ok) return r
   return {
     ok: true,
-    data: { events: r.data.events ?? [], holidays: r.data.holidays ?? [], birthdays: r.data.birthdays ?? [] },
+    data: {
+      events: r.data.events ?? [],
+      holidays: r.data.holidays ?? [],
+      birthdays: r.data.birthdays ?? [],
+      allHolidays: r.data.allHolidays ?? [],
+      holidayTeams: r.data.holidayTeams ?? [],
+    },
   }
 }
 

@@ -10,6 +10,7 @@ import { getResolvedEvaluationAssignments } from '@/lib/evaluation-assignments'
 import {
   FINALIZED_PAYROLL_PERIOD_STATUSES as FINALIZED_PAYROLL_PERIOD_STATUS_SET,
   USABLE_PAYROLL_RECEIPT_STATUSES as USABLE_PAYROLL_RECEIPT_STATUS_SET,
+  extractBasicSalary,
   getScorablePeriods as filterScorablePeriods,
   isEmployee360Eligible,
   selectScorablePeriod,
@@ -43,13 +44,8 @@ export const RECENT_OPERATIONS_DAYS = 90
 export const RECENT_ITEM_LIMIT = 12
 const ANALYTICS_CACHE_TTL_MS = 30_000
 
-export function extractBasicSalary(receiptJson: unknown): number | null {
-  if (!receiptJson || typeof receiptJson !== 'object') return null
-  const earnings = (receiptJson as { earnings?: unknown }).earnings
-  if (!earnings || typeof earnings !== 'object') return null
-  const amount = Number((earnings as { basicSalary?: unknown }).basicSalary)
-  return Number.isFinite(amount) && amount > 0 ? amount : null
-}
+// Lives in lib so the profile's pay view reads receipts by the same rule.
+export { extractBasicSalary }
 
 export type ScorablePeriod = ScorablePeriodCandidate & {
   startDate: Date

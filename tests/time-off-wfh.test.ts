@@ -69,7 +69,11 @@ test('a running WFH offers Cancel request; an ended one does not', () => {
 })
 
 test('durations read as days and the work plan shows', () => {
-  const html = section({ isThreeE: true, requests: [wfh({ workPlan: 'On call all day' })] })
+  // Fixed weekdays (Mon-Tue): dates relative to today can land on a weekend and count fewer days.
+  const html = section({
+    isThreeE: true,
+    requests: [wfh({ workPlan: 'On call all day', startDate: '2030-06-03', endDate: '2030-06-04' })],
+  })
   assert.match(html, /2 days/)
   assert.match(html, /Work plan: On call all day/)
 })

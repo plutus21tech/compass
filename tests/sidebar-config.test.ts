@@ -18,7 +18,7 @@ const hrefs = (c: SidebarConfig) => flattenNav(c).map((i) => i.href)
 test('the employee menu is grouped You, Work, Company with Help & IT and Profile pinned', () => {
   assert.deepEqual(shape(resolveSidebarConfig(EMPLOYEE_SIDEBAR, base)), {
     items: [],
-    groups: [['You', 'Home', 'Time off', 'Evaluations'], ['Work', 'My work', 'Projects'], ['Company', 'People', 'Handbook', 'Office']],
+    groups: [['You', 'Home', 'Calendar', 'Evaluations'], ['Work', 'My work', 'Projects'], ['Company', 'People', 'Handbook', 'Office']],
     pinned: ['Help & IT', 'Profile'],
   })
 })

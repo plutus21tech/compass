@@ -16,7 +16,17 @@ import { previewRange, reduceRange, type RangeEvent, type RangeState } from '@/l
 import { reduceTap, type PendingTap, type TapEvent } from '@/lib/time-off/touch-tap'
 import { moveFocusKey, rovingFocusKey } from '@/lib/time-off/calendar-focus'
 import { LEAVE_TYPES, type CalendarEvent, type DirectoryUser } from '@/lib/time-off/types'
+import {
+  HOLIDAY_TEAM_MINE,
+  visibleBirthdays,
+  visibleEvents,
+  visibleHolidays,
+  type CalendarShow,
+  type HolidayTeamOption,
+  type TeamHoliday,
+} from '@/lib/time-off/calendar-filters'
 import { CalendarDayCell } from './CalendarDayCell'
+import { CalendarFilters } from './CalendarFilters'
 import { DayLeaveDialog } from './DayLeaveDialog'
 import { LEAVE_TYPE_STYLE } from './leave-style'
 
@@ -27,6 +37,11 @@ export interface TeamCalendarProps {
   events: CalendarEvent[]
   holidays: CalendarHoliday[]
   birthdays: CalendarBirthday[]
+  /** Every team's holidays and the teams to filter them by; without them only the viewer's show. */
+  allHolidays?: TeamHoliday[]
+  holidayTeams?: HolidayTeamOption[]
+  /** What the calendar shows when it first appears. */
+  initialShow?: CalendarShow
   users: DirectoryUser[]
   viewerDepartment: string | null
   departmentFilter: string
@@ -159,14 +174,23 @@ export function TeamCalendar(props: TeamCalendarProps) {
   const [focusedDay, setFocusedDay] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
+  const { allHolidays, holidayTeams } = props
+  const [show, setShow] = useState<CalendarShow>(props.initialShow ?? 'ALL')
+  const [holidayTeam, setHolidayTeam] = useState<string>(HOLIDAY_TEAM_MINE)
+  const shownHolidays = useMemo(
+    () => visibleHolidays(show, holidayTeam, holidays, allHolidays ?? [], holidayTeams ?? []),
+    [show, holidayTeam, holidays, allHolidays, holidayTeams]
+  )
+  const shownBirthdays = useMemo(() => visibleBirthdays(show, birthdays), [show, birthdays])
+
   const cells = useMemo(
     () =>
       buildDayCells(
         buildMonthGrid(year, month),
-        filterEventsByDepartment(events, departmentFilter),
+        visibleEvents(show, filterEventsByDepartment(events, departmentFilter)),
         localDayKey(new Date())
       ),
-    [year, month, events, departmentFilter]
+    [year, month, events, departmentFilter, show]
   )
   const departments = useMemo(() => calendarDepartments(users, events), [users, events])
   const selectableKeys = useMemo(() => new Set(cells.filter((c) => c.selectable).map((c) => c.key)), [cells])
@@ -289,6 +313,13 @@ export function TeamCalendar(props: TeamCalendarProps) {
           <Hint phase={range.phase} panelOpen={panelOpen} onCancel={() => dispatch({ type: 'cancel' })} />
         </div>
       </div>
+      <CalendarFilters
+        show={show}
+        onShowChange={setShow}
+        holidayTeam={holidayTeam}
+        onHolidayTeamChange={setHolidayTeam}
+        holidayTeams={holidayTeams ?? []}
+      />
       <Legend />
 
       <div className="overflow-hidden rounded-xl border-l border-t border-border bg-card">
@@ -317,8 +348,8 @@ export function TeamCalendar(props: TeamCalendarProps) {
                 <CalendarDayCell
                   key={cell.key}
                   cell={cell}
-                  holidays={holidays.filter((h) => h.date.slice(0, 10) === cell.key)}
-                  birthdays={cell.inMonth ? birthdays.filter((b) => b.day === cell.day) : []}
+                  holidays={shownHolidays.filter((h) => h.date.slice(0, 10) === cell.key)}
+                  birthdays={cell.inMonth ? shownBirthdays.filter((b) => b.day === cell.day) : []}
                   selected={Boolean(highlight && cell.inMonth && cell.key >= highlight.start && cell.key <= highlight.end)}
                   tabbable={cell.key === tabStop}
                   onMoreClick={setDialogCell}

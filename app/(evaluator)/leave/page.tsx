@@ -176,7 +176,7 @@ export default function LeavePage() {
     <PageContainer>
       <PageHeader
         dateLine={formatDate(localDayKey(new Date()))}
-        title="Time off"
+        title="Calendar"
         subtitle={isThreeE ? SUBTITLE_3E : SUBTITLE}
         actions={actions}
       />
@@ -209,6 +209,8 @@ export default function LeavePage() {
               events={calendar.events}
               holidays={calendar.holidays}
               birthdays={calendar.birthdays}
+              allHolidays={calendar.allHolidays}
+              holidayTeams={calendar.holidayTeams}
               users={snapshot.users}
               viewerDepartment={viewerDepartment}
               departmentFilter={departmentFilter}
