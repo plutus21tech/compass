@@ -411,6 +411,7 @@ model User {
   mappingExclusionsAsEvaluatee EvaluatorMappingExclusion[] @relation("MappingExclusionEvaluatee")
   subscriptionOwnerships SubscriptionOwner[]
   birthday               EmployeeBirthday?
+  profileDetail          ProfileDetail?
   evaluationEdits       EvaluationEdit[]   @relation("EvaluationEditor")
   clientAssignments      ClientAssignment[] @relation("ClientAssignee")
   rosterRequestsMade     ClientRosterRequest[] @relation("RosterRequester")
@@ -1006,6 +1007,18 @@ model EmployeeBirthday {
   updatedAt DateTime @updatedAt
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// The "about me" answers a person writes on their own profile. Free text, all optional.
+model ProfileDetail {
+  userId     String   @id
+  bio        String?
+  hobbies    String?
+  funFact    String?
+  askMeAbout String?
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model WfhRequest {

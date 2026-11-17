@@ -389,6 +389,15 @@ export function selfVsOthersGap(
   return selfScore - weightedOverallScore / 25
 }
 
+/** The basic salary on a payroll receipt, or null when the receipt carries none. */
+export function extractBasicSalary(receiptJson: unknown): number | null {
+  if (!receiptJson || typeof receiptJson !== 'object') return null
+  const earnings = (receiptJson as { earnings?: unknown }).earnings
+  if (!earnings || typeof earnings !== 'object') return null
+  const amount = Number((earnings as { basicSalary?: unknown }).basicSalary)
+  return Number.isFinite(amount) && amount > 0 ? amount : null
+}
+
 export interface SalaryObservation {
   effectiveFrom: string
   amount: number
