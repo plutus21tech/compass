@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate } from '@/lib/format-date'
 import {
+  overdueByProject,
   pickActiveProjects,
   pickOpenTasks,
   projectProgressPhrase,
@@ -18,6 +19,8 @@ interface MyWorkPanelProps {
   tasks: Source<HomeTask[]> | null
   projects: Source<HomeProject[]> | null
   viewerId: string
+  /** Today's day key; with it, projects show how many of your tasks are overdue. */
+  todayKey?: string
   onOpenTask(task: HomeTask): void
 }
 
@@ -55,7 +58,11 @@ function TaskRow({ task, onOpenTask }: { task: HomeTask; onOpenTask(task: HomeTa
           <span>{task.project.name}</span>
           <span>{titleCase(task.priority)}</span>
           {task.section?.name ? <span>{task.section.name}</span> : null}
-          <span>{task.dueDate ? `Due ${formatDate(task.dueDate)}` : 'No due date'}</span>
+          {task.dueDate ? (
+            <span>Due {formatDate(task.dueDate)}</span>
+          ) : (
+            <span className="text-amber-700 dark:text-amber-300">No due date</span>
+          )}
         </span>
       </button>
     </li>
@@ -66,7 +73,16 @@ function TasksSection({ tasks, onOpenTask }: Pick<MyWorkPanelProps, 'tasks' | 'o
   if (tasks === null) return <Loading />
   if (!tasks.ok) return <Unavailable />
   const { shown } = pickOpenTasks(tasks.data)
-  if (shown.length === 0) return <p className="text-sm text-muted-foreground">No open tasks. Nice.</p>
+  if (shown.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">No open tasks.</span> Tasks assigned to you in Projects show up here.{' '}
+        <Link href="/projects" className="text-primary hover:underline">
+          Open Projects
+        </Link>
+      </p>
+    )
+  }
   return (
     <ul className="-mx-2 space-y-1">
       {shown.map((task) => (
@@ -76,7 +92,7 @@ function TasksSection({ tasks, onOpenTask }: Pick<MyWorkPanelProps, 'tasks' | 'o
   )
 }
 
-function ProjectRow({ project }: { project: HomeProject }) {
+function ProjectRow({ project, overdue }: { project: HomeProject; overdue: number }) {
   const pct = project.progress.percentage ?? 0
   return (
     <li>
@@ -85,23 +101,33 @@ function ProjectRow({ project }: { project: HomeProject }) {
           <span className="font-medium text-foreground">{project.name}</span>
           <span className="text-sm text-muted-foreground">{project.progress.percentage === null ? '' : `${pct}%`}</span>
         </span>
-        <span className="block text-sm text-muted-foreground">{projectProgressPhrase(project.progress)}</span>
+        <span className="block text-sm text-muted-foreground">
+          {projectProgressPhrase(project.progress)}
+          {overdue > 0 ? <span className="font-medium text-red-600 dark:text-red-400"> · {overdue} overdue</span> : null}
+        </span>
         <Progress value={pct} aria-label={`${project.name} progress`} className="mt-2 h-1.5" />
       </Link>
     </li>
   )
 }
 
-function ProjectsSection({ projects, viewerId }: Pick<MyWorkPanelProps, 'projects' | 'viewerId'>) {
+function ProjectsSection({ projects, viewerId, tasks, todayKey }: Pick<MyWorkPanelProps, 'projects' | 'viewerId' | 'tasks' | 'todayKey'>) {
   if (projects === null) return <Loading />
   if (!projects.ok) return <Unavailable />
   const { shown, more } = pickActiveProjects(projects.data, viewerId)
-  if (shown.length === 0) return <p className="text-sm text-muted-foreground">You have no active projects.</p>
+  const overdue = tasks?.ok && todayKey ? overdueByProject(tasks.data, todayKey) : new Map<string, number>()
+  if (shown.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">You&apos;re not on a project yet.</span> Ask your lead to add you.
+      </p>
+    )
+  }
   return (
     <>
       <ul className="-mx-2 space-y-1">
         {shown.map((project) => (
-          <ProjectRow key={project.id} project={project} />
+          <ProjectRow key={project.id} project={project} overdue={overdue.get(project.id) ?? 0} />
         ))}
       </ul>
       {more > 0 ? (
@@ -113,9 +139,9 @@ function ProjectsSection({ projects, viewerId }: Pick<MyWorkPanelProps, 'project
   )
 }
 
-export function MyWorkPanel({ tasks, projects, viewerId, onOpenTask }: MyWorkPanelProps) {
+export function MyWorkPanel({ tasks, projects, viewerId, todayKey, onOpenTask }: MyWorkPanelProps) {
   return (
-    <section aria-labelledby="my-work-heading">
+    <section aria-labelledby="my-work-heading" className="flex flex-col">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 id="my-work-heading" className="text-base font-semibold text-foreground">
           My work
@@ -124,14 +150,15 @@ export function MyWorkPanel({ tasks, projects, viewerId, onOpenTask }: MyWorkPan
           Open My work
         </Link>
       </div>
-      <Card className="divide-y divide-border">
+      {/* Fills the row so its bottom edge lines up with Needs you. */}
+      <Card className="flex flex-1 flex-col divide-y divide-border">
         <div className="space-y-3 p-5">
           <Eyebrow>Your open tasks</Eyebrow>
           <TasksSection tasks={tasks} onOpenTask={onOpenTask} />
         </div>
-        <div className="space-y-3 p-5">
+        <div className="flex-1 space-y-3 p-5">
           <Eyebrow>Your projects</Eyebrow>
-          <ProjectsSection projects={projects} viewerId={viewerId} />
+          <ProjectsSection projects={projects} viewerId={viewerId} tasks={tasks} todayKey={todayKey} />
         </div>
       </Card>
     </section>

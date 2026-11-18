@@ -84,8 +84,20 @@ test('my work: empty states', () => {
       onOpenTask: () => {},
     })
   )
-  assert.match(html, /No open tasks\. Nice\./)
-  assert.match(html, /You have no active projects\./)
+  assert.match(html, /No open tasks\./)
+  assert.match(html, /Tasks assigned to you in Projects show up here\./)
+  assert.match(html, /<a[^>]*href="\/projects"[^>]*>Open Projects<\/a>/)
+  assert.match(html, /You(&#x27;|')re not on a project yet\./)
+  assert.match(html, /Ask your lead to add you\./)
+})
+
+test('needs you: the empty box is a designed state that fills the row', () => {
+  const html = renderNeeds({ items: [], incomplete: false })
+  assert.match(html, /You(&#x27;|')re all clear/)
+  assert.doesNotMatch(html, /0 open, sorted by due date/)
+  // Both bottom-row cards stretch to the same height.
+  assert.match(html, /<section[^>]*class="flex flex-col"/)
+  assert.match(html, /class="[^"]*flex flex-1 flex-col[^"]*"/)
 })
 
 test('the side sheet reuses the task panel', () => {

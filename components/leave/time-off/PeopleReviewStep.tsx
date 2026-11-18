@@ -51,6 +51,7 @@ function PeoplePicker(props: {
   max: number
   members: DirectoryUser[]
   selectedIds: string[]
+  suggestedIds: string[]
   onChange: (ids: string[]) => void
 }) {
   return (
@@ -67,8 +68,10 @@ function PeoplePicker(props: {
         selectedIds={props.selectedIds}
         onChange={props.onChange}
         max={props.max}
-        placeholder="Search by name or department..."
+        placeholder="Type a name or team..."
         emptyPoolText="No other team members"
+        searchToOpen
+        suggestedIds={props.suggestedIds}
       />
     </div>
   )
@@ -77,6 +80,12 @@ function PeoplePicker(props: {
 /** Step 3: cover and notify people, then everything the request will say. */
 export function PeopleReviewStep({ form, onChange, users, viewerId, summary, mode }: PeopleReviewStepProps) {
   const pool = useMemo(() => users.filter((u) => u.id !== viewerId), [users, viewerId])
+  // Teammates from the viewer's own department are offered as one-click suggestions.
+  const teammateIds = useMemo(() => {
+    const department = users.find((u) => u.id === viewerId)?.department?.trim()
+    if (!department) return []
+    return pool.filter((u) => u.department?.trim() === department).map((u) => u.id)
+  }, [users, viewerId, pool])
   const halfDay = form.isHalfDay && isHalfDayEligible(form.leaveType)
   const firstNoteLine = form.transitionPlan.split('\n').find((line) => line.trim().length > 0)?.trim()
 
@@ -90,6 +99,7 @@ export function PeopleReviewStep({ form, onChange, users, viewerId, summary, mod
           max={MAX_COVER_PEOPLE}
           members={pool}
           selectedIds={form.coverPersonIds}
+          suggestedIds={teammateIds}
           onChange={(ids) => onChange({ ...form, coverPersonIds: ids })}
         />
         <PeoplePicker
@@ -99,6 +109,7 @@ export function PeopleReviewStep({ form, onChange, users, viewerId, summary, mod
           max={MAX_NOTIFY_PEOPLE}
           members={pool}
           selectedIds={form.additionalNotifyIds}
+          suggestedIds={teammateIds.filter((id) => !form.coverPersonIds.includes(id))}
           onChange={(ids) => onChange({ ...form, additionalNotifyIds: ids })}
         />
       </div>

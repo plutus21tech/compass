@@ -2,7 +2,19 @@
 
 import { daysLeftSuffix, formatDays } from '@/lib/format-count'
 import type { BalanceCardModel, NextLeaveModel } from '@/lib/time-off/balance-cards'
+import { Skeleton } from '@/components/ui/skeleton'
 import { LEAVE_TYPE_STYLE } from './leave-style'
+
+/** Placeholder for the balance band while the first load is in flight. */
+export function BalanceSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-36 rounded-card" />
+      ))}
+    </div>
+  )
+}
 
 interface BalanceCardsProps {
   cards: BalanceCardModel[]
@@ -30,7 +42,9 @@ function BalanceCard({ card }: { card: BalanceCardModel }) {
       </div>
       <div className="mt-3 flex items-baseline gap-2">
         <span
-          className={`text-3xl font-semibold tabular-nums ${card.isEmpty ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}
+          className={`text-3xl font-semibold tabular-nums ${
+            card.isEmpty ? 'text-red-600 dark:text-red-400' : card.isLow ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'
+          }`}
         >
           {card.isEmpty ? 'None' : formatLeft(card.left)}
         </span>

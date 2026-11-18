@@ -111,10 +111,16 @@ export function CommandPalette({ open, onOpenChange, pages }: CommandPaletteProp
             {error && <p className="px-3 py-2 text-xs text-muted-foreground">{error}</p>}
             {searching && loading && total === 0 && <p className="px-3 py-6 text-center text-sm text-muted-foreground">Searching…</p>}
             {searching && !loading && !error && total === 0 && (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">No matches for “{query}”.</p>
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                <span className="block font-medium text-foreground">No matches for “{query}”.</span>
+                Try a person, policy, task or page.
+              </p>
             )}
             {!searching && query.trim() !== '' && pageMatches.length === 0 && (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">No matches for “{query}”.</p>
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                <span className="block font-medium text-foreground">No matches for “{query}”.</span>
+                Try a person, policy, task or page.
+              </p>
             )}
           </Command.List>
         </Command>

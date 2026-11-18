@@ -13,8 +13,12 @@ export interface BalanceCardModel {
   /** Share of the allowance still left, 0..1. */
   fraction: number
   isEmpty: boolean
+  /** Some left, but only a little (LOW_BALANCE_DAYS or fewer). */
+  isLow: boolean
   note: string
 }
+
+export const LOW_BALANCE_DAYS = 2
 
 export interface NextLeaveModel {
   type: LeaveType
@@ -50,8 +54,10 @@ export function buildBalanceCards(
     const pendingDays = pendingDaysFor(requests, type, balanceYear)
     const isEmpty = left <= 0
     const fraction = total > 0 ? Math.min(1, Math.max(0, left / total)) : 0
-    const note = isEmpty ? TALK_TO_HR : pendingDays > 0 ? `${formatDays(pendingDays)} pending` : 'Nothing pending'
-    return { type, label: LEAVE_TYPE_LABEL[type], left, total, pendingDays, fraction, isEmpty, note }
+    const isLow = !isEmpty && left <= LOW_BALANCE_DAYS
+    const pending = pendingDays > 0 ? `${formatDays(pendingDays)} pending` : 'Nothing pending'
+    const note = isEmpty ? TALK_TO_HR : isLow ? `Only ${formatDays(left)} left. Plan carefully.` : pending
+    return { type, label: LEAVE_TYPE_LABEL[type], left, total, pendingDays, fraction, isEmpty, isLow, note }
   })
 }
 

@@ -1,5 +1,5 @@
 /* @import must come before every rule (Turbopack enforces it), so the fonts load ahead of Tailwind's output. */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -99,8 +99,9 @@
     text-wrap: balance;
   }
 
+  /* Headings use the one brand font (Figtree). */
   .font-display {
-    font-family: 'Instrument Serif', Georgia, serif;
+    font-family: 'Figtree', system-ui, sans-serif;
   }
 
   /* Compass brand gradients */
@@ -237,7 +238,7 @@
 
 /* Toast customization */
 .toast-notification {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Figtree', system-ui, sans-serif;
 }
 
 /* Focus ring for accessibility */

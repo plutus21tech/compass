@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { SoftState } from '@/components/composed/SoftState'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -20,7 +21,7 @@ function Meta({ item, todayKey }: { item: NeedsYouItem; todayKey: string }) {
   return (
     <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
       {item.dueDay ? (
-        <span className={overdue ? 'text-destructive' : undefined}>
+        <span className={overdue ? 'font-medium text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-300'}>
           {overdue ? 'Overdue since' : 'Due'} {formatDate(item.dueDay)}
         </span>
       ) : null}
@@ -60,6 +61,18 @@ function SkeletonRows() {
   )
 }
 
+/** Nothing to do: centred in the card's height so the box reads as intentional, not broken. */
+function AllClear() {
+  return (
+    <SoftState
+      tone="success"
+      title="You're all clear"
+      description="Nothing needs you right now. New items show up here as they arrive."
+      className="py-10"
+    />
+  )
+}
+
 export function NeedsYouList({ data, todayKey }: NeedsYouListProps) {
   const [expanded, setExpanded] = useState(false)
   const items = data?.items ?? []
@@ -67,18 +80,21 @@ export function NeedsYouList({ data, todayKey }: NeedsYouListProps) {
   const hidden = items.length - visible.length
 
   return (
-    <section aria-labelledby="needs-you-heading">
+    <section aria-labelledby="needs-you-heading" className="flex flex-col">
       <div className="mb-3 flex items-baseline justify-between gap-3">
         <h2 id="needs-you-heading" className="text-base font-semibold text-foreground">
           Needs you
         </h2>
-        {data ? <span className="text-sm text-muted-foreground">{items.length} open, sorted by due date</span> : null}
+        {data && items.length > 0 ? (
+          <span className="text-sm text-muted-foreground">{items.length} open, sorted by due date</span>
+        ) : null}
       </div>
-      <Card className="overflow-hidden">
+      {/* Fills the row so its bottom edge lines up with My work. */}
+      <Card className="flex flex-1 flex-col overflow-hidden">
         {data === null ? (
           <SkeletonRows />
         ) : items.length === 0 ? (
-          data.incomplete ? null : <p className="p-5 text-sm text-muted-foreground">Nothing needs you right now.</p>
+          data.incomplete ? null : <AllClear />
         ) : (
           <ul className="divide-y divide-border">
             {visible.map((item, index) => (

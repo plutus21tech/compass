@@ -320,7 +320,7 @@ export function EmployeeOrrery({
             textAnchor="middle"
             y={-4}
             className="fill-[#E9E4D6] text-[26px]"
-            style={{ fontFamily: 'var(--font-display, Instrument Serif), Georgia, serif' }}
+            style={{ fontFamily: 'var(--font-display, Figtree), system-ui, sans-serif' }}
           >
             {initials}
           </text>

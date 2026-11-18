@@ -133,10 +133,24 @@ export function halfDayError(form: RequestForm): string | null {
 
 export type RequestStep = 1 | 2 | 3
 
-function stepOneError(form: RequestForm, summary: LeaveSummary): string | null {
+export interface StepCheckOptions {
+  /** Today's day key. When given, Casual and Annual leave cannot start before it (new requests only). */
+  todayKey?: string
+}
+
+export const PAST_DATE_ERROR = 'Casual and annual leave cannot start in the past'
+const NOT_ENOUGH_DAYS = 'Not enough days left'
+
+/** True when the request asks for more days than the balance holds. */
+function isOverBalance(summary: LeaveSummary): boolean {
+  return summary.overBalance && summary.balanceAfter !== null && summary.problem === null
+}
+
+function stepOneError(form: RequestForm, summary: LeaveSummary, options: StepCheckOptions): string | null {
   if (!form.startDate) return 'Pick your first day off'
   if (!form.isHalfDay && !form.endDate) return 'Pick your last day off'
   if (summary.problem === 'end-before-start') return 'Your last day off is before your first day off'
+  if (options.todayKey && form.leaveType !== 'SICK' && form.startDate < options.todayKey) return PAST_DATE_ERROR
   const half = halfDayError(form)
   if (half) return half
   if (summary.problem === 'too-long') return 'Pick a shorter range'
@@ -150,8 +164,40 @@ function stepOneError(form: RequestForm, summary: LeaveSummary): string | null {
   return null
 }
 
-export function stepError(step: RequestStep, form: RequestForm, summary: LeaveSummary): string | null {
-  if (step === 1) return stepOneError(form, summary)
+/** The inline warning under the leave type when the balance is too small; null otherwise. */
+export function overBalanceNotice(form: RequestForm, summary: LeaveSummary): string | null {
+  if (!isOverBalance(summary) || summary.balanceAfter === null) return null
+  const left = summary.balanceAfter + summary.workingDays
+  const type = LEAVE_TYPE_LABEL[form.leaveType].toLowerCase()
+  const have = left <= 0 ? `You have no ${type} days left.` : `You have ${formatDays(left).replace(' ', ` ${type} `)} left.`
+  return `${have} Choose another leave type or pick fewer days.`
+}
+
+/** How many days the request is over the balance: "3 days short". */
+export function daysShort(summary: LeaveSummary): string | null {
+  if (!isOverBalance(summary) || summary.balanceAfter === null) return null
+  return `${formatDays(-summary.balanceAfter)} short`
+}
+
+/** Why Next (or Submit) is disabled on this step, in a few words; null when the step is ready. */
+export function nextBlocker(
+  step: RequestStep,
+  form: RequestForm,
+  summary: LeaveSummary,
+  options: StepCheckOptions = {}
+): string | null {
+  const error = stepError(step, form, summary, options)
+  if (error && step === 1 && isOverBalance(summary) && error.startsWith('You have ')) return NOT_ENOUGH_DAYS
+  return error
+}
+
+export function stepError(
+  step: RequestStep,
+  form: RequestForm,
+  summary: LeaveSummary,
+  options: StepCheckOptions = {}
+): string | null {
+  if (step === 1) return stepOneError(form, summary, options)
   if (step === 2) {
     if (form.transitionPlan.length > MAX_NOTES) return 'Keep handover notes under 6,000 characters'
     if (form.tasks.length > MAX_TRANSITION_TASKS) return `A plan can have up to ${MAX_TRANSITION_TASKS} tasks`

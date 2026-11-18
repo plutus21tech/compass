@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   EMPTY_REQUEST_FORM, formFromRequest, halfDayError, isFormDirty, isHalfDayEligible, stepError,
   toLeavePayload, toLeaveUpdatePayload, withDates, withHalfDay, withLeaveType, withSession,
-  LEAVE_TYPE_LABEL, type RequestForm,
+  LEAVE_TYPE_LABEL, PAST_DATE_ERROR, daysShort, nextBlocker, overBalanceNotice, type RequestForm,
 } from '@/lib/time-off/request-form'
 import { summarizeLeaveRequest } from '@/lib/time-off/request-summary'
 import type { LeaveRequest } from '@/lib/time-off/types'
@@ -68,6 +68,33 @@ test('stepError step 1 rows', () => {
 })
 test('stepError over-balance uses the type label lower-case', () => {
   assert.equal(err(1, { ...valid, leaveType: 'SICK', endDate: '2026-11-20' }, { remaining: 1 }), 'You have 1 day of sick leave left.')
+})
+test('a new Casual or Annual request cannot start in the past; Sick can', () => {
+  const past = { ...valid, startDate: '2026-11-02', endDate: '2026-11-03' }
+  const today = { todayKey: '2026-11-10' }
+  assert.equal(stepError(1, past, sum(past), today), PAST_DATE_ERROR)
+  assert.equal(stepError(1, { ...past, leaveType: 'ANNUAL' }, sum(past), today), PAST_DATE_ERROR)
+  assert.equal(stepError(1, { ...past, leaveType: 'SICK' }, sum(past), today), null)
+  assert.equal(stepError(1, past, sum(past)), null, 'an edit passes no today, so it keeps its dates')
+  assert.equal(stepError(1, { ...valid, startDate: '2026-11-10', endDate: '2026-11-10' }, sum({ ...valid, startDate: '2026-11-10', endDate: '2026-11-10' }), today), null)
+})
+test('over the balance: an inline notice, days short, and a short reason for the button', () => {
+  const f = { ...valid, startDate: '2026-11-18', endDate: '2026-11-27' } // 8 working days, 5 left
+  const s = sum(f)
+  assert.equal(overBalanceNotice(f, s), 'You have 5 casual days left. Choose another leave type or pick fewer days.')
+  assert.equal(daysShort(s), '3 days short')
+  assert.equal(nextBlocker(1, f, s), 'Not enough days left')
+  const none = sum({ ...f, leaveType: 'SICK' }, { remaining: 0 })
+  assert.equal(overBalanceNotice({ ...f, leaveType: 'SICK' }, none), 'You have no sick days left. Choose another leave type or pick fewer days.')
+  const one = sum(f, { remaining: 1 })
+  assert.match(overBalanceNotice(f, one) ?? '', /^You have 1 casual day left\./)
+})
+test('within the balance there is no notice, and the button reason matches the step error', () => {
+  assert.equal(overBalanceNotice(valid, sum(valid)), null)
+  assert.equal(daysShort(sum(valid)), null)
+  assert.equal(nextBlocker(1, valid, sum(valid)), null)
+  assert.equal(nextBlocker(1, { ...valid, reason: '' }, sum(valid)), 'Add a reason')
+  assert.equal(nextBlocker(1, { ...valid, endDate: '' }, sum({ ...valid, endDate: '' })), 'Pick your last day off')
 })
 test('stepError steps 2 and 3', () => {
   assert.equal(err(2, { ...valid, transitionPlan: 'a'.repeat(6001) }), 'Keep handover notes under 6,000 characters')

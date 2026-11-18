@@ -49,6 +49,14 @@ export interface TeamCalendarProps {
   selection: { start: string; end: string } | null
   onRangeCommit: (range: { start: string; end: string }) => void
   panelOpen: boolean
+  /**
+   * When given, a plain click on a day reports it here (to show that day's details) and only a
+   * drag picks dates. While the request form is open a click sets the dates to that one day.
+   * Without it, clicking the first and last day picks a range, as before.
+   */
+  onDayClick?: (dayKey: string) => void
+  /** The day whose details are showing, outlined on the grid. */
+  activeDay?: string | null
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -70,7 +78,18 @@ function shiftMonth(year: number, month: number, delta: number): { year: number;
   return { year: Math.floor(total / 12), month: ((total % 12) + 12) % 12 }
 }
 
-function Hint({ phase, panelOpen, onCancel }: { phase: RangeState['phase']; panelOpen: boolean; onCancel: () => void }) {
+/** Weekdays share the width; Saturday and Sunday are narrower because nothing is booked on them. */
+const WEEK_COLUMNS = 'grid grid-cols-[repeat(5,minmax(0,1fr))_repeat(2,minmax(0,0.55fr))]'
+
+interface HintProps {
+  phase: RangeState['phase']
+  hasDates: boolean
+  /** A click shows the day, so only dragging picks dates. */
+  clickShowsDay: boolean
+  onCancel: () => void
+}
+
+function Hint({ phase, hasDates, clickShowsDay, onCancel }: HintProps) {
   if (phase === 'picking-end') {
     return (
       <p className="text-sm text-muted-foreground">
@@ -81,12 +100,16 @@ function Hint({ phase, panelOpen, onCancel }: { phase: RangeState['phase']; pane
       </p>
     )
   }
-  if (panelOpen) {
+  // "Again" only makes sense once the open form has dates.
+  if (hasDates) {
     return (
       <p className="text-sm text-muted-foreground">
         <strong className="font-medium text-primary">Drag again</strong> to change the dates.
       </p>
     )
+  }
+  if (clickShowsDay) {
+    return <p className="text-sm text-muted-foreground">Click a day to see who&apos;s out. Drag across days to request leave.</p>
   }
   return <p className="text-sm text-muted-foreground">Drag across days, or click the first and last day off.</p>
 }
@@ -193,14 +216,36 @@ export function TeamCalendar(props: TeamCalendarProps) {
     [year, month, events, departmentFilter, show]
   )
   const departments = useMemo(() => calendarDepartments(users, events), [users, events])
+  // A team filter that leaves nobody (but perhaps the viewer) on leave this month says so, instead of looking empty.
+  const quietTeam =
+    departmentFilter !== 'ALL' && show !== 'HOLIDAYS' && show !== 'BIRTHDAYS' &&
+    !filterEventsByDepartment(events, departmentFilter).some((e) => !e.isCurrentUser)
   const selectableKeys = useMemo(() => new Set(cells.filter((c) => c.selectable).map((c) => c.key)), [cells])
   const selectableRef = useRef(selectableKeys)
   selectableRef.current = selectableKeys
   const commitRef = useRef(onRangeCommit)
   commitRef.current = onRangeCommit
 
+  const dayClickRef = useRef(props.onDayClick)
+  dayClickRef.current = props.onDayClick
+  const panelOpenRef = useRef(panelOpen)
+  panelOpenRef.current = panelOpen
+  const inMonthKeys = useMemo(() => new Set(cells.filter((c) => c.inMonth).map((c) => c.key)), [cells])
+  // A press on a day that cannot be booked (a past day); released on the same day it is a click.
+  const pastPressRef = useRef<string | null>(null)
+
   const dispatch = useCallback((event: RangeEvent) => {
-    const result = reduceRange(rangeRef.current, event, (key) => selectableRef.current.has(key))
+    const before = rangeRef.current
+    const result = reduceRange(before, event, (key) => selectableRef.current.has(key))
+    // Press and release on one day is a click: show that day instead of starting a click-click range.
+    if (dayClickRef.current && before.phase === 'dragging' && result.state.phase === 'picking-end') {
+      const day = result.state.anchor
+      rangeRef.current = IDLE
+      setRange(IDLE)
+      if (panelOpenRef.current) commitRef.current({ start: day, end: day })
+      else dayClickRef.current(day)
+      return
+    }
     rangeRef.current = result.state
     setRange(result.state)
     if (result.commit) commitRef.current(result.commit)
@@ -244,6 +289,7 @@ export function TeamCalendar(props: TeamCalendarProps) {
     if (e.button !== 0) return
     const key = dayKeyOf(e.target)
     if (!key) return
+    pastPressRef.current = !selectableRef.current.has(key) && inMonthKeys.has(key) ? key : null
     const target = e.target as Element
     if (target.hasPointerCapture?.(e.pointerId)) target.releasePointerCapture(e.pointerId)
     const { pointerType, pointerId, clientX: x, clientY: y } = e
@@ -260,6 +306,10 @@ export function TeamCalendar(props: TeamCalendarProps) {
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     tap({ type: 'up', pointerId: e.pointerId })
     const key = dayKeyOf(e.target)
+    const pastPress = pastPressRef.current
+    pastPressRef.current = null
+    // Past days cannot be booked, but you can still look at who was out.
+    if (key && pastPress === key && !panelOpenRef.current) dayClickRef.current?.(key)
     if (key) dispatch({ type: 'up', key })
   }
   const onFocus = (e: FocusEvent<HTMLDivElement>) => {
@@ -310,7 +360,12 @@ export function TeamCalendar(props: TeamCalendarProps) {
           departments={departments}
         />
         <div aria-live="polite">
-          <Hint phase={range.phase} panelOpen={panelOpen} onCancel={() => dispatch({ type: 'cancel' })} />
+          <Hint
+            phase={range.phase}
+            hasDates={panelOpen && selection !== null}
+            clickShowsDay={props.onDayClick !== undefined}
+            onCancel={() => dispatch({ type: 'cancel' })}
+          />
         </div>
       </div>
       <CalendarFilters
@@ -321,6 +376,16 @@ export function TeamCalendar(props: TeamCalendarProps) {
         holidayTeams={holidayTeams ?? []}
       />
       <Legend />
+      {quietTeam && (
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">
+            No one in {departmentFilter} is out in {formatMonthYear(`${year}-${String(month + 1).padStart(2, '0')}-01`)}.
+          </span>{' '}
+          <button type="button" className="font-medium text-primary hover:underline" onClick={() => onDepartmentFilterChange('ALL')}>
+            Show everyone
+          </button>
+        </p>
+      )}
 
       <div className="overflow-hidden rounded-xl border-l border-t border-border bg-card">
         <div
@@ -335,7 +400,7 @@ export function TeamCalendar(props: TeamCalendarProps) {
           onPointerUp={onPointerUp}
           onKeyDown={onKeyDown}
         >
-          <div role="row" className="grid grid-cols-7">
+          <div role="row" className={WEEK_COLUMNS}>
             {WEEKDAYS.map((day) => (
               <div key={day} role="columnheader" className="border-b border-r border-border px-2 py-2 text-xs font-medium text-muted-foreground">
                 {day}
@@ -343,7 +408,7 @@ export function TeamCalendar(props: TeamCalendarProps) {
             ))}
           </div>
           {weeks.map((week) => (
-            <div key={week[0].key} role="row" className="grid grid-cols-7">
+            <div key={week[0].key} role="row" className={WEEK_COLUMNS}>
               {week.map((cell) => (
                 <CalendarDayCell
                   key={cell.key}
@@ -352,6 +417,7 @@ export function TeamCalendar(props: TeamCalendarProps) {
                   birthdays={cell.inMonth ? shownBirthdays.filter((b) => b.day === cell.day) : []}
                   selected={Boolean(highlight && cell.inMonth && cell.key >= highlight.start && cell.key <= highlight.end)}
                   tabbable={cell.key === tabStop}
+                  active={!panelOpen && cell.inMonth && cell.key === props.activeDay}
                   onMoreClick={setDialogCell}
                 />
               ))}

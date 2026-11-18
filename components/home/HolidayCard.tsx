@@ -10,7 +10,7 @@ import { CardSkeleton, HomeCard } from './HomeCard'
 
 const TITLE = 'Next public holiday'
 const NO_TEAM = 'No team is set on your profile, so no holidays show here. Ask HR to set it.'
-const NONE = 'No upcoming holidays for your team yet.'
+const NONE = 'No holidays added yet. HR adds public holidays for each office.'
 
 interface HolidaysDialogProps {
   open: boolean

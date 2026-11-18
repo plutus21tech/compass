@@ -426,6 +426,8 @@ export function TaskDetailPanel({
 }: TaskDetailPanelProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  // The description shows once: as formatted text, or as the editor after a click (or while empty).
+  const [editingDescription, setEditingDescription] = useState(false)
   const [comments, setComments] = useState<Comment[]>([])
   const [activities, setActivities] = useState<TaskActivity[]>([])
   const [newComment, setNewComment] = useState('')
@@ -461,6 +463,7 @@ export function TaskDetailPanel({
     if (task) {
       setTitle(task.title)
       setDescription(task.description || '')
+      setEditingDescription(false)
       setNewChildTitle('')
       setDueDateOpen(false)
       void loadComments(task.id)
@@ -771,6 +774,14 @@ export function TaskDetailPanel({
   const assistantIds = assistants.map((assistant) => assistant.user.id)
   const childTasks = task.childTasks || []
   const availableAssistantMembers = members.filter((member) => member.id !== task.assigneeId)
+  const showDescriptionEditor = canEdit && (editingDescription || !description.trim())
+  const startDescriptionEdit = () => {
+    if (!canEdit) return
+    setEditingDescription(true)
+    // The editor is un-hidden by this render; focus it once it is visible.
+    window.requestAnimationFrame(() => descriptionTextareaRef.current?.focus())
+  }
+
   const renderFormatToolbar = (target: 'description' | 'comment') => (
     <div className="flex items-center gap-1">
       <button
@@ -1411,10 +1422,10 @@ export function TaskDetailPanel({
           <div className="mx-5 border-t border-border/40" />
 
           {/* Description */}
-          <div className="px-5 py-4">
+          <div className="px-5 py-4" data-description>
             <div className="mb-2 flex items-center justify-between gap-2">
               <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Description</h4>
-              {canEdit && (
+              {showDescriptionEditor && (
                 <>
                   {renderFormatToolbar('description')}
                   <input
@@ -1431,21 +1442,48 @@ export function TaskDetailPanel({
               ref={descriptionTextareaRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              onBlur={() => canEdit && handleDescBlur()}
+              onBlur={(event) => {
+                if (canEdit) void handleDescBlur()
+                // Moving to the format buttons keeps the editor open; leaving the block closes it.
+                const block = event.currentTarget.closest('[data-description]')
+                if (!block?.contains(event.relatedTarget as Node | null)) setEditingDescription(false)
+              }}
               {...imageTransferHandlers('description')}
               readOnly={!canEdit}
-              placeholder={canEdit ? 'Add a more detailed description... Paste or drop images here.' : 'Add a more detailed description...'}
+              placeholder="Add a more detailed description... Paste or drop images here."
               className={cn(
                 'w-full min-h-[80px] bg-muted/20 rounded-lg p-3 text-sm border border-border/30 outline-none resize-y placeholder:text-muted-foreground/40 focus:border-primary/30 transition-colors',
-                !canEdit && 'cursor-default resize-none',
+                // Kept mounted while hidden so image uploads and format buttons still find it.
+                !showDescriptionEditor && 'hidden',
               )}
               rows={3}
             />
-            {description.trim() && (
-              <div className="mt-3 rounded-lg border border-border/30 bg-muted/10 p-3">
-                <RichTextContent content={description} />
-              </div>
-            )}
+            {!showDescriptionEditor &&
+              (description.trim() ? (
+                <div
+                  role={canEdit ? 'button' : undefined}
+                  tabIndex={canEdit ? 0 : undefined}
+                  title={canEdit ? 'Click to edit' : undefined}
+                  onClick={(event) => {
+                    // Links and images in the text keep their own click.
+                    if ((event.target as HTMLElement).closest('a, img')) return
+                    startDescriptionEdit()
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+                    event.preventDefault()
+                    startDescriptionEdit()
+                  }}
+                  className={cn(
+                    'rounded-lg border border-border/30 bg-muted/10 p-3 outline-none',
+                    canEdit && 'cursor-text hover:border-primary/30 focus-visible:border-primary/50',
+                  )}
+                >
+                  <RichTextContent content={description} />
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No description.</p>
+              ))}
           </div>
 
           {/* Divider */}

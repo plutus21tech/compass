@@ -1,4 +1,6 @@
-export const OUT_STATUSES = ['PENDING', 'LEAD_APPROVED', 'HR_APPROVED', 'APPROVED'] as const
+import { getNextBusinessDay, leaveDateKey } from '@/lib/leave-utils'
+
+export const OUT_STATUSES =['PENDING', 'LEAD_APPROVED', 'HR_APPROVED', 'APPROVED'] as const
 export const PENDING_STATUSES = ['PENDING', 'LEAD_APPROVED', 'HR_APPROVED'] as const
 /** Only fully approved leave makes someone "out today", on Home and on Time off alike. */
 export const OUT_TODAY_STATUS = 'APPROVED'
@@ -13,6 +15,8 @@ export interface OutRow {
   isHalfDay: boolean
   halfDaySession: string | null
   status: string
+  /** The leave's last day (YYYY-MM-DD), used to say when the person is back. */
+  endDate?: string
 }
 
 export interface OutPerson {
@@ -22,6 +26,14 @@ export interface OutPerson {
   leaveType: LeaveTypeValue
   isHalfDay: boolean
   halfDaySession: string | null
+  /** The day they are back (YYYY-MM-DD); null for a half day or when the end is unknown. */
+  backDay?: string | null
+}
+
+/** The next working day after a leave's last day. */
+function backDayOf(row: OutRow): string | null {
+  if (row.isHalfDay || !row.endDate) return null
+  return leaveDateKey(getNextBusinessDay(new Date(`${row.endDate}T00:00:00Z`)))
 }
 
 export interface HolidayView {
@@ -74,6 +86,7 @@ export function summariseOutToday(
       leaveType: row.leaveType,
       isHalfDay: row.isHalfDay,
       halfDaySession: row.halfDaySession,
+      backDay: backDayOf(row),
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 

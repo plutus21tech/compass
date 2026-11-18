@@ -1,3 +1,4 @@
+import { SoftState } from '@/components/composed/SoftState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDateTime } from '@/lib/format-date'
 import { cn } from '@/lib/utils'
@@ -24,9 +25,12 @@ export function BellList({ items, loading, error, onSelect, now }: BellListProps
   }
   if (items.length === 0) {
     return (
-      <p className="p-4 text-sm text-muted-foreground">
-        Nothing new. Updates about your leave, evaluations and security checks show up here.
-      </p>
+      <SoftState
+        tone="success"
+        title="You're all caught up"
+        description="Updates about your leave, evaluations and security checks show up here."
+        className="py-6"
+      />
     )
   }
   return (

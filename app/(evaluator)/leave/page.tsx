@@ -8,10 +8,9 @@ import { useLayoutUser } from '@/components/layout/SidebarLayout'
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader } from '@/components/layout/page-header'
 import { ApprovalQueue } from '@/components/leave/time-off/ApprovalQueue'
-import { BalanceCards } from '@/components/leave/time-off/BalanceCards'
-import { MyRequests } from '@/components/leave/time-off/MyRequests'
+import { BalanceCards, BalanceSkeleton } from '@/components/leave/time-off/BalanceCards'
 import { useScrollToHash } from '@/components/leave/time-off/use-scroll-to-hash'
-import { OutTodayCard } from '@/components/leave/time-off/OutTodayCard'
+import { CalendarSideColumn, useSideColumn } from '@/components/leave/time-off/CalendarSideColumn'
 import { PlanReminder } from '@/components/leave/time-off/PlanReminder'
 import { RequestDetailsDialog } from '@/components/leave/time-off/RequestDetailsDialog'
 import { RequestPanel, type PanelMode } from '@/components/leave/time-off/RequestPanel'
@@ -46,16 +45,6 @@ const SUBTITLE_3E =
 const REMINDER_TOAST = 'Add transition plan for upcoming leave(s) before time off starts.'
 const CALENDAR_ERROR = 'Could not load the calendar. Try another month or refresh.'
 
-function BalanceSkeleton() {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
-      {[0, 1, 2, 3].map((i) => (
-        <Skeleton key={i} className="h-36 rounded-card" />
-      ))}
-    </div>
-  )
-}
-
 export default function LeavePage() {
   const user = useLayoutUser()
   const router = useRouter()
@@ -66,6 +55,8 @@ export default function LeavePage() {
   const { loading, snapshot, reload, reloadCalendar, calendar } = data
 
   const [departmentFilter, setDepartmentFilter] = useState('ALL')
+  const todayKey = localDayKey(new Date())
+  const side = useSideColumn(todayKey)
   const [panel, setPanel] = useState<PanelState>(CLOSED)
   const [pendingPanel, setPendingPanel] = useState<PanelState | null>(null)
   const panelDirtyRef = useRef(false)
@@ -100,6 +91,7 @@ export default function LeavePage() {
   const requestPanelRef = useRef(requestPanel)
   requestPanelRef.current = requestPanel
   const openCreate = () => requestPanel({ open: true, mode: CREATE, range: null })
+  const requestFromDay = (key: string) => requestPanel({ open: true, mode: CREATE, range: { start: key, end: key } })
   const closePanel = () => setPanel(CLOSED)
   const onRangeCommit = (range: Range) =>
     setPanel((p) => (p.open ? { ...p, range } : { open: true, mode: CREATE, range }))
@@ -195,8 +187,9 @@ export default function LeavePage() {
         )
       )}
 
-      {/* No transform or z-index here: below lg the panel is a fixed z-50 layer above the z-40 top bar. */}
-      <div className={`mt-8 grid gap-6 ${panel.open ? 'lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start' : ''}`}>
+      {/* No transform or z-index here: below lg the panel is a fixed z-50 layer above the z-40 top bar.
+          The right column is always there, so the calendar never changes width when the form opens. */}
+      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start">
         <div className="min-w-0 space-y-2">
           {/* Range selection opens the panel, which needs the balance and directory: wait for them. */}
           {loading ? (
@@ -218,10 +211,26 @@ export default function LeavePage() {
               selection={panel.open ? panel.range : null}
               onRangeCommit={onRangeCommit}
               panelOpen={panel.open}
+              onDayClick={side.showDay}
+              activeDay={side.tab === 'day' ? side.dayKey : null}
             />
           )}
           {data.calendarError && <p className="text-sm text-muted-foreground">{CALENDAR_ERROR}</p>}
         </div>
+        {!panel.open && (
+          <CalendarSideColumn
+            loading={loading}
+            side={side}
+            todayKey={todayKey}
+            events={calendar.events} holidays={calendar.holidays}
+            departmentFilter={departmentFilter}
+            requests={snapshot.requests}
+            outToday={data.outToday}
+            viewerId={user?.id ?? ''}
+            onRequestFromDay={requestFromDay} onRequestLeave={openCreate}
+            onView={(r) => setDetailsId(r.id)} onEdit={openEdit} onCancel={askCancel}
+          />
+        )}
         <RequestPanel
           open={panel.open}
           mode={panel.mode}
@@ -239,27 +248,18 @@ export default function LeavePage() {
       </div>
 
       {loading ? (
-        <div className="mt-8 grid gap-6 lg:grid-cols-2" aria-hidden="true">
-          <Skeleton className="h-48 rounded-2xl" />
-          <Skeleton className="h-48 rounded-2xl" />
-        </div>
+        <Skeleton className="mt-8 h-48 rounded-2xl" aria-hidden="true" />
       ) : (
-        <>
-          <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
-            <MyRequests requests={snapshot.requests} onView={(r) => setDetailsId(r.id)} onEdit={openEdit} onCancel={askCancel} />
-            <ApprovalQueue requests={snapshot.approvals} highlightedId={highlightedId} onChanged={reloadAll} />
-            <OutTodayCard outToday={data.outToday} viewerId={user?.id ?? ''} />
-          </div>
-          <div className="mt-6">
-            <WfhSection
-              isThreeE={isThreeE}
-              requests={snapshot.wfhRequests}
-              approvals={snapshot.wfhApprovals}
-              onRequest={() => setWfhOpen(true)}
-              onChanged={reload}
-            />
-          </div>
-        </>
+        <div className="mt-8 space-y-6">
+          <ApprovalQueue requests={snapshot.approvals} highlightedId={highlightedId} onChanged={reloadAll} />
+          <WfhSection
+            isThreeE={isThreeE}
+            requests={snapshot.wfhRequests}
+            approvals={snapshot.wfhApprovals}
+            onRequest={() => setWfhOpen(true)}
+            onChanged={reload}
+          />
+        </div>
       )}
 
       <RequestDetailsDialog
@@ -273,9 +273,7 @@ export default function LeavePage() {
       <ConfirmDialog
         isOpen={cancelTarget !== null}
         onClose={() => setCancelTarget(null)}
-        onConfirm={() => {
-          if (cancelTarget) void confirmCancel(cancelTarget)
-        }}
+        onConfirm={() => { if (cancelTarget) void confirmCancel(cancelTarget) }}
         title="Cancel this leave request?"
         message="Any days already taken from your balance go back, and the leave comes off the calendar."
         confirmText="Cancel request"

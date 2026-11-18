@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { OutTodayCard as HomeOutTodayCard } from '../components/home/OutTodayCard'
-import { OutTodayCard as TimeOffOutTodayCard } from '../components/leave/time-off/OutTodayCard'
+import { DayDetails, approvedOthers } from '../components/leave/time-off/DayDetails'
 import { othersOutToday, summariseOutToday, type HomeOverview, type OutPerson, type OutRow } from '../lib/home/out-today'
 import { pickOutToday } from '../lib/time-off/api'
 
@@ -81,18 +81,21 @@ test('Home and Time off show the same count from the same data', () => {
   const home = renderToStaticMarkup(
     createElement(HomeOutTodayCard, { overview: { ok: true, data: overview(people) }, teamUpcoming: null, viewerId: 'me' })
   )
-  const timeOff = renderToStaticMarkup(createElement(TimeOffOutTodayCard, { outToday: outToday(people), viewerId: 'me' }))
+  // The Calendar's day panel is handed the same count for today.
+  const count = othersOutToday(outToday(people), 'me').count
+  const timeOff = renderToStaticMarkup(
+    createElement(DayDetails, { dayKey: '2026-11-11', todayKey: '2026-11-11', events: [], holidays: [], outCount: count, onRequest: () => {} })
+  )
   assert.match(home, />2</)
-  assert.match(timeOff, /aria-label="2 people out today"/)
-  assert.doesNotMatch(timeOff, /Me Myself/)
-  assert.match(timeOff, /Amy Ray/)
-  assert.match(timeOff, /Ben Cole/)
-  assert.match(timeOff, /\(Annual, First half\)/)
+  assert.match(timeOff, /Today · 2 people out/)
 })
 
-test('Time off card: nothing when only the viewer is out, or before it loads', () => {
-  assert.equal(renderToStaticMarkup(createElement(TimeOffOutTodayCard, { outToday: outToday([person('me', 'Me')]), viewerId: 'me' })), '')
-  assert.equal(renderToStaticMarkup(createElement(TimeOffOutTodayCard, { outToday: null, viewerId: 'me' })), '')
+test('other days count approved colleagues only: not pending leave, not the viewer', () => {
+  const event = (employeeId: string, status: string, isCurrentUser = false) => ({
+    id: `e-${employeeId}`, employeeId, employeeName: employeeId, department: 'Design', leaveType: 'CASUAL' as const,
+    isHalfDay: false, startDate: '2026-11-19', endDate: '2026-11-19', status, isCurrentUser,
+  })
+  assert.equal(approvedOthers([event('a', 'APPROVED'), event('b', 'PENDING'), event('me', 'APPROVED', true), event('a', 'APPROVED')]), 1)
 })
 
 test('pickOutToday reads the overview body and rejects anything else', () => {
@@ -110,7 +113,9 @@ test('Time off out today does not come from the calendar month being viewed', ()
   const grid = readFileSync('lib/time-off/calendar-grid.ts', 'utf8')
   assert.doesNotMatch(page, /outToday\(/)
   assert.doesNotMatch(grid, /export function outToday/)
-  assert.match(page, /<OutTodayCard outToday=\{data\.outToday\} viewerId=/)
+  // The page hands Home's count to the day panel, which shows it for today.
+  assert.match(page, /outToday=\{data\.outToday\}/)
+  assert.match(readFileSync('components/leave/time-off/CalendarSideColumn.tsx', 'utf8'), /othersOutToday\(props\.outToday, props\.viewerId\)\.count/)
   assert.match(api, /'\/api\/home\/overview'/)
   // Loaded with the snapshot, never by the month fetch.
   const fetchCalendar = hook.slice(hook.indexOf('const fetchCalendar'), hook.indexOf('const reloadCalendar'))

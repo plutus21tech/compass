@@ -51,7 +51,7 @@ function PartsRow({ parts, phrase }: { parts: TimeOffPart[]; phrase: string }) {
           {p.left > 0 ? (
             <span aria-hidden className={`h-2 w-2 rounded-full ${LEAVE_TYPE_TONE[p.type].dot}`} />
           ) : null}
-          <span className={p.left > 0 ? undefined : 'text-destructive'}>{texts[i]}</span>
+          <span className={p.left > 0 ? undefined : 'text-red-600 dark:text-red-400'}>{texts[i]}</span>
         </span>
       ))}
     </p>

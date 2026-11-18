@@ -60,7 +60,13 @@ export function HomePage() {
       </div>
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <NeedsYouList data={data.needsYou} todayKey={data.todayKey} />
-        <MyWorkPanel tasks={data.tasks} projects={data.projects} viewerId={viewerId} onOpenTask={setOpenTask} />
+        <MyWorkPanel
+          tasks={data.tasks}
+          projects={data.projects}
+          viewerId={viewerId}
+          todayKey={data.todayKey}
+          onOpenTask={setOpenTask}
+        />
       </div>
       <HomeTaskSheet
         task={openTask}

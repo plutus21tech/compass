@@ -21,6 +21,16 @@ export function pickOpenTasks(tasks: readonly HomeTask[]): { shown: HomeTask[]; 
   return { shown: ordered.slice(0, OPEN_TASKS_SHOWN), more: Math.max(0, ordered.length - OPEN_TASKS_SHOWN) }
 }
 
+/** How many of the viewer's open tasks are past their due day, per project id. */
+export function overdueByProject(tasks: readonly HomeTask[], todayKey: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const task of tasks) {
+    if (task.status === 'DONE' || !task.dueDate || task.dueDate.slice(0, 10) >= todayKey) continue
+    counts.set(task.project.id, (counts.get(task.project.id) ?? 0) + 1)
+  }
+  return counts
+}
+
 export interface HomeProject {
   id: string
   name: string

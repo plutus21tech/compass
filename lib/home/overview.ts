@@ -64,6 +64,7 @@ export async function loadHomeOverview(
         isHalfDay: true,
         halfDaySession: true,
         status: true,
+        endDate: true,
         employee: { select: { name: true, department: true } },
       },
     }),
@@ -91,6 +92,7 @@ export async function loadHomeOverview(
     isHalfDay: row.isHalfDay,
     halfDaySession: row.halfDaySession,
     status: row.status,
+    endDate: dayKeyOf(row.endDate),
   }))
   const { people, departmentOutToday } = summariseOutToday(rows, viewer)
 

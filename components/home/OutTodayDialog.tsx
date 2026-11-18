@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { PersonLink } from '@/components/people/PersonLink'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { formatDateRange } from '@/lib/format-date'
+import { UserAvatar } from '@/components/composed/UserAvatar'
+import { formatDate, formatDateRange } from '@/lib/format-date'
 import { LEAVE_TYPE_LABEL, LEAVE_TYPE_TONE } from '@/lib/leave-type-style'
 import { PENDING_STATUSES, type OutPerson, type TeamUpcomingRow } from '@/lib/home/out-today'
 
@@ -30,11 +31,16 @@ function TypeDot({ type }: { type: OutPerson['leaveType'] }) {
 function PersonRow({ person }: { person: OutPerson }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
-      <div>
-        <p className="text-sm font-medium">
-          <PersonLink personId={person.id}>{person.name}</PersonLink>
-        </p>
-        {person.department ? <p className="text-xs text-muted-foreground">{person.department}</p> : null}
+      <div className="flex min-w-0 items-center gap-3">
+        <UserAvatar name={person.name} size="sm" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            <PersonLink personId={person.id}>{person.name}</PersonLink>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {[person.department, person.backDay ? `back ${formatDate(person.backDay)}` : null].filter(Boolean).join(' · ')}
+          </p>
+        </div>
       </div>
       <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
         <TypeDot type={person.leaveType} />

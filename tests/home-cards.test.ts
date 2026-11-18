@@ -55,7 +55,7 @@ test('out today: count, department sentence and next out', () => {
 
 test('out today: nobody out', () => {
   const html = out(overview({ outToday: { count: 0, people: [] } }))
-  assert.match(html, /Nobody is out today\./)
+  assert.match(html, /Everyone(&#x27;|')s in today\./)
 })
 
 test('out today: the viewer is not counted or listed', () => {
@@ -63,7 +63,7 @@ test('out today: the viewer is not counted or listed', () => {
   assert.match(html, />5</)
   assert.doesNotMatch(html, /Person a/)
   const alone = out(overview({ outToday: { count: 1, people: [person('me', 'Me Myself')] } }))
-  assert.match(alone, /Nobody is out today\./)
+  assert.match(alone, /Everyone(&#x27;|')s in today\./)
   assert.doesNotMatch(alone, /Me Myself/)
 })
 
@@ -97,7 +97,7 @@ test('holiday: no team set', () => {
 
 test('holiday: none upcoming', () => {
   const html = renderToStaticMarkup(createElement(HolidayCard, { overview: overview({ nextHoliday: null, upcomingHolidays: [] }) }))
-  assert.match(html, /No upcoming holidays for your team yet\./)
+  assert.match(html, /No holidays added yet\. HR adds public holidays for each office\./)
 })
 
 test('a failed source shows its own line', () => {

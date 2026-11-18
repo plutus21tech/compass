@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Plus, Search, X } from 'lucide-react'
 
 export interface SelectableMember {
   id: string
@@ -23,7 +23,13 @@ interface Props {
   inputLabel?: string
   /** Id for the search input, so a visible label can point at it. */
   inputId?: string
+  /** Show the list only once something is typed, instead of the whole pool up front. */
+  searchToOpen?: boolean
+  /** People offered as one-click chips before anything is typed (e.g. the viewer's teammates). */
+  suggestedIds?: string[]
 }
+
+const MAX_SUGGESTED = 2
 
 /**
  * An email "To"-field style multi-select: chosen people appear as removable chips inline with
@@ -39,9 +45,13 @@ export function MemberMultiSelect({
   max,
   inputLabel,
   inputId,
+  searchToOpen = false,
+  suggestedIds,
 }: Props) {
   const [query, setQuery] = useState('')
   const atLimit = max !== undefined && selectedIds.length >= max
+  const typed = query.trim()
+  const listOpen = !searchToOpen || typed !== ''
 
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
@@ -63,6 +73,15 @@ export function MemberMultiSelect({
       )
     })
   }, [members, selectedIds, query])
+
+  const suggested = useMemo(() => {
+    const selected = new Set(selectedIds)
+    return (suggestedIds ?? [])
+      .filter((id) => !selected.has(id))
+      .map((id) => memberById.get(id))
+      .filter((m): m is SelectableMember => Boolean(m))
+      .slice(0, MAX_SUGGESTED)
+  }, [suggestedIds, selectedIds, memberById])
 
   const add = (id: string) => {
     if (atLimit || selectedIds.includes(id)) return
@@ -110,12 +129,37 @@ export function MemberMultiSelect({
         />
       </div>
 
-      <div className="mt-2 max-h-32 overflow-y-auto rounded-md border border-input bg-muted p-2 space-y-1.5">
+      {!listOpen && !atLimit && suggested.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Suggested:</span>
+          {suggested.map((m) => (
+            <button
+              type="button"
+              key={m.id}
+              onClick={() => add(m.id)}
+              aria-label={`Add ${m.name}`}
+              className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+            >
+              <Plus className="h-3 w-3" aria-hidden />
+              {m.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div
+        hidden={!listOpen}
+        className="mt-2 max-h-32 overflow-y-auto rounded-md border border-input bg-muted p-2 space-y-1.5"
+      >
         {members.length === 0 ? (
           <p className="py-2 text-xs text-muted-foreground">{emptyPoolText}</p>
         ) : suggestions.length === 0 ? (
           <p className="py-2 text-xs text-muted-foreground">
-            {query.trim() ? 'No matches found' : 'Everyone is already selected'}
+            {!typed
+              ? 'Everyone is already selected'
+              : searchToOpen
+                ? `No one matches "${typed}". Check the spelling or search by team.`
+                : 'No matches found'}
           </p>
         ) : (
           suggestions.map((m) => (
