@@ -58,6 +58,18 @@ test('cells: 3 chips, +N more, distinct people out, busy at 5', () => {
   assert.equal(quiet.busy, false); assert.equal(quiet.moreCount, 0)
 })
 
+test('weekends show nobody as out, even inside a longer leave', () => {
+  const e = event({ startDate: '2026-11-19T00:00:00.000Z', endDate: '2026-11-24T00:00:00.000Z' })
+  const cells = buildDayCells(buildMonthGrid(2026, 10), [e], '2026-11-11')
+  for (const key of ['2026-11-21', '2026-11-22']) {
+    const weekend = cells.find((c) => c.key === key)!
+    assert.deepEqual(weekend.events, []); assert.deepEqual(weekend.visible, [])
+    assert.equal(weekend.outCount, 0); assert.equal(weekend.moreCount, 0)
+  }
+  assert.equal(cells.find((c) => c.key === '2026-11-20')!.outCount, 1)
+  assert.equal(cells.find((c) => c.key === '2026-11-23')!.outCount, 1)
+})
+
 test('padding and past days are not selectable and carry no events', () => {
   const e = event({ startDate: '2026-10-30T00:00:00.000Z', endDate: '2026-11-10T00:00:00.000Z' })
   const cells = buildDayCells(buildMonthGrid(2026, 10), [e], '2026-11-11')

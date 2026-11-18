@@ -80,7 +80,8 @@ export function calendarDepartments(users: DirectoryUser[], events: CalendarEven
 
 export function buildDayCells(grid: GridDay[], events: CalendarEvent[], todayKey: string): DayCell[] {
   return grid.map((day) => {
-    const dayEvents = day.inMonth ? eventsOnDay(events, day.key) : []
+    // Weekends are not working days: nobody is "out" on them, so they carry no leave.
+    const dayEvents = day.inMonth && !day.isWeekend ? eventsOnDay(events, day.key) : []
     const outCount = new Set(dayEvents.map((event) => event.employeeId)).size
     const isPast = day.key < todayKey
     return {

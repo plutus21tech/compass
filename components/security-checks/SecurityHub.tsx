@@ -53,7 +53,8 @@ export function SecurityHub() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6 sm:p-8">
       <h1 className="flex items-center gap-2 font-display text-2xl font-bold text-foreground">
-        <ShieldCheck className="h-6 w-6" aria-hidden /> Security
+        {/* Employees reach this from "Help & IT" in the menu, so the title matches it. */}
+        <ShieldCheck className="h-6 w-6" aria-hidden /> {hasConsole(me) ? 'Security' : 'Help & IT'}
       </h1>
       <Tabs value={active.id} onValueChange={(value) => router.replace(`/security-checks?tab=${value}`, { scroll: false })}>
         <TabsList className="h-auto flex-wrap justify-start">

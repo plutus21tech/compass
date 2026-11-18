@@ -21,7 +21,8 @@ test('titles are text, never markup', () => {
 })
 
 test('empty and error states', () => {
-  assert.match(render({}), /Nothing new\./)
+  assert.match(render({}), /You(&#x27;|')re all caught up/)
+  assert.match(render({}), /Updates about your leave, evaluations and security checks show up here\./)
   assert.match(render({ error: 'x' }), /Could not load notifications\./)
 })
 

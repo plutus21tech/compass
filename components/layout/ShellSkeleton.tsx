@@ -29,7 +29,7 @@ export function SidebarSkeleton({ collapsed }: { collapsed: boolean }) {
 /** Page placeholder: a header bar and three card blocks. */
 export function PageSkeleton() {
   return (
-    <div aria-hidden="true" className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+    <div aria-hidden="true" className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
       <Skeleton className="mb-6 h-9 w-64" />
       <div className="space-y-4">
         <Skeleton className="h-32 w-full" />

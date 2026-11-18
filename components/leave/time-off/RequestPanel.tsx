@@ -9,9 +9,10 @@ import { canSubmitTransitionPlan } from '@/lib/leave-transition-plan'
 import { detectBrowserLeaveTimeZone } from '@/lib/leave-timezone'
 import { submitLeave, submitTransitionPlan, updateLeave } from '@/lib/time-off/api'
 import {
-  EMPTY_REQUEST_FORM, formFromRequest, isHalfDayEligible, stepError, toLeavePayload,
-  toLeaveUpdatePayload, withDates, type RequestForm, type RequestStep,
+  EMPTY_REQUEST_FORM, formFromRequest, isHalfDayEligible, nextBlocker, stepError, toLeavePayload,
+  toLeaveUpdatePayload, withDates, type RequestForm, type RequestStep, type StepCheckOptions,
 } from '@/lib/time-off/request-form'
+import { localDayKey } from '@/lib/format-date'
 import { planRequiredFor } from '@/lib/time-off/request-rules'
 import { summarizeLeaveRequest } from '@/lib/time-off/request-summary'
 import type { DirectoryUser, LeaveBalance, LeaveRequest } from '@/lib/time-off/types'
@@ -58,9 +59,9 @@ function sameForm(a: RequestForm, b: RequestForm): boolean {
 }
 
 /** The first step whose checks fail, with its message; null when every step passes. */
-function firstFailingStep(form: RequestForm, summary: ReturnType<typeof summarizeLeaveRequest>) {
+function firstFailingStep(form: RequestForm, summary: ReturnType<typeof summarizeLeaveRequest>, options: StepCheckOptions) {
   for (const { step } of STEPS) {
-    const error = stepError(step, form, summary)
+    const error = stepError(step, form, summary, options)
     if (error) return { step, error }
   }
   return null
@@ -173,6 +174,8 @@ export function RequestPanel(props: RequestPanelProps) {
     [summary.startKey, summary.endKey, summary.problem, form.leaveType, halfDay, viewerDepartment]
   )
 
+  const coverPool = useMemo(() => users.filter((u) => u.id !== viewerId), [users, viewerId])
+
   // Below lg the panel is a full-screen modal: contain focus and lock the page behind it.
   const sectionRef = useRef<HTMLElement>(null)
   const trapFocus = shouldTrapFocus(useSmallScreen(), open)
@@ -188,6 +191,12 @@ export function RequestPanel(props: RequestPanelProps) {
     bodyRef.current?.focus()
   }, [open, step, session])
 
+  // The docked panel can open below the fold: bring it (and its buttons) into view.
+  useEffect(() => {
+    if (!open || trapFocus) return
+    sectionRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  }, [open, session, trapFocus])
+
   // Untouched since opening (including dates that came from a drag) closes without asking.
   const dirty = open && !sameForm(form, baseline)
   const onDirtyChangeRef = useRef(props.onDirtyChange)
@@ -197,20 +206,25 @@ export function RequestPanel(props: RequestPanelProps) {
   if (!open) return null
 
   const isEdit = mode.kind === 'edit'
+  // Only a new request is held to "not in the past"; an existing one keeps its dates.
+  const todayKey = isEdit ? undefined : localDayKey(new Date())
+  const checks: StepCheckOptions = { todayKey }
+  // Why the main button is disabled, shown beside it. The last step answers for every step.
+  const blocker = step < 3 ? nextBlocker(step, form, summary, checks) : firstFailingStep(form, summary, checks)?.error ?? null
 
   const change = (next: RequestForm) => { setForm(next); setError(null) }
   const goTo = (next: RequestStep) => { setStep(next); setError(null) }
   const requestClose = () => { if (submitting) return; if (dirty) setConfirmOpen(true); else props.onClose() }
 
   const next = () => {
-    const err = stepError(step, form, summary)
+    const err = stepError(step, form, summary, checks)
     if (err) { setError(err); return }
     goTo((step + 1) as RequestStep)
   }
 
   const submit = async () => {
     if (submitting) return
-    const failing = firstFailingStep(form, summary)
+    const failing = firstFailingStep(form, summary, checks)
     if (failing) { setStep(failing.step); setError(failing.error); return }
     setSubmitting(true)
     const tz = detectBrowserLeaveTimeZone()
@@ -268,8 +282,10 @@ export function RequestPanel(props: RequestPanelProps) {
       </header>
 
       <div ref={bodyRef} role="group" tabIndex={-1} aria-label={STEPS[step - 1].label} className="min-w-0 flex-1 outline-none">
-        {step === 1 && <DatesTypeStep form={form} onChange={change} summary={summary} balance={balance} />}
-        {step === 2 && <HandoverStep form={form} onChange={change} planRequired={planRequired} mode={mode.kind} />}
+        {step === 1 && <DatesTypeStep form={form} onChange={change} summary={summary} balance={balance} todayKey={todayKey} />}
+        {step === 2 && (
+          <HandoverStep form={form} onChange={change} planRequired={planRequired} mode={mode.kind} people={coverPool} />
+        )}
         {step === 3 && (
           <PeopleReviewStep form={form} onChange={change} users={users} viewerId={viewerId} summary={summary} mode={mode.kind} />
         )}
@@ -284,16 +300,39 @@ export function RequestPanel(props: RequestPanelProps) {
           ) : (
             <span />
           )}
-          {step < 3 ? (
-            <Button type="button" onClick={next}>{NEXT_LABEL[step as 1 | 2]}</Button>
-          ) : (
-                        // aria-disabled (not disabled) keeps focus on the button while the request is in flight.
-            <Button type="button" onClick={submit} aria-disabled={submitting} className="aria-disabled:cursor-wait aria-disabled:opacity-70">
-              {finalLabel}
-            </Button>
-          )}
+          <div className="flex min-w-0 items-center justify-end gap-3">
+            {/* A disabled button always says why, right beside it. */}
+            {blocker && (
+              <p id="request-panel-blocker" className="min-w-0 text-right text-sm text-muted-foreground">
+                {blocker}
+              </p>
+            )}
+            {step < 3 ? (
+              <Button
+                type="button"
+                onClick={next}
+                disabled={blocker !== null}
+                aria-describedby={blocker ? 'request-panel-blocker' : undefined}
+                className="shrink-0"
+              >
+                {NEXT_LABEL[step as 1 | 2]}
+              </Button>
+            ) : (
+              // aria-disabled (not disabled) keeps focus on the button while the request is in flight.
+              <Button
+                type="button"
+                onClick={submit}
+                disabled={blocker !== null}
+                aria-disabled={submitting}
+                aria-describedby={blocker ? 'request-panel-blocker' : undefined}
+                className="shrink-0 aria-disabled:cursor-wait aria-disabled:opacity-70"
+              >
+                {finalLabel}
+              </Button>
+            )}
+          </div>
         </div>
-        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        {error && error !== blocker && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </footer>
 
       <ConfirmDialog

@@ -1,17 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { MySurveyResponse, SurveyQuestionView } from '@/lib/weekly/view-types'
 import { errorMessage, weeklyRequest } from '../weekly-api'
 
 const AGREE = ['Strongly disagree', 'Disagree', 'Neither agree nor disagree', 'Agree', 'Strongly agree']
-interface Answer { value?: number; choice?: string; text?: string; anonymous?: boolean }
+interface Answer { value?: number; choice?: string; text?: string }
 
 const choiceClass = (selected: boolean) =>
   `rounded-md border px-3 py-1.5 text-sm ${selected ? 'border-primary bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`
@@ -67,48 +66,42 @@ function QuestionField({ q, answer, onChange }: { q: SurveyQuestionView; answer:
         <Textarea rows={2} maxLength={2000} aria-label="What is the main reason for your score? (optional)" placeholder="What is the main reason for your score? (optional)" value={answer.text ?? ''} onChange={(e) => set({ text: e.target.value })} />
       )}
       {q.kind === 'TEXT' && <Textarea rows={3} maxLength={2000} aria-label={q.text} value={answer?.text ?? ''} onChange={(e) => set({ text: e.target.value })} />}
-      <div className="flex items-center gap-2 pt-1">
-        <Checkbox id={`anon-${q.id}`} checked={answer?.anonymous === true} onCheckedChange={(v) => set({ anonymous: v === true })} />
-        <Label htmlFor={`anon-${q.id}`} className="text-xs font-normal text-muted-foreground">Submit this answer anonymously</Label>
-      </div>
     </div>
   )
 }
 
-/** UX spec, section 11: this month's company sentiment questions, confidential to HR and never part of a score. */
-export function PulseSurveyCard() {
-  const [data, setData] = useState<MySurveyResponse | null>(null)
+export const SURVEY_PRIVACY = 'Only HR sees this. Never your lead or colleagues, and it doesn’t affect your evaluation.'
+
+/** What Send will do, or why it cannot yet: shown beside the button. */
+export function surveySendStatus(missing: number, hideName: boolean): string {
+  if (missing > 0) return missing === 1 ? 'Answer the last required question to send' : 'Answer the required questions to send'
+  return hideName ? 'Sent without your name' : 'Sent to HR with your name'
+}
+
+/**
+ * This month's company sentiment questions, confidential to HR and never part of a score.
+ * One switch hides the person's name on every answer in the survey.
+ */
+export function SurveyForm({ data, onSent }: { data: MySurveyResponse; onSent: () => Promise<void> | void }) {
   const [answers, setAnswers] = useState<Record<string, Answer>>({})
+  const [hideName, setHideName] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const load = useCallback(async () => {
-    try {
-      setData(await weeklyRequest<MySurveyResponse>('/api/weekly/survey'))
-    } catch {
-      setData(null)
-    }
-  }, [])
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  if (!data || data.questions.length === 0) return null
   const ready = data.questions.filter((q) => complete(q, answers[q.id]) && (answers[q.id] || !q.required))
   const missing = data.questions.filter((q) => q.required && !complete(q, answers[q.id]))
 
   async function submit() {
-    if (!data) return
     setSaving(true)
     try {
       const body = ready.flatMap((q): Array<{ questionId: string; value?: number | null; choice?: string | null; text: string | null; anonymous: boolean }> => {
         const a = answers[q.id]
-        if (q.kind === 'TEXT' && !a?.text?.trim()) return q.required ? [] : [{ questionId: q.id, text: '', anonymous: false }]
-        return [{ questionId: q.id, value: a?.value ?? null, choice: a?.choice ?? null, text: a?.text?.trim() || null, anonymous: a?.anonymous === true }]
+        if (q.kind === 'TEXT' && !a?.text?.trim()) return q.required ? [] : [{ questionId: q.id, text: '', anonymous: hideName }]
+        return [{ questionId: q.id, value: a?.value ?? null, choice: a?.choice ?? null, text: a?.text?.trim() || null, anonymous: hideName }]
       })
       await weeklyRequest('/api/weekly/survey', { method: 'POST', body: { answers: body } })
-      toast.success('Thank you')
+      toast.success('Survey sent to HR')
       setAnswers({})
-      await load()
+      await onSent()
     } catch (e) {
       toast.error(errorMessage(e, 'Could not save your answers'))
     } finally {
@@ -117,19 +110,19 @@ export function PulseSurveyCard() {
   }
 
   return (
-    <Card>
-      <CardContent className="space-y-5 p-5">
-        <div>
-          <h2 className="font-display text-xl font-semibold">How is Plutus 21 for you?</h2>
-          <p className="text-xs leading-relaxed text-muted-foreground">{data.notice}</p>
-        </div>
-        {data.questions.map((q) => (
-          <QuestionField key={q.id} q={q} answer={answers[q.id]} onChange={(a) => setAnswers((current) => ({ ...current, [q.id]: a }))} />
-        ))}
-        <div className="flex justify-end">
-          <Button disabled={saving || missing.length > 0} onClick={() => void submit()}>{saving ? 'Sending…' : 'Send answers'}</Button>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm text-foreground">{SURVEY_PRIVACY}</p>
+      {data.questions.map((q) => (
+        <QuestionField key={q.id} q={q} answer={answers[q.id]} onChange={(a) => setAnswers((current) => ({ ...current, [q.id]: a }))} />
+      ))}
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+        <Label htmlFor="survey-hide-name" className="text-sm font-medium">Hide my name from HR</Label>
+        <Switch id="survey-hide-name" checked={hideName} onCheckedChange={setHideName} />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">{surveySendStatus(missing.length, hideName)}</p>
+        <Button disabled={saving || missing.length > 0} onClick={() => void submit()}>{saving ? 'Sending…' : 'Send'}</Button>
+      </div>
+    </div>
   )
 }

@@ -180,7 +180,10 @@ test('cancel asks in a dialog', async ({ page }, testInfo) => {
   const id = await seedAnnualRequest(false)
   await signIn(page, STAFF.email)
   await page.goto('/leave')
-  await expect(page.getByRole('heading', { name: 'My requests' })).toBeVisible(FIRST_LOAD)
+  // My requests is a tab of the calendar's right-hand panel.
+  const requestsTab = page.getByRole('tab', { name: /My requests/ })
+  await expect(requestsTab).toBeVisible(FIRST_LOAD)
+  await requestsTab.click()
 
   await page.getByRole('button', { name: 'Cancel request' }).click()
   const dialog = page.getByRole('alertdialog', { name: 'Cancel this leave request?' })

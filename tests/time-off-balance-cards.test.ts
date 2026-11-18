@@ -45,6 +45,15 @@ test('no sick left asks the person to talk to HR', () => {
   assert.deepEqual([sick.isEmpty, sick.note, sick.fraction], [true, 'Talk to HR if you need more', 0])
 })
 
+test('two days or fewer left is flagged low, with a plan-carefully note', () => {
+  const [casual] = buildBalanceCards(balance({ casualDays: 10, casualUsed: 8 }), [], 2026)
+  assert.deepEqual([casual.isLow, casual.isEmpty, casual.note], [true, false, 'Only 2 days left. Plan carefully.'])
+  const [roomy] = buildBalanceCards(balance({ casualDays: 10, casualUsed: 7 }), [], 2026)
+  assert.equal(roomy.isLow, false)
+  const empty = buildBalanceCards(balance({ sickDays: 6, sickUsed: 6 }), [], 2026)[1]
+  assert.equal(empty.isLow, false)
+})
+
 test('pending counts only this year and only waiting statuses', () => {
   const reqs = [
     req({ id: 'a', leaveDays: 2 }),

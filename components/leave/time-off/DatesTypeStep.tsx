@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { formatDaysLeft } from '@/lib/format-count'
 import {
-  LEAVE_TYPE_LABEL, isHalfDayEligible, withDates, withHalfDay, withLeaveType, withSession,
+  LEAVE_TYPE_LABEL, daysShort, isHalfDayEligible, overBalanceNotice, withDates, withHalfDay, withLeaveType, withSession,
   type RequestForm,
 } from '@/lib/time-off/request-form'
 import type { LeaveSummary } from '@/lib/time-off/request-summary'
@@ -24,6 +24,8 @@ export interface StepProps {
 interface DatesTypeStepProps extends StepProps {
   summary: LeaveSummary
   balance: LeaveBalance | null
+  /** Today's day key for a new request: Casual and Annual cannot start before it. */
+  todayKey?: string
 }
 
 export const REASON_HELP = 'Your lead, HR and the people you add in step 3 see this in the request email.'
@@ -48,7 +50,9 @@ function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 10) / 10)
 }
 
-function DatesSection({ form, onChange, summary }: StepProps & { summary: LeaveSummary }) {
+function DatesSection({ form, onChange, summary, todayKey }: StepProps & { summary: LeaveSummary; todayKey?: string }) {
+  // Sick leave can be reported after the fact; planned leave cannot start in the past.
+  const earliest = form.leaveType === 'SICK' ? undefined : todayKey
   const changeStart = (start: string) => {
     const end = form.endDate && form.endDate >= start ? form.endDate : start
     onChange(withDates(form, start, end))
@@ -62,7 +66,7 @@ function DatesSection({ form, onChange, summary }: StepProps & { summary: LeaveS
       <div className="grid grid-cols-2 gap-3">
         <div className="min-w-0">
           <Label htmlFor="leave-start" className="mb-1 block text-xs text-muted-foreground">First day off</Label>
-          <Input id="leave-start" type="date" required value={form.startDate} onChange={(e) => changeStart(e.target.value)} />
+          <Input id="leave-start" type="date" required value={form.startDate} min={earliest} onChange={(e) => changeStart(e.target.value)} />
         </div>
         <div className="min-w-0">
           <Label htmlFor="leave-end" className="mb-1 block text-xs text-muted-foreground">Last day off</Label>
@@ -71,7 +75,7 @@ function DatesSection({ form, onChange, summary }: StepProps & { summary: LeaveS
             type="date"
             required
             value={form.isHalfDay ? form.startDate : form.endDate}
-            min={form.startDate || undefined}
+            min={form.startDate || earliest}
             disabled={form.isHalfDay}
             onChange={(e) => onChange(withDates(form, form.startDate, e.target.value))}
           />
@@ -85,11 +89,21 @@ function DatesSection({ form, onChange, summary }: StepProps & { summary: LeaveS
 function TypeTiles({ form, onChange, balance }: StepProps & { balance: LeaveBalance | null }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
   const choose = (type: LeaveType) => onChange(withLeaveType(form, type))
+  // A type with nothing left cannot be picked. The current type stays usable so an edit can keep it.
+  const usedUp = (type: LeaveType): boolean => {
+    const left = balanceFor(balance, type)
+    return left !== null && left.remaining <= 0 && form.leaveType !== type
+  }
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
     if (step === 0) return
     e.preventDefault()
-    const next = (index + step + LEAVE_TYPES.length) % LEAVE_TYPES.length
+    let next = index
+    for (let i = 0; i < LEAVE_TYPES.length; i += 1) {
+      next = (next + step + LEAVE_TYPES.length) % LEAVE_TYPES.length
+      if (!usedUp(LEAVE_TYPES[next])) break
+    }
+    if (next === index) return
     choose(LEAVE_TYPES[next])
     refs.current[next]?.focus()
   }
@@ -99,6 +113,7 @@ function TypeTiles({ form, onChange, balance }: StepProps & { balance: LeaveBala
         const checked = form.leaveType === type
         const left = balanceFor(balance, type)
         const empty = left !== null && left.remaining <= 0
+        const disabled = usedUp(type)
         return (
           <button
             key={type}
@@ -106,11 +121,13 @@ function TypeTiles({ form, onChange, balance }: StepProps & { balance: LeaveBala
             type="button"
             role="radio"
             aria-checked={checked}
+            disabled={disabled}
+            aria-disabled={disabled || undefined}
             tabIndex={checked ? 0 : -1}
             onClick={() => choose(type)}
             onKeyDown={(e) => onKeyDown(e, index)}
             className={`min-w-0 border-l border-border px-3 py-2.5 text-left first:border-l-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary ${
-              checked ? 'bg-primary/10 ring-1 ring-inset ring-primary' : 'hover:bg-muted/60'
+              checked ? 'bg-primary/10 ring-1 ring-inset ring-primary' : disabled ? 'cursor-not-allowed bg-muted/40 opacity-70' : 'hover:bg-muted/60'
             }`}
           >
             <span className={`block text-sm font-medium ${checked ? 'text-primary' : 'text-foreground'}`}>
@@ -136,6 +153,7 @@ function BalanceAfter({ form, summary, balance }: { form: RequestForm; summary: 
   if (summary.balanceAfter === null || !left || summary.problem) return null
   const after = Math.max(summary.balanceAfter, 0)
   const fraction = left.total > 0 ? Math.min(after / left.total, 1) : 0
+  const short = daysShort(summary)
   return (
     <div>
       <div className="flex items-center justify-between gap-3 text-sm">
@@ -143,7 +161,7 @@ function BalanceAfter({ form, summary, balance }: { form: RequestForm; summary: 
         <span
           className={`font-semibold ${summary.overBalance ? 'text-red-600 dark:text-red-400' : 'text-primary'}`}
         >
-          {formatDaysLeft(summary.balanceAfter, left.total)}
+          {short ?? formatDaysLeft(summary.balanceAfter, left.total)}
         </span>
       </div>
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
@@ -155,6 +173,9 @@ function BalanceAfter({ form, summary, balance }: { form: RequestForm; summary: 
 
 function HalfDayBlock({ form, onChange }: StepProps) {
   const eligible = isHalfDayEligible(form.leaveType)
+  // A half day is one day: the option only shows when the first and last day are the same.
+  const singleDay = form.isHalfDay || (form.startDate !== '' && form.startDate === form.endDate)
+  if (!singleDay) return null
   return (
     <div className="space-y-3 rounded-lg border border-border p-3">
       <div className="flex items-start justify-between gap-3">
@@ -213,13 +234,19 @@ function HalfDayBlock({ form, onChange }: StepProps) {
 }
 
 /** Step 1: dates, live summary, leave type, half day and reason. */
-export function DatesTypeStep({ form, onChange, summary, balance }: DatesTypeStepProps) {
+export function DatesTypeStep({ form, onChange, summary, balance, todayKey }: DatesTypeStepProps) {
+  const notice = overBalanceNotice(form, summary)
   return (
     <div>
-      <DatesSection form={form} onChange={onChange} summary={summary} />
+      <DatesSection form={form} onChange={onChange} summary={summary} todayKey={todayKey} />
       <div className={SECTION}>
         <h3 className={SECTION_TITLE}>Leave type</h3>
         <TypeTiles form={form} onChange={onChange} balance={balance} />
+        {notice && (
+          <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
+            {notice}
+          </p>
+        )}
         <BalanceAfter form={form} summary={summary} balance={balance} />
         <HalfDayBlock form={form} onChange={onChange} />
       </div>

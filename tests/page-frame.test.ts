@@ -5,11 +5,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { PageContainer } from '../components/layout/page-container'
 import { PageHeader } from '../components/layout/page-header'
 
-test('default and reading share the max-w-7xl edge; wide is 1600px', () => {
-  assert.match(renderToStaticMarkup(createElement(PageContainer, null, 'x')), /max-w-7xl/)
+test('default and reading share the 1440px edge; wide is 1600px', () => {
+  assert.match(renderToStaticMarkup(createElement(PageContainer, null, 'x')), /max-w-\[1440px\]/)
   assert.match(renderToStaticMarkup(createElement(PageContainer, { width: 'wide' }, 'x')), /max-w-\[1600px\]/)
   const reading = renderToStaticMarkup(createElement(PageContainer, { width: 'reading' }, 'x'))
-  assert.match(reading, /max-w-7xl/)
+  assert.match(reading, /max-w-\[1440px\]/)
   assert.match(reading, /<div class="max-w-4xl">x<\/div>/)
 })
 

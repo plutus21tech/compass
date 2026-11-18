@@ -2,6 +2,7 @@
 
 import { CalendarDayMarkers, type CalendarBirthday, type CalendarHoliday } from '@/components/leave/CalendarDayMarkers'
 import Link from 'next/link'
+import { formatDate } from '@/lib/format-date'
 import { profilePath } from '@/lib/people/profile-rules'
 import type { DayCell } from '@/lib/time-off/calendar-grid'
 import type { CalendarEvent } from '@/lib/time-off/types'
@@ -14,6 +15,8 @@ interface CalendarDayCellProps {
   selected: boolean
   /** The calendar's single tab stop (roving tabindex); other days are reached with the arrow keys. */
   tabbable: boolean
+  /** This day's details are showing in the side panel. */
+  active?: boolean
   onMoreClick: (cell: DayCell) => void
 }
 
@@ -55,8 +58,17 @@ function LeaveChip({ event }: { event: CalendarEvent }) {
   )
 }
 
-export function CalendarDayCell({ cell, holidays, birthdays, selected, tabbable, onMoreClick }: CalendarDayCellProps) {
+/** What a screen reader says for the day: "Wed 18 Nov, Iqbal Day, 6 out". */
+function dayLabel(cell: DayCell, holidays: CalendarHoliday[]): string {
+  const parts = [formatDate(cell.key), ...holidays.map((h) => h.name)]
+  if (cell.outCount > 0) parts.push(`${cell.outCount} out`)
+  return parts.join(', ')
+}
+
+export function CalendarDayCell({ cell, holidays, birthdays, selected, tabbable, active, onMoreClick }: CalendarDayCellProps) {
   const classes = [
+    active && !selected ? 'ring-1 ring-inset ring-primary/60' : '',
+    cell.inMonth && !cell.selectable ? 'cursor-pointer' : '',
     'flex min-h-[7rem] flex-col gap-1 border-b border-r border-border p-1.5 text-left outline-none',
     'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
     cell.selectable ? 'cursor-pointer select-none' : '',
@@ -71,6 +83,7 @@ export function CalendarDayCell({ cell, holidays, birthdays, selected, tabbable,
     <div
       role="gridcell"
       data-day={cell.key}
+      aria-label={dayLabel(cell, holidays)}
       aria-selected={selected}
       aria-disabled={!cell.selectable}
       tabIndex={cell.selectable && tabbable ? 0 : -1}

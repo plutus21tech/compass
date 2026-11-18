@@ -5,7 +5,9 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { RequestSummaryBox } from '@/components/leave/time-off/RequestSummaryBox'
 import { DatesTypeStep } from '@/components/leave/time-off/DatesTypeStep'
-import { HandoverStep } from '@/components/leave/time-off/HandoverStep'
+import { HandoverStep, pickHandoverSuggestions } from '@/components/leave/time-off/HandoverStep'
+import { HandoverItems } from '@/components/leave/time-off/HandoverItems'
+import { isSuggestionAdded, toggleSuggestion } from '@/lib/time-off/handover'
 import { PeopleReviewStep } from '@/components/leave/time-off/PeopleReviewStep'
 import { MemberMultiSelect } from '@/components/leave/MemberMultiSelect'
 import { RequestPanel } from '@/components/leave/time-off/RequestPanel'
@@ -138,6 +140,60 @@ test('step 1 says next year applies for another year', () => {
   assert.doesNotMatch(html, /after this request/)
 })
 
+test('step 1 warns inline and says days short when the balance is too small', () => {
+  const over = { startDate: '2026-11-18', endDate: '2026-11-27' }
+  const html = renderToStaticMarkup(
+    createElement(DatesTypeStep, { form: form(over), onChange: noop, summary: summary(over), balance: BALANCE })
+  )
+  assert.match(html, /role="alert"[^>]*>You have 5 casual days left\. Choose another leave type or pick fewer days\./)
+  assert.match(html, /text-red-600[^>]*>3 days short</)
+  assert.doesNotMatch(html, /None left of 10/)
+})
+
+test('step 1 disables a leave type with nothing left, but not the one already chosen', () => {
+  const render = (f: RequestForm) =>
+    renderToStaticMarkup(createElement(DatesTypeStep, { form: f, onChange: noop, summary: summary(), balance: BALANCE }))
+  const sickTile = (html: string) => html.match(/<button[^>]*role="radio"[^>]*>(?:(?!<\/button>).)*Sick(?:(?!<\/button>).)*<\/button>/)?.[0] ?? ''
+  assert.match(sickTile(render(form())), /disabled=""/)
+  assert.match(sickTile(render(form())), /aria-disabled="true"/)
+  assert.match(sickTile(render(form())), /None left/)
+  assert.doesNotMatch(sickTile(render(form({ leaveType: 'SICK' }))), /disabled=""/)
+  assert.equal(render(form()).match(/<button[^>]*role="radio"[^>]*disabled=""/g)?.length, 1)
+})
+
+test('step 1 offers a half day only for a single day', () => {
+  const render = (f: RequestForm) =>
+    renderToStaticMarkup(createElement(DatesTypeStep, { form: f, onChange: noop, summary: summary(), balance: BALANCE }))
+  assert.doesNotMatch(render(form()), /Half-Day Leave/)
+  assert.doesNotMatch(render(form({ startDate: '', endDate: '' })), /Half-Day Leave/)
+  assert.match(render(form({ endDate: '2026-11-19' })), /Half-Day Leave/)
+})
+
+test('step 1 date inputs start at today for planned leave, not for Sick', () => {
+  const render = (f: RequestForm) =>
+    renderToStaticMarkup(
+      createElement(DatesTypeStep, { form: f, onChange: noop, summary: summary(), balance: BALANCE, todayKey: '2026-11-10' })
+    )
+  assert.match(render(form()), /<input[^>]*id="leave-start"[^>]*min="2026-11-10"|<input[^>]*min="2026-11-10"[^>]*id="leave-start"/)
+  assert.doesNotMatch(render(form({ leaveType: 'SICK' })), /min="2026-11-10"/)
+})
+
+test('the main button is disabled until the step is ready, and says why beside it', () => {
+  const panel = (range: { start: string; end: string } | null) =>
+    renderToStaticMarkup(
+      createElement(RequestPanel, {
+        open: true, mode: { kind: 'create' }, initialRange: range, balance: BALANCE, balanceYear: 2026,
+        viewerDepartment: 'Design', viewerId: 'u12', users: USERS, holidayKeysFor: async () => new Set<string>(),
+        onClose: noop, onSaved: noop,
+      })
+    )
+  const nextButton = (html: string) => html.match(/<button[^>]*>Next: Handover<\/button>/)?.[0] ?? ''
+  const empty = panel(null)
+  assert.match(nextButton(empty), /disabled=""/)
+  assert.match(nextButton(empty), /aria-describedby="request-panel-blocker"/)
+  assert.match(empty, /id="request-panel-blocker"[^>]*>Pick your first day off</)
+})
+
 test('step 1 half day block keeps today copy and disables the last day', () => {
   const html = renderToStaticMarkup(
     createElement(DatesTypeStep, {
@@ -160,7 +216,7 @@ test('step 2 says whether a plan is needed', () => {
   assert.match(required, /role="status"/)
   assert.match(required, /This leave needs a transition plan\. You can add it now or later from My requests, before your leave starts\./)
   assert.match(required, /id="leave-notes"/)
-  assert.match(required, /Add task/)
+  assert.match(required, /Add item/)
 
   const optional = renderToStaticMarkup(
     createElement(HandoverStep, { form: form(), onChange: noop, planRequired: false, mode: 'create' })
@@ -174,8 +230,56 @@ test('step 2 in edit mode shows notes only', () => {
   )
   assert.match(html, /The structured transition plan is managed from the request details\./)
   assert.match(html, /id="leave-notes"/)
-  assert.doesNotMatch(html, /Add task/)
+  assert.doesNotMatch(html, /Add item/)
   assert.doesNotMatch(html, /needs a transition plan/)
+})
+
+test('step 2 items are one line each: the work, who covers it, a link or note', () => {
+  const html = renderToStaticMarkup(
+    createElement(HandoverItems, {
+      tasks: [{ ...task('Weekly client report'), projectDept: 'Engine', assignedTo: 'Old Typed Name' }],
+      onChange: noop,
+      people: USERS.slice(0, 2),
+      suggestions: [
+        { id: 't1', title: 'Weekly client report', projectName: 'Engine' },
+        { id: 't2', title: 'Brand identity', projectName: 'Studio' },
+      ],
+    })
+  )
+  assert.match(html, /aria-label="Item 1: what needs covering"[^>]*value="Weekly client report"|value="Weekly client report"[^>]*aria-label="Item 1: what needs covering"/)
+  assert.match(html, /aria-label="Item 1: who covers it"/)
+  assert.match(html, /<option value="Teammate1 Example">/)
+  assert.match(html, /<option value="Old Typed Name"[^>]*>Old Typed Name<\/option>/) // a name typed earlier is kept
+  assert.match(html, /aria-label="Item 1: link or notes"/)
+  for (const gone of ['Accepted', 'Completed', 'Deadline']) assert.doesNotMatch(html, new RegExp(gone))
+  // My work suggestions: the one already added is ticked.
+  assert.match(html, /From My work/)
+  assert.match(html, /id="handover-suggestion-t1"[^>]*aria-checked="true"|aria-checked="true"[^>]*id="handover-suggestion-t1"/)
+  assert.match(html, /id="handover-suggestion-t2"[^>]*aria-checked="false"|aria-checked="false"[^>]*id="handover-suggestion-t2"/)
+})
+
+test('step 2 hides the suggestions block when My work has nothing to offer', () => {
+  const html = renderToStaticMarkup(createElement(HandoverItems, { tasks: [], onChange: noop, people: [], suggestions: [] }))
+  assert.doesNotMatch(html, /From My work/)
+  assert.match(html, /Add item/)
+})
+
+test('ticking a My work suggestion adds it, unticking removes it; bad responses give none', () => {
+  const s = { id: 't1', title: 'Weekly client report', projectName: 'Engine' }
+  const added = toggleSuggestion([], s)
+  assert.deepEqual(added.map((t) => [t.taskDetails, t.projectDept]), [['Weekly client report', 'Engine']])
+  assert.equal(isSuggestionAdded(added, s), true)
+  assert.deepEqual(toggleSuggestion(added, s), [])
+  const picked = pickHandoverSuggestions({
+    tasks: [
+      { id: 'a', title: 'Open one', status: 'TODO', project: { name: 'Engine' } },
+      { id: 'b', title: 'Finished', status: 'DONE', project: { name: 'Engine' } },
+      { title: 'No id' },
+    ],
+  })
+  assert.deepEqual(picked, [{ id: 'a', title: 'Open one', projectName: 'Engine' }])
+  assert.deepEqual(pickHandoverSuggestions(null), [])
+  assert.deepEqual(pickHandoverSuggestions({ tasks: 'nope' }), [])
 })
 
 test('plan table hides Add task at the limit', () => {
@@ -193,6 +297,25 @@ test('member select without max keeps its behaviour', () => {
   )
   assert.doesNotMatch(html, /Up to/)
   assert.doesNotMatch(html, /<input[^>]*disabled=""/)
+})
+
+test('step 3 pickers stay closed until you type, and suggest teammates', () => {
+  const users: DirectoryUser[] = [
+    ...USERS.slice(0, 3),
+    { id: 'x1', name: 'Other Team Example', department: 'Finance' },
+    { id: 'me', name: 'Viewer Example', department: 'Design' },
+  ]
+  const html = renderToStaticMarkup(
+    createElement(PeopleReviewStep, { form: form(), onChange: noop, users, viewerId: 'me', summary: summary(), mode: 'create' })
+  )
+  // Two teammates from the viewer's department are one click away; other teams are not suggested.
+  assert.equal(html.match(/aria-label="Add Teammate1 Example"/g)?.length, 2) // once per picker
+  assert.match(html, /aria-label="Add Teammate2 Example"/)
+  assert.doesNotMatch(html, /aria-label="Add Teammate3 Example"/)
+  assert.doesNotMatch(html, /aria-label="Add Other Team Example"/)
+  // The full list is not open before anything is typed.
+  assert.equal(html.match(/<div hidden=""/g)?.length, 2)
+  assert.match(html, /placeholder="Type a name or team\.\.\."/)
 })
 
 test('step 3 lists cover and notify limits', () => {

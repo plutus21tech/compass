@@ -48,7 +48,7 @@ function Body({ overview, upcoming, people }: BodyProps) {
   return (
     <div>
       {people.length === 0 ? (
-        <p className="text-lg font-semibold">Nobody is out today.</p>
+        <p className="text-lg font-semibold">Everyone&apos;s in today.</p>
       ) : (
         <p>
           <span className="text-3xl font-semibold tabular-nums">{people.length}</span>{' '}
