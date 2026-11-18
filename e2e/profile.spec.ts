@@ -115,6 +115,28 @@ test('you can write your own about-me, and it stays after a reload', async ({ pa
   await shot(page, 'profile-own')
 })
 
+test('the Evaluations page and Home render their new layout without page errors', async ({ page }) => {
+  // The Evaluations route only exists where the weekly round is switched on.
+  test.skip(process.env.WEEKLY_EVALUATIONS_ENABLED !== 'true', 'needs WEEKLY_EVALUATIONS_ENABLED=true')
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await signIn(page, STAFF.email)
+  await page.goto('/evaluations/weekly')
+  await expect(page.getByRole('heading', { name: 'Evaluations', level: 1 })).toBeVisible(FIRST_LOAD)
+  await expect(page.getByRole('heading', { name: 'Your to-dos' })).toBeVisible(FIRST_LOAD)
+  for (const label of ['Weekly questions', 'Self-evaluation', 'Pulse survey']) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible()
+  }
+  await expect(page.getByRole('heading', { name: 'Who you evaluate' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: /This week/ })).toHaveAttribute('aria-selected', 'true')
+  await shot(page, 'evaluations')
+
+  await page.goto('/dashboard')
+  await expect(page.getByRole('heading', { name: 'Needs you' })).toBeVisible(FIRST_LOAD)
+  await expect(page.getByRole('heading', { name: 'My work' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('HR sees pay only after asking for it; a colleague is refused by the server', async ({ page }) => {
   await signIn(page, HR.email)
   await page.goto(`/people/${STAFF.id}`)
