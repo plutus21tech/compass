@@ -3,14 +3,16 @@
 import { useState } from 'react'
 import { Mail } from 'lucide-react'
 import { SoftState } from '@/components/composed/SoftState'
+import { StarRating } from '@/components/composed/StarRating'
 import { formatTimestampDate } from '@/lib/format-date'
-import { lowestGroup, scalePercent, scoreChange, type MyResultQuarter, type MyResultsResponse } from '@/lib/weekly/my-results'
+import { lowestGroup, scoreChange, type MyResultQuarter, type MyResultsResponse } from '@/lib/weekly/my-results'
 import { cn } from '@/lib/utils'
 import { FooterCard, SectionTitle } from './TodoCard'
 
-const SCALE = ['1 Does not meet', '2 Meets', '3 Exceeds', '4 Transforming']
 const TREND_SHOWN = 3
-const LOW_SCORE = 3
+// Scores are drawn as stars, as in the report people get by email.
+const OVERALL_STAR_SIZE = 36
+const ROW_STAR_SIZE = 18
 
 const score2 = (value: number): string => value.toFixed(2)
 
@@ -33,7 +35,6 @@ function Trend({ quarters, selected }: { quarters: MyResultQuarter[]; selected: 
     <div className="flex items-end gap-2" aria-label="Score by quarter">
       {shown.map((q) => (
         <div key={q.periodId} className="flex w-12 flex-col items-center gap-1">
-          <span className="text-[11px] tabular-nums text-muted-foreground">{score2(q.score)}</span>
           <div className="flex h-14 w-full items-end rounded bg-muted">
             <div
               className={cn('w-full rounded', q.periodId === quarters[selected].periodId ? 'bg-primary' : 'bg-primary/30')}
@@ -43,30 +44,6 @@ function Trend({ quarters, selected }: { quarters: MyResultQuarter[]; selected: 
           <span className="max-w-full truncate text-[11px] text-muted-foreground">{q.periodName}</span>
         </div>
       ))}
-    </div>
-  )
-}
-
-function Scale({ score }: { score: number }) {
-  const at = scalePercent(score)
-  return (
-    <div>
-      <div className="relative pt-5">
-        <span className="absolute top-0 -translate-x-1/2 text-xs font-semibold tabular-nums text-foreground" style={{ left: `${at}%` }}>
-          {score2(score)}
-        </span>
-        <div className="grid grid-cols-3 gap-1">
-          {[0, 1, 2].map((i) => (
-            <span key={i} className="h-2 rounded-full bg-muted" />
-          ))}
-        </div>
-        <span className="absolute top-[1.125rem] h-3 w-1 -translate-x-1/2 rounded-full bg-primary" style={{ left: `${at}%` }} aria-hidden />
-      </div>
-      <div className="mt-2 flex justify-between gap-2 text-[11px] text-muted-foreground">
-        {SCALE.map((label) => (
-          <span key={label}>{label}</span>
-        ))}
-      </div>
     </div>
   )
 }
@@ -92,9 +69,9 @@ function OverallCard({ quarters, selected }: { quarters: MyResultQuarter[]; sele
         <div className="flex flex-1 flex-col gap-5 p-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="space-y-2">
-              <p>
-                <span className="text-5xl font-bold tabular-nums tracking-tight text-foreground">{score2(quarter.score)}</span>
-                <span className="ml-2 text-sm text-muted-foreground">of 4</span>
+              <StarRating stars={quarter.score} size={OVERALL_STAR_SIZE} />
+              <p className="text-lg font-semibold tabular-nums text-foreground">
+                {score2(quarter.score)} <span className="text-sm font-normal text-muted-foreground">out of 4</span>
               </p>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 {quarter.band && (
@@ -105,7 +82,6 @@ function OverallCard({ quarters, selected }: { quarters: MyResultQuarter[]; sele
             </div>
             <Trend quarters={quarters} selected={selected} />
           </div>
-          <Scale score={quarter.score} />
           {quarter.band && quarter.bandDescription && (
             <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm text-foreground">
               <span className="font-semibold">{quarter.band}:</span> {quarter.bandDescription}
@@ -117,7 +93,9 @@ function OverallCard({ quarters, selected }: { quarters: MyResultQuarter[]; sele
                 Focus for next quarter
               </span>
               <p className="mt-2 font-semibold text-foreground">{focus.label}</p>
-              <p className="text-sm text-muted-foreground">Your lowest score this quarter: {score2(focus.score)}</p>
+              <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                Your lowest score this quarter <StarRating stars={focus.score} size={ROW_STAR_SIZE} />
+              </p>
             </div>
           )}
         </div>
@@ -136,32 +114,23 @@ function GroupsCard({ quarter }: { quarter: MyResultQuarter }) {
         ) : (
           <ul className="flex-1 divide-y divide-border">
             {quarter.groups.map((group) => (
-              <li key={group.key} className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)_3.5rem] items-center gap-4 px-4 py-3.5">
+              <li key={group.key} className="flex items-center justify-between gap-4 px-4 py-3.5">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-foreground">{group.label}</p>
                   <p className="text-xs text-muted-foreground">{group.weightPercent}% of total</p>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${(group.score / 4) * 100}%` }} />
-                </div>
-                <p
-                  className={cn(
-                    'text-right text-sm font-semibold tabular-nums',
-                    group.score < LOW_SCORE ? 'text-amber-700 dark:text-amber-300' : 'text-foreground'
-                  )}
-                >
-                  {score2(group.score)}
-                </p>
+                <StarRating stars={group.score} size={ROW_STAR_SIZE} className="shrink-0" />
               </li>
             ))}
           </ul>
         )}
-        <div className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-4 border-t border-border bg-muted/40 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-4 border-t border-border bg-muted/40 px-4 py-3.5">
           <div>
             <p className="text-sm font-semibold text-foreground">Weighted total</p>
             <p className="text-xs text-muted-foreground">Your overall score</p>
           </div>
-          <p className="text-right text-sm font-bold tabular-nums text-foreground">{score2(quarter.score)}</p>
+          {/* On the shaded row the empty part of a star needs a darker grey to show. */}
+          <StarRating stars={quarter.score} size={ROW_STAR_SIZE} className="shrink-0 !text-border" />
         </div>
       </div>
     </section>

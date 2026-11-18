@@ -5,7 +5,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MyResultsTab } from '@/components/weekly/page/MyResultsTab'
 import {
-  isReleased, lowestGroup, quarterResult, readGroups, scalePercent, scoreChange, type MyResultQuarter,
+  isReleased, lowestGroup, quarterResult, readGroups, scoreChange, type MyResultQuarter,
 } from '@/lib/weekly/my-results'
 
 const SECRET = 'private written feedback'
@@ -61,13 +61,10 @@ test('a quarter is released once the round is published or the report email was 
   assert.equal(isReleased({ emailSent: false, resultsPublishedAt: new Date() }), true)
 })
 
-test('change since the quarter before, the scale position and the group to focus on', () => {
+test('change since the quarter before, and the group to focus on', () => {
   const quarters = [quarter(), quarter({ periodId: 'p2', periodName: 'Q2 2026', score: 3 })]
   assert.equal(scoreChange(quarters, 0), 0.13)
   assert.equal(scoreChange(quarters, 1), null)
-  assert.equal(scalePercent(3.13), 71)
-  assert.equal(scalePercent(0.5), 0)
-  assert.equal(scalePercent(4), 100)
   assert.equal(lowestGroup(quarter().groups)?.key, 'DEPT')
   assert.equal(lowestGroup(quarter().groups.slice(0, 1)), null)
 })
@@ -79,7 +76,12 @@ test('the tab shows the score, band, change, groups and the weighted total', () 
     })
   )
   assert.match(html, /Q3 2026 overall/)
-  assert.match(html, />3\.13</)
+  // Scores are drawn as stars, as in the report: the overall score, each group, the total and the focus group.
+  assert.match(html, /aria-label="3\.13 out of 4 stars"/)
+  assert.match(html, /3\.13 <span[^>]*>out of 4<\/span>/)
+  assert.ok((html.match(/role="img"/g)?.length ?? 0) >= 4)
+  assert.doesNotMatch(html, />3\.13</)
+  assert.doesNotMatch(html, /Does not meet/)
   assert.match(html, /Exceeds Expectations/)
   assert.match(html, /▲ 0\.13 since Q2 2026/)
   assert.match(html, /Also sent to your email on Tue 27 Oct/)
