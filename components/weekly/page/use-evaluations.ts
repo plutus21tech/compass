@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import type { MyResultsResponse } from '@/lib/weekly/my-results'
 import type { EvaluationsCardView } from '@/lib/weekly/service/dashboard-card'
 import type { MySelfReview, TeamSelfReviewItem } from '@/lib/weekly/service/self-review'
 import type { HistoryResponse, InboxResponse, MyMappingResponse, MySurveyResponse } from '@/lib/weekly/view-types'
@@ -17,6 +18,8 @@ export interface EvaluationsData {
   survey: MySurveyResponse | null
   team: TeamSelfReviewItem[] | null
   mapping: MyMappingResponse | null
+  /** The person's own released results; null when they could not be loaded. */
+  results: MyResultsResponse | null
   /** People are still checking their lists, so the lists come first. */
   checkingLists: boolean
   /** Goes up on every load, so cards holding their own form state start fresh. */
@@ -26,7 +29,9 @@ export interface EvaluationsData {
 
 type Loaded = Omit<EvaluationsData, 'reload' | 'version' | 'loaded'>
 
-const EMPTY: Loaded = { error: null, inbox: null, history: null, selfReview: null, survey: null, team: null, mapping: null, checkingLists: false }
+const EMPTY: Loaded = {
+  error: null, inbox: null, history: null, selfReview: null, survey: null, team: null, mapping: null, results: null, checkingLists: false,
+}
 
 /** A source that fails, or that this person does not have, is simply absent: its block shows its empty state. */
 async function optional<T>(url: string): Promise<T | null> {
@@ -43,7 +48,7 @@ async function loadAll(): Promise<Loaded> {
     error = errorMessage(e, 'Could not load your questions')
     return null
   })
-  const [inbox, history, selfReview, survey, team, mapping, card] = await Promise.all([
+  const [inbox, history, selfReview, survey, team, mapping, card, results] = await Promise.all([
     inboxLoad,
     optional<HistoryResponse>('/api/weekly/history'),
     optional<MySelfReview>('/api/weekly/self-review'),
@@ -51,8 +56,12 @@ async function loadAll(): Promise<Loaded> {
     optional<{ items: TeamSelfReviewItem[] }>('/api/weekly/self-review/team'),
     optional<MyMappingResponse>('/api/weekly/mapping'),
     optional<{ card: EvaluationsCardView | null }>('/api/weekly/card'),
+    optional<MyResultsResponse>('/api/weekly/results'),
   ])
-  return { error, inbox, history, selfReview, survey, team: team?.items ?? null, mapping, checkingLists: card?.card?.state === 'CHECK_LISTS' }
+  return {
+    error, inbox, history, selfReview, survey, team: team?.items ?? null, mapping, results,
+    checkingLists: card?.card?.state === 'CHECK_LISTS',
+  }
 }
 
 /** Everything the Evaluations page shows, from the endpoints the earlier page already used. */

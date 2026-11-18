@@ -6,12 +6,14 @@ import { PageHeader } from '@/components/layout/page-header'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate, localDayKey } from '@/lib/format-date'
 import { buildTimeline, pendingQuestions, inboxQueue, tallyWeeks } from '@/lib/weekly/timeline'
+import { MyResultsTab } from './page/MyResultsTab'
 import { leadsSomeone, MyTeamTab, unreadSelfReviews } from './page/MyTeamTab'
 import { RoundTimeline } from './page/RoundTimeline'
 import { ThisWeekTab } from './page/ThisWeekTab'
 import { useEvaluations } from './page/use-evaluations'
 
-type PageTab = 'week' | 'team'
+type PageTab = 'week' | 'results' | 'team'
+const PANEL_LABEL: Record<PageTab, string> = { week: 'evaluations-tab-week', results: 'evaluations-tab-results', team: 'evaluations-tab-team' }
 
 const TAB = 'inline-flex items-center gap-2 border-b-2 px-1 pb-3 pt-1 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 const ACTIVE = 'border-primary text-foreground'
@@ -49,9 +51,10 @@ function Loading() {
 export function WeeklyEvaluationsPage() {
   const data = useEvaluations()
   const [tab, setTab] = useState<PageTab>('week')
-  // /evaluations/weekly#team opens the My team tab.
+  // /evaluations/weekly#results and #team open those tabs (the results email links to #results).
   useEffect(() => {
     if (window.location.hash === '#team') setTab('team')
+    if (window.location.hash === '#results') setTab('results')
   }, [])
 
   const cycle = data.inbox?.cycle ?? null
@@ -60,7 +63,7 @@ export function WeeklyEvaluationsPage() {
     [cycle, data.history]
   )
   const isLead = leadsSomeone(data.mapping, data.team)
-  const active: PageTab = tab === 'team' && isLead ? 'team' : 'week'
+  const active: PageTab = tab === 'team' && !isLead ? 'week' : tab
   const questionsDue =
     cycle?.status === 'RUNNING' && data.inbox ? pendingQuestions(inboxQueue(data.inbox.prompts, cycle.currentWeek)).length : 0
   const unread = unreadSelfReviews(data.team)
@@ -70,7 +73,7 @@ export function WeeklyEvaluationsPage() {
       <PageHeader
         dateLine={formatDate(localDayKey(new Date()))}
         title="Evaluations"
-        subtitle="Short weekly questions about the people you work with, your monthly self-evaluation, and your team’s."
+        subtitle="Short weekly questions about the people you work with, your monthly self-evaluation, and your results."
         className="mb-0"
       />
       {!data.loaded ? (
@@ -91,6 +94,17 @@ export function WeeklyEvaluationsPage() {
               This week
               <Count value={questionsDue} label={`${questionsDue} questions still due`} />
             </button>
+            <button
+              type="button"
+              role="tab"
+              id="evaluations-tab-results"
+              aria-selected={active === 'results'}
+              aria-controls="evaluations-panel"
+              className={`${TAB} ${active === 'results' ? ACTIVE : IDLE}`}
+              onClick={() => setTab('results')}
+            >
+              My results
+            </button>
             {isLead && (
               <button
                 type="button"
@@ -107,9 +121,11 @@ export function WeeklyEvaluationsPage() {
               </button>
             )}
           </div>
-          <div id="evaluations-panel" role="tabpanel" aria-labelledby={active === 'week' ? 'evaluations-tab-week' : 'evaluations-tab-team'}>
+          <div id="evaluations-panel" role="tabpanel" aria-labelledby={PANEL_LABEL[active]}>
             {active === 'week' ? (
               <ThisWeekTab data={data} />
+            ) : active === 'results' ? (
+              <MyResultsTab results={data.results} />
             ) : (
               <MyTeamTab team={data.team} mapping={data.mapping} progress={data.inbox?.progress ?? []} onGoToThisWeek={() => setTab('week')} />
             )}

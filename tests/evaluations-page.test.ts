@@ -246,7 +246,7 @@ test('my team: only leads get the tab, with a count of unread self-evaluations',
   assert.match(html, />Go to This week</)
 })
 
-test('the page keeps everything the earlier page had, and adds no new endpoint', () => {
+test('the page keeps everything the earlier page had; the only new endpoint is the person’s own results', () => {
   const tab = readFileSync('components/weekly/page/ThisWeekTab.tsx', 'utf8')
   for (const block of ['<LateFormsSection', '<MyMappingCard', '<FormsSection', '<SelfReviewCard', '<SurveyForm', '<QuestionFlowDialog']) {
     assert.ok(tab.includes(block), block)
@@ -254,8 +254,8 @@ test('the page keeps everything the earlier page had, and adds no new endpoint',
   const hook = readFileSync('components/weekly/page/use-evaluations.ts', 'utf8')
   const urls = [...hook.matchAll(/'(\/api\/[^']+)'/g)].map((m) => m[1]).sort()
   assert.deepEqual(urls, [
-    '/api/weekly/card', '/api/weekly/history', '/api/weekly/inbox', '/api/weekly/mapping', '/api/weekly/self-review',
-    '/api/weekly/self-review/team', '/api/weekly/survey',
+    '/api/weekly/card', '/api/weekly/history', '/api/weekly/inbox', '/api/weekly/mapping', '/api/weekly/results',
+    '/api/weekly/self-review', '/api/weekly/self-review/team', '/api/weekly/survey',
   ])
   const page = readFileSync('components/weekly/WeeklyEvaluationsPage.tsx', 'utf8')
   assert.match(page, /<RoundTimeline/)

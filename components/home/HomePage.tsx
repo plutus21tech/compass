@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader } from '@/components/layout/page-header'
 import { useLayoutUser } from '@/components/layout/SidebarLayout'
@@ -15,6 +16,7 @@ import { NeedsYouList } from './NeedsYouList'
 import { OutTodayCard } from './OutTodayCard'
 import { TimeOffCard } from './TimeOffCard'
 import { useHomeData } from './use-home-data'
+import { useHomeExtras } from './use-home-extras'
 
 const FALLBACK_NAME = 'there'
 
@@ -49,6 +51,27 @@ export function HomePage() {
     departmentOutToday: overview?.departmentOutToday ?? null,
   })
   const viewerId = user?.id ?? ''
+  const extras = useHomeExtras(data.todayKey, data.tasks, viewerId)
+
+  // One click gives a task with no due date one, through the same update the task panel uses.
+  const setDue = useCallback(
+    async (task: HomeTask, dayKey: string) => {
+      try {
+        const res = await fetch(`/api/projects/${task.project.id}/tasks`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: task.id, dueDate: dayKey }),
+        })
+        const body: { success?: boolean; error?: string } = await res.json().catch(() => ({}))
+        if (!res.ok || !body.success) throw new Error(body.error || 'Could not set the due date')
+        toast.success(`Due ${formatDate(dayKey)}`)
+        await reloadTasks()
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not set the due date')
+      }
+    },
+    [reloadTasks]
+  )
 
   return (
     <PageContainer>
@@ -59,13 +82,15 @@ export function HomePage() {
         <HolidayCard overview={data.overview} />
       </div>
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
-        <NeedsYouList data={data.needsYou} todayKey={data.todayKey} />
+        <NeedsYouList data={data.needsYou} todayKey={data.todayKey} done={extras.done} />
         <MyWorkPanel
           tasks={data.tasks}
           projects={data.projects}
           viewerId={viewerId}
           todayKey={data.todayKey}
           onOpenTask={setOpenTask}
+          onSetDue={setDue}
+          updates={extras.updates}
         />
       </div>
       <HomeTaskSheet

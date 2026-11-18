@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatDate } from '@/lib/format-date'
+import type { DoneItem } from '@/lib/home/extras'
 import { isOverdue, type NeedsYouItem } from '@/lib/home/needs-you'
 
 const SHOWN = 6
@@ -14,6 +15,8 @@ const SHOWN = 6
 interface NeedsYouListProps {
   data: { items: NeedsYouItem[]; incomplete: boolean } | null
   todayKey: string
+  /** What was finished since Monday; the footer shows it once loaded. */
+  done?: DoneItem[] | null
 }
 
 function Meta({ item, todayKey }: { item: NeedsYouItem; todayKey: string }) {
@@ -73,8 +76,9 @@ function AllClear() {
   )
 }
 
-export function NeedsYouList({ data, todayKey }: NeedsYouListProps) {
+export function NeedsYouList({ data, todayKey, done = null }: NeedsYouListProps) {
   const [expanded, setExpanded] = useState(false)
+  const [showDone, setShowDone] = useState(false)
   const items = data?.items ?? []
   const visible = expanded ? items : items.slice(0, SHOWN)
   const hidden = items.length - visible.length
@@ -112,6 +116,28 @@ export function NeedsYouList({ data, todayKey }: NeedsYouListProps) {
             <button type="button" onClick={() => setExpanded(true)} className="text-sm text-primary hover:underline">
               Show {hidden} more
             </button>
+          </div>
+        ) : null}
+        {done ? (
+          <div className="mt-auto border-t border-border bg-muted/40 px-5 py-3 text-sm text-muted-foreground">
+            <div className="flex items-center justify-between gap-3">
+              <span>Done this week: {done.length}</span>
+              {done.length > 0 ? (
+                <button type="button" aria-expanded={showDone} onClick={() => setShowDone((v) => !v)} className="text-primary hover:underline">
+                  {showDone ? 'Hide' : 'Show'}
+                </button>
+              ) : null}
+            </div>
+            {showDone && done.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {done.map((item) => (
+                  <li key={item.key} className="flex items-baseline justify-between gap-3">
+                    <span className="text-foreground">{item.title}</span>
+                    <span className="shrink-0 text-xs">{formatDate(item.day)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
       </Card>

@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatDate } from '@/lib/format-date'
+import { formatDate, formatTimestampDate } from '@/lib/format-date'
+import { nextFridayKey, type TaskUpdate } from '@/lib/home/extras'
 import {
   overdueByProject,
   pickActiveProjects,
@@ -22,6 +23,25 @@ interface MyWorkPanelProps {
   /** Today's day key; with it, projects show how many of your tasks are overdue. */
   todayKey?: string
   onOpenTask(task: HomeTask): void
+  /** Gives a task with no due date one in a click. */
+  onSetDue?(task: HomeTask, dayKey: string): void
+  /** Changes other people made to your open tasks; null while loading, absent when not shown. */
+  updates?: { shown: TaskUpdate[]; more: number } | null
+}
+
+function UpdatesSection({ updates }: { updates: { shown: TaskUpdate[]; more: number } | null }) {
+  if (updates === null) return <Loading />
+  if (updates.shown.length === 0) return <p className="text-sm text-muted-foreground">No updates this month.</p>
+  return (
+    <ul className="space-y-2">
+      {updates.shown.map((update) => (
+        <li key={update.id} className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="min-w-0 text-foreground">{update.summary}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{formatTimestampDate(update.createdAt)}</span>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 function titleCase(value: string): string {
@@ -45,13 +65,22 @@ function Unavailable() {
   return <p className="text-sm text-muted-foreground">Could not load this. Refresh to try again.</p>
 }
 
-function TaskRow({ task, onOpenTask }: { task: HomeTask; onOpenTask(task: HomeTask): void }) {
+interface TaskRowProps {
+  task: HomeTask
+  onOpenTask(task: HomeTask): void
+  /** The day a one-click "Set" would give a task with no due date; absent when that is not offered. */
+  suggestedDue?: string
+  onSetDue?(task: HomeTask, dayKey: string): void
+}
+
+function TaskRow({ task, onOpenTask, suggestedDue, onSetDue }: TaskRowProps) {
+  const canSet = !task.dueDate && suggestedDue !== undefined && onSetDue !== undefined
   return (
-    <li>
+    <li className="flex items-center gap-2">
       <button
         type="button"
         onClick={() => onOpenTask(task)}
-        className="w-full rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="min-w-0 flex-1 rounded-lg px-2 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <span className="block font-medium text-foreground">{task.title}</span>
         <span className="mt-0.5 flex flex-wrap gap-x-3 text-sm text-muted-foreground">
@@ -65,11 +94,21 @@ function TaskRow({ task, onOpenTask }: { task: HomeTask; onOpenTask(task: HomeTa
           )}
         </span>
       </button>
+      {canSet ? (
+        <button
+          type="button"
+          onClick={() => onSetDue(task, suggestedDue)}
+          aria-label={`Set ${task.title} due ${formatDate(suggestedDue)}`}
+          className="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          Set {formatDate(suggestedDue)}
+        </button>
+      ) : null}
     </li>
   )
 }
 
-function TasksSection({ tasks, onOpenTask }: Pick<MyWorkPanelProps, 'tasks' | 'onOpenTask'>) {
+function TasksSection({ tasks, onOpenTask, todayKey, onSetDue }: Pick<MyWorkPanelProps, 'tasks' | 'onOpenTask' | 'todayKey' | 'onSetDue'>) {
   if (tasks === null) return <Loading />
   if (!tasks.ok) return <Unavailable />
   const { shown } = pickOpenTasks(tasks.data)
@@ -86,7 +125,13 @@ function TasksSection({ tasks, onOpenTask }: Pick<MyWorkPanelProps, 'tasks' | 'o
   return (
     <ul className="-mx-2 space-y-1">
       {shown.map((task) => (
-        <TaskRow key={task.id} task={task} onOpenTask={onOpenTask} />
+        <TaskRow
+          key={task.id}
+          task={task}
+          onOpenTask={onOpenTask}
+          suggestedDue={todayKey ? nextFridayKey(todayKey) : undefined}
+          onSetDue={onSetDue}
+        />
       ))}
     </ul>
   )
@@ -139,7 +184,7 @@ function ProjectsSection({ projects, viewerId, tasks, todayKey }: Pick<MyWorkPan
   )
 }
 
-export function MyWorkPanel({ tasks, projects, viewerId, todayKey, onOpenTask }: MyWorkPanelProps) {
+export function MyWorkPanel({ tasks, projects, viewerId, todayKey, onOpenTask, onSetDue, updates }: MyWorkPanelProps) {
   return (
     <section aria-labelledby="my-work-heading" className="flex flex-col">
       <div className="mb-3 flex items-baseline justify-between gap-3">
@@ -154,12 +199,24 @@ export function MyWorkPanel({ tasks, projects, viewerId, todayKey, onOpenTask }:
       <Card className="flex flex-1 flex-col divide-y divide-border">
         <div className="space-y-3 p-5">
           <Eyebrow>Your open tasks</Eyebrow>
-          <TasksSection tasks={tasks} onOpenTask={onOpenTask} />
+          <TasksSection tasks={tasks} onOpenTask={onOpenTask} todayKey={todayKey} onSetDue={onSetDue} />
         </div>
         <div className="flex-1 space-y-3 p-5">
           <Eyebrow>Your projects</Eyebrow>
           <ProjectsSection projects={projects} viewerId={viewerId} tasks={tasks} todayKey={todayKey} />
         </div>
+        {updates !== undefined ? (
+          <div className="space-y-3 p-5">
+            <Eyebrow>Recent updates</Eyebrow>
+            <UpdatesSection updates={updates} />
+          </div>
+        ) : null}
+        {updates && updates.more > 0 ? (
+          <div className="flex items-center justify-between gap-3 bg-muted/40 px-5 py-3 text-sm text-muted-foreground">
+            <span>{updates.more} more {updates.more === 1 ? 'update' : 'updates'}</span>
+            <Link href="/my-tasks" className="text-primary hover:underline">See all</Link>
+          </div>
+        ) : null}
       </Card>
     </section>
   )
