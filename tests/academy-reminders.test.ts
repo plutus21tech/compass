@@ -116,8 +116,10 @@ test('each notice names a person, escapes them, and links to Compass', () => {
 test('the assignment notice carries the module title, escaped, and one link to the module', () => {
   const notice = academyNotices.assignment({ name: 'Ana', title: '<i>Security</i>', slug: 'security', inCourse: false })
   assert.equal(notice.html.includes('<i>Security'), false)
-  assert.equal(notice.html.match(/href="/g)?.length, 1)
-  assert.ok(notice.html.includes(`href="${COMPASS_URL}/onboarding/security"`))
+  // One button, to the module; the only other link is the footer's email settings.
+  assert.equal(notice.html.split(`href="${COMPASS_URL}/onboarding/security"`).length - 1, 1)
+  assert.equal(notice.html.match(/<a href="/g)?.length, 2)
+  assert.match(notice.html, /Manage email settings/)
 })
 
 test('a hire mid-course gets the neutral assignment wording', () => {
@@ -134,8 +136,8 @@ test('notice wording follows the count and the date', () => {
     items: [{ title: 'Laptop', dueDate: '2026-12-01', overdue: false }, { title: 'Phone', dueDate: '2026-11-28', overdue: true }],
   })
   assert.match(digest.html, /You have 2 open onboarding tasks for Cara/)
-  assert.match(digest.html, /<li>Laptop: due today<\/li>/)
-  assert.match(digest.html, /<li>Phone: was due 28 Nov 2026<\/li>/)
+  assert.match(digest.html, /<li[^>]*>Laptop: due today<\/li>/)
+  assert.match(digest.html, /<li[^>]*>Phone: was due 28 Nov 2026<\/li>/)
   assert.doesNotMatch(digest.html, /2026-11-28/)
   const single = academyNotices.checklistDigest({ hireName: 'Cara', newHireId: 'hire-1', ownerRole: 'HR', items: [{ title: 'Laptop', dueDate: '2026-12-01', overdue: false }] })
   assert.match(single.html, /You have 1 open onboarding task for Cara/)

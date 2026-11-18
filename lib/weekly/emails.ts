@@ -1,3 +1,4 @@
+import { renderCompassEmail, type CompassEmail } from '../email-template'
 import { escapeHtml } from '../sanitize'
 import { DUE_DAY } from './calendar'
 
@@ -8,23 +9,34 @@ export function renderQuestionsEmail(input: { name: string; newCount: number; op
   const link = `${input.appUrl.replace(/\/$/, '')}/evaluations/weekly`
   const subject = 'Your evaluation questions for this week'
   const lead = `You have ${plural(input.newCount, 'new question')} this week (${input.openCount} open in total), due ${DUE_DAY}.`
-  const html =
-    '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;max-width:600px">' +
-    `<p>Hi ${escapeHtml(input.name)},</p><p>${escapeHtml(lead)} Each one takes a few seconds: pick the statement that best fits what you have seen.</p>` +
-    `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;background:#111;color:#fff;border-radius:6px;text-decoration:none">Answer now</a></p>` +
-    '<p style="color:#666;font-size:12px">Unanswered questions stay open until the quarter closes.</p></div>'
+  const html = layout(
+    input.name,
+    [escapeHtml(`${lead} Each one takes a few seconds: pick the statement that best fits what you have seen.`)],
+    link,
+    'Answer now',
+    undefined,
+    'Unanswered questions stay open until the quarter closes.'
+  )
   return { subject, html }
 }
 
-/** callout is HTML shown straight after the greeting, before the paragraphs; callers escape what goes in it. */
-export function layout(name: string, paragraphs: string[], link: string, button: string, callout = ''): string {
-  return (
-    '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;max-width:600px">' +
-    `<p>Hi ${escapeHtml(name)},</p>` +
-    callout +
-    paragraphs.map((p) => `<p>${p}</p>`).join('') +
-    `<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;background:#111;color:#fff;border-radius:6px;text-decoration:none">${escapeHtml(button)}</a></p></div>`
-  )
+const EVALUATIONS_REASON = 'You got this because you take part in Compass evaluations.'
+
+/**
+ * Every evaluations email: the shared Compass template with a greeting, the paragraphs and one button.
+ * `paragraphs` are HTML, so callers escape what goes in them. The title is the email's subject, filled in when it
+ * is sent (see applyEmailSubject). `banner` is the coloured line above the title; `after` the small grey last line.
+ */
+export function layout(name: string, paragraphs: string[], link: string, button: string, banner?: CompassEmail['banner'], after?: string): string {
+  return renderCompassEmail({
+    section: 'Evaluations',
+    name,
+    banner,
+    paragraphsHtml: paragraphs,
+    button: { label: button, url: link },
+    after,
+    reason: EVALUATIONS_REASON,
+  })
 }
 export const base = (appUrl: string): string => appUrl.replace(/\/$/, '')
 
