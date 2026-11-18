@@ -1,4 +1,5 @@
 // The round's scheduled emails (UX spec, section 13). One button to the page that acts on it; every value is escaped.
+import type { CompassEmail } from '../email-template'
 import { escapeHtml } from '../sanitize'
 import { CATCH_UP_WEEKS, DUE_DAY } from './calendar'
 import { base, layout, plural } from './emails'
@@ -17,14 +18,9 @@ export function renderReviewReminderEmail(input: { name: string; periodName: str
   }
 }
 
-/** A red box that cannot be missed; inline styles so it holds up in every mail client. */
-function redNotice(title: string, line: string): string {
-  return (
-    '<div style="margin:16px 0;padding:14px 16px;border:2px solid #dc2626;border-radius:8px;background:#fef2f2;color:#b91c1c">' +
-    `<p style="margin:0;font-size:17px;font-weight:bold">${escapeHtml(title)}</p>` +
-    `<p style="margin:6px 0 0;font-size:14px;font-weight:bold">${escapeHtml(line)}</p>` +
-    '</div>'
-  )
+/** The red banner above the title, for what cannot be missed: a headline and one line under it. */
+function redNotice(title: string, line: string): NonNullable<CompassEmail['banner']> {
+  return { tone: 'danger', text: title, detail: line }
 }
 
 /** firstDueOn: the Friday this week's questions are due, such as "Fri 9 Oct". */

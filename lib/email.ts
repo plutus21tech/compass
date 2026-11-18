@@ -12,8 +12,11 @@ import { calculateWfhDays } from '@/lib/wfh-utils'
 import { normalizeCoverPersonIds } from '@/lib/leave-cover'
 import { shouldReceiveReportForPeriod } from '@/lib/evaluation-profile-rules'
 import { getResolvedEvaluationAssignments } from '@/lib/evaluation-assignments'
-import { renderLeaveRequestEmailAction } from '@/lib/leave-deep-links'
+import { getLeaveRequestUrl } from '@/lib/leave-deep-links'
+import { formatDate, formatDateRange } from '@/lib/format-date'
+import { formatDaysLeft } from '@/lib/format-count'
 import { compassUrl } from '@/lib/compass-url'
+import { applyEmailSubject, emailTextFromHtml, firstNameOf, renderCompassEmail, sentenceCase, type EmailDetail } from '@/lib/email-template'
 import { formatAcademyDate } from '@/lib/academy/view-labels'
 
 const transporter = nodemailer.createTransport({
@@ -44,23 +47,82 @@ function getLeaveDurationLabel(days: number) {
   return `${days} day${days > 1 ? 's' : ''}`
 }
 
-function getHalfDayDetailsHtml(leaveRequest: {
+const TIME_OFF = 'Time off'
+const HELP_AND_IT = 'Help & IT'
+const ONBOARDING = 'Onboarding'
+
+const ONBOARDING_TRACKER = '/admin/onboarding/tracker'
+
+/** An onboarding notice to the people running it: what happened, the facts, and one button. */
+function onboardingEmail(input: {
+  subject: string
+  summary: string
+  details: EmailDetail[]
+  button?: { label: string; path: string }
+  after?: string
+}): string {
+  const button = input.button ?? { label: 'Open the tracker', path: ONBOARDING_TRACKER }
+  return renderCompassEmail({
+    subject: input.subject,
+    section: ONBOARDING,
+    name: null,
+    paragraphs: [input.summary],
+    details: input.details,
+    button: { label: button.label, url: compassUrl(button.path) },
+    after: input.after,
+    reason: 'You got this because you help run onboarding at Plutus21.',
+  })
+}
+
+/** Rows that only show when there is something to say. */
+const optionalDetail = (label: string, value: string | null | undefined): EmailDetail[] => (value ? [{ label, value }] : [])
+
+/** Whether a ticket asks for an upgrade, and if so whether the manager approved it. */
+function upgradeDetails(ticket: { isUpgradeRequest: boolean; managerApprovalReceived: boolean | null }): EmailDetail[] {
+  if (!ticket.isUpgradeRequest) return []
+  const approval = ticket.managerApprovalReceived === true ? 'Yes' : ticket.managerApprovalReceived === false ? 'No' : 'Not provided'
+  return [{ label: 'Upgrade request', value: 'Yes' }, { label: 'Manager approval', value: approval }]
+}
+
+/** "Thu 19 Nov", with the year only when it is not this year. */
+const emailDay = (value: Date): string => formatDate(value)
+/** "Thu 19 – Fri 20 Nov", or one day when they are the same. */
+const emailRange = (start: Date, end: Date): string => formatDateRange(start, end)
+
+/** The session and hours of a half day, as rows for the details card; nothing for a full day. */
+function halfDayDetails(leaveRequest: {
   isHalfDay: boolean
   halfDaySession: 'FIRST_HALF' | 'SECOND_HALF' | null
   unavailableStartTime: string | null
   unavailableEndTime: string | null
-}) {
-  if (!leaveRequest.isHalfDay) return ''
-  const sessionLabel = leaveRequest.halfDaySession === 'FIRST_HALF' ? 'First half' : 'Second half'
-  const unavailableHours =
+}): EmailDetail[] {
+  if (!leaveRequest.isHalfDay) return []
+  const hours =
     leaveRequest.unavailableStartTime && leaveRequest.unavailableEndTime
       ? `${leaveRequest.unavailableStartTime} - ${leaveRequest.unavailableEndTime}`
       : 'Not provided'
+  return [
+    { label: 'Half day', value: leaveRequest.halfDaySession === 'FIRST_HALF' ? 'First half' : 'Second half' },
+    { label: 'Unavailable hours', value: hours },
+  ]
+}
 
-  return `
-    <p><strong>Half-day Session:</strong> ${sessionLabel}</p>
-    <p><strong>Unavailable Hours:</strong> ${escapeHtml(unavailableHours)}</p>
-  `
+/** "3 days left of 10" for one leave type, so an approval says what is left; null when the balance cannot be read. */
+async function leaveBalanceLine(employeeId: string, leaveType: string, year: number): Promise<string | null> {
+  try {
+    const balance = await prisma.leaveBalance.findUnique({ where: { employeeId_year: { employeeId, year } } })
+    if (!balance) return null
+    const totals: Record<string, [number, number]> = {
+      CASUAL: [balance.casualDays, balance.casualUsed],
+      SICK: [balance.sickDays, balance.sickUsed],
+      ANNUAL: [balance.annualDays, balance.annualUsed],
+    }
+    const pair = totals[leaveType]
+    return pair ? formatDaysLeft(pair[0] - pair[1], pair[0]) : null
+  } catch (error) {
+    console.error('Could not read the leave balance for an email:', error)
+    return null
+  }
 }
 
 async function getHrRecipientEmails() {
@@ -145,12 +207,18 @@ async function getReportTeamLeadCcEmails(input: {
   ]
 }
 
+/** An email's HTML with its title filled in from the subject, and the plain-text version to send beside it. */
+function finishedEmail(subject: string, html: string): { html: string; text: string } {
+  const finished = applyEmailSubject(html, subject)
+  return { html: finished, text: emailTextFromHtml(finished) }
+}
+
 export async function sendMail(to: string, subject: string, html: string) {
   return transporter.sendMail({
     from: `P21 Compass <${FROM_EMAIL}>`,
     to,
     subject,
-    html,
+    ...finishedEmail(subject, html),
   })
 }
 
@@ -297,10 +365,18 @@ export async function sendEmail(emailQueueId: string) {
   try {
     // Generate detailed report for proper formatting
     const detailedReport = await generateDetailedReport(employee.id, period.id)
-    const htmlContent = formatReportAsHTML(detailedReport, {
-      startDate: period.startDate,
-      endDate: period.endDate,
-    })
+    const htmlContent = formatReportAsHTML(
+      detailedReport,
+      { startDate: period.startDate, endDate: period.endDate },
+      {
+        firstName: firstNameOf(employee.name),
+        resultsUrl: compassUrl('/evaluations/weekly#results'),
+        logoUrl: compassUrl('/email/compass-logo.png'),
+        settingsUrl: compassUrl('/profile'),
+      }
+    )
+    // No score in the subject: it shows on lock screens.
+    const subject = `Your ${period.name} results are ready`
     const cc = await getReportTeamLeadCcEmails({
       employeeId: employee.id,
       employeeEmail: employee.email,
@@ -311,8 +387,8 @@ export async function sendEmail(emailQueueId: string) {
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: employee.email,
       ...(cc.length > 0 ? { cc } : {}),
-      subject: `Performance Evaluation Report - ${period.name}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
 
     await prisma.emailQueue.update({
@@ -357,13 +433,12 @@ export async function sendLeaveRequestNotification(requestId: string) {
   // Expected return is the next business day after the last day off (skips weekends).
   const returnDateValue = getExpectedReturnDate(endDateValue)
 
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
-  const returnDate = returnDateValue.toLocaleDateString()
   // Same holiday-aware count that was charged to the balance.
   const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
-  const subject = `Leave Request: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
+  const rangeLabel = emailRange(startDateValue, endDateValue)
+  const typeLabel = sentenceCase(leaveRequest.leaveType)
+  const subject = `Leave request from ${employee.name}: ${rangeLabel}`
 
   const hrEmails = await getHrRecipientEmails()
   const fallbackRecipients = parseRecipientList(
@@ -438,47 +513,35 @@ export async function sendLeaveRequestNotification(requestId: string) {
   }
 
   const transitionPlan = (leaveRequest.transitionPlan || '').trim()
-  const leaveRequestActionHtml = renderLeaveRequestEmailAction(requestId)
-
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #4F46E5;">Leave Request Submitted</h2>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Employee:</strong> ${escapeHtml(employee.name)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(employee.department) || 'N/A'}</p>
-        <p><strong>Leave Type:</strong> ${escapeHtml(leaveRequest.leaveType)}</p>
-        <p><strong>Start Date (first day off):</strong> ${startDate}</p>
-        <p><strong>End Date (last day off):</strong> ${endDate}</p>
-        <p><strong>Expected Return Date:</strong> ${leaveRequest.isHalfDay ? 'Same day' : returnDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        ${getHalfDayDetailsHtml(leaveRequest)}
-        <p><strong>Reason:</strong> ${escapeHtml(leaveRequest.reason)}</p>
-        ${coverPersonNames.length > 0 ? `<p><strong>Cover People:</strong> ${escapeHtml(coverPersonNames.join(', '))}</p>` : ''}
-      </div>
-
-      ${transitionPlan ? `
-        <div style="background: #FEF3C7; padding: 15px; border-radius: 8px; margin: 20px 0;">
-          <h4 style="margin: 0 0 10px; color: #92400E;">Transition Plan:</h4>
-          <p style="margin: 0; color: #92400E;">${escapeHtml(transitionPlan)}</p>
-        </div>
-      ` : `
-        <div style="background: #FFF7ED; padding: 15px; border-radius: 8px; margin: 20px 0;">
-          <h4 style="margin: 0 0 10px; color: #9A3412;">Transition Plan:</h4>
-          <p style="margin: 0; color: #9A3412;">Not submitted yet. A reminder will be sent before leave starts.</p>
-        </div>
-      `}
-
-      ${leaveRequestActionHtml}
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: `${durationLabel} of ${typeLabel.toLowerCase()} leave. Review it in Compass.`,
+    section: TIME_OFF,
+    banner: transitionPlan ? undefined : { tone: 'warning', text: 'No handover yet. A reminder goes out before the leave starts.' },
+    name: null,
+    paragraphs: [`${employee.name} asked for ${durationLabel} of ${typeLabel.toLowerCase()} leave.`],
+    details: [
+      { label: 'Type', value: typeLabel },
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      { label: 'Back on', value: leaveRequest.isHalfDay ? 'The same day' : emailDay(returnDateValue) },
+      ...halfDayDetails(leaveRequest),
+      ...(employee.department ? [{ label: 'Department', value: employee.department }] : []),
+      ...(coverPersonNames.length > 0 ? [{ label: 'Covering', value: coverPersonNames.join(', ') }] : []),
+      { label: 'Reason', value: leaveRequest.reason },
+    ],
+    quote: transitionPlan ? { label: 'Handover notes', text: transitionPlan } : undefined,
+    button: { label: 'Review request', url: getLeaveRequestUrl(requestId) },
+    after: 'If you need to sign in, Compass takes you back to this request afterwards.',
+    reason: 'You got this because you approve, cover or were added to this leave request.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
       subject,
-      html: htmlContent,
+      ...finishedEmail(subject, htmlContent),
     })
 
     await safeRecordLeaveAuditEvent({
@@ -532,11 +595,10 @@ export async function sendWfhRequestNotification(requestId: string) {
   const employee = wfhRequest.employee
   const startDateValue = new Date(wfhRequest.startDate)
   const endDateValue = new Date(wfhRequest.endDate)
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
   const daysCount = calculateWfhDays(startDateValue, endDateValue)
   const durationLabel = getLeaveDurationLabel(daysCount)
-  const subject = `WFH Request: ${employee.name} (${startDate} to ${endDate})`
+  const rangeLabel = emailRange(startDateValue, endDateValue)
+  const subject = `WFH request from ${employee.name}: ${rangeLabel}`
 
   const hrEmails = await getHrRecipientEmails()
   const executionEmails = await getExecutionRecipientEmails()
@@ -549,37 +611,29 @@ export async function sendWfhRequestNotification(requestId: string) {
     return { success: false, message: 'No recipients configured for WFH request notification' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0F766E;">WFH Request Submitted</h2>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Employee:</strong> ${escapeHtml(employee.name)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(employee.department) || 'N/A'}</p>
-        <p><strong>Start Date:</strong> ${startDate}</p>
-        <p><strong>End Date:</strong> ${endDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        <p><strong>Reason:</strong> ${escapeHtml(wfhRequest.reason)}</p>
-      </div>
-
-      ${wfhRequest.workPlan?.trim() ? `
-        <div style="background: #ECFEFF; padding: 15px; border-radius: 8px; margin: 20px 0;">
-          <h4 style="margin: 0 0 10px; color: #155E75;">Work Plan / Availability:</h4>
-          <p style="margin: 0; color: #155E75;">${escapeHtml(wfhRequest.workPlan)}</p>
-        </div>
-      ` : ''}
-
-      <p style="color: #64748B; font-size: 14px;">
-        Please review this WFH request in Compass.
-      </p>
-    </div>
-  `
+  const workPlan = wfhRequest.workPlan?.trim()
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: `${durationLabel} working from home. Review it in Compass.`,
+    section: TIME_OFF,
+    name: null,
+    paragraphs: [`${employee.name} asked to work from home for ${durationLabel}.`],
+    details: [
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      ...(employee.department ? [{ label: 'Department', value: employee.department }] : []),
+      { label: 'Reason', value: wfhRequest.reason },
+    ],
+    quote: workPlan ? { label: 'Work plan and availability', text: workPlan } : undefined,
+    button: { label: 'Review request', url: compassUrl('/leave') },
+    reason: 'You got this because you review work-from-home requests.',
+  })
 
   const info = await transporter.sendMail({
     from: `P21 Compass <${FROM_EMAIL}>`,
     to: recipients.join(', '),
     subject,
-    html: htmlContent,
+    ...finishedEmail(subject, htmlContent),
   })
 
   return { success: true, messageId: info.messageId, recipients }
@@ -606,48 +660,42 @@ export async function sendWfhApprovalNotification(
   const employeeEmail = employee.email as string
   const startDateValue = new Date(wfhRequest.startDate)
   const endDateValue = new Date(wfhRequest.endDate)
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
   const daysCount = calculateWfhDays(startDateValue, endDateValue)
   const durationLabel = getLeaveDurationLabel(daysCount)
   const isApproved = status === 'approved'
-  const subject = `WFH Request ${isApproved ? 'Approved' : 'Rejected'}: ${startDate} - ${endDate}`
+  const rangeLabel = emailRange(startDateValue, endDateValue)
+  const subject = isApproved ? `Your WFH is approved: ${rangeLabel}` : 'Your WFH request wasn’t approved'
+  const workPlan = wfhRequest.workPlan?.trim()
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: ${isApproved ? '#059669' : '#DC2626'};">
-        WFH Request ${isApproved ? 'Approved' : 'Rejected'}
-      </h2>
-
-      <p>Hello ${escapeHtml(employee.name)},</p>
-      <p>
-        Your work-from-home request has been <strong>${isApproved ? 'approved' : 'rejected'}</strong>.
-      </p>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Start Date:</strong> ${startDate}</p>
-        <p><strong>End Date:</strong> ${endDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        <p><strong>Reason:</strong> ${escapeHtml(wfhRequest.reason)}</p>
-        ${wfhRequest.workPlan?.trim() ? `<p><strong>Work Plan:</strong> ${escapeHtml(wfhRequest.workPlan)}</p>` : ''}
-      </div>
-
-      <div style="background: ${isApproved ? '#ECFDF5' : '#FEF2F2'}; padding: 15px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0;"><strong>Reviewed by:</strong> ${escapeHtml(approverName)}</p>
-        ${comment ? `<p style="margin: 10px 0 0;"><strong>Comment:</strong> ${escapeHtml(comment)}</p>` : ''}
-      </div>
-
-      <p style="color: #64748B; font-size: 14px;">
-        You can view the latest status in Compass.
-      </p>
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: isApproved ? `Approved by ${approverName}.` : `${approverName} reviewed it. See the details in Compass.`,
+    section: TIME_OFF,
+    banner: isApproved
+      ? { tone: 'success', text: `Approved by ${approverName}` }
+      : { tone: 'danger', text: `Not approved by ${approverName}` },
+    name: employee.name,
+    paragraphs: [
+      isApproved
+        ? `Your request to work from home for ${durationLabel} is approved.`
+        : `Your request to work from home for ${durationLabel} was not approved.`,
+    ],
+    details: [
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      { label: 'Reason', value: wfhRequest.reason },
+      ...(workPlan ? [{ label: 'Work plan', value: workPlan }] : []),
+    ],
+    quote: comment ? { label: `Note from ${approverName}`, text: comment } : undefined,
+    button: { label: 'View in Time off', url: compassUrl('/leave') },
+    reason: 'You got this because you asked to work from home.',
+  })
 
   const info = await transporter.sendMail({
     from: `P21 Compass <${FROM_EMAIL}>`,
     to: employeeEmail,
     subject,
-    html: htmlContent,
+    ...finishedEmail(subject, htmlContent),
   })
 
   return { success: true, messageId: info.messageId, recipient: employeeEmail }
@@ -693,59 +741,53 @@ export async function sendLeaveApprovalNotification(
   // Expected return is the next business day after the last day off (skips weekends).
   const returnDateValue = getExpectedReturnDate(endDateValue)
 
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
-  const returnDate = returnDateValue.toLocaleDateString()
   // Same holiday-aware count that was charged to the balance.
   const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
 
   const isApproved = status === 'approved'
-  const subject = `Leave Request ${isApproved ? 'Approved' : 'Rejected'}: ${leaveRequest.leaveType} (${startDate} - ${endDate})`
-  const statusColor = isApproved ? '#10B981' : '#EF4444'
-  const statusBg = isApproved ? '#D1FAE5' : '#FEE2E2'
+  const rangeLabel = emailRange(startDateValue, endDateValue)
+  const typeLabel = sentenceCase(leaveRequest.leaveType)
+  const subject = isApproved ? `Your leave is approved: ${rangeLabel}` : 'Your leave request wasn’t approved'
+  const balance = await leaveBalanceLine(employee.id, leaveRequest.leaveType, startDateValue.getUTCFullYear())
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: ${statusColor};">
-        Leave Request ${isApproved ? 'Approved' : 'Rejected'}
-      </h2>
-      
-      <div style="background: ${statusBg}; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p style="font-size: 18px; color: ${statusColor}; margin: 0;">
-          Your ${leaveRequest.leaveType.toLowerCase()} leave request has been <strong>${status}</strong>.
-        </p>
-      </div>
-      
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Leave Type:</strong> ${leaveRequest.leaveType}</p>
-        <p><strong>Start Date (first day off):</strong> ${startDate}</p>
-        <p><strong>End Date (last day off):</strong> ${endDate}</p>
-        <p><strong>Expected Return Date:</strong> ${leaveRequest.isHalfDay ? 'Same day' : returnDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        ${getHalfDayDetailsHtml(leaveRequest)}
-        <p><strong>${isApproved ? 'Approved' : 'Reviewed'} by:</strong> ${escapeHtml(approverName)}</p>
-        ${comment ? `<p><strong>Comment:</strong> ${escapeHtml(comment)}</p>` : ''}
-      </div>
-      
-      ${isApproved ? `
-        <p style="color: #059669;">
-          Your leave balance has been updated. Enjoy your time off!
-        </p>
-      ` : `
-        <p style="color: #64748B;">
-          If you have questions about this decision, please contact HR.
-        </p>
-      `}
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: isApproved
+      ? `Approved by ${approverName}.${balance ? ` ${typeLabel} balance: ${balance}.` : ''}`
+      : `${approverName} reviewed it. Your balance hasn’t changed.`,
+    section: TIME_OFF,
+    banner: isApproved
+      ? { tone: 'success', text: `Approved by ${approverName}` }
+      : { tone: 'danger', text: `Not approved by ${approverName}` },
+    name: employee.name,
+    paragraphs: [
+      isApproved
+        ? `Your ${typeLabel.toLowerCase()} leave is approved, and it is on the team calendar.`
+        : `Your ${typeLabel.toLowerCase()} leave request for ${rangeLabel} was not approved. Your balance hasn’t changed.`,
+    ],
+    details: [
+      { label: 'Type', value: typeLabel },
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      { label: 'Back on', value: leaveRequest.isHalfDay ? 'The same day' : emailDay(returnDateValue) },
+      ...halfDayDetails(leaveRequest),
+      ...(balance ? [{ label: `${typeLabel} balance`, value: balance }] : []),
+    ],
+    quote: comment ? { label: `Note from ${approverName}`, text: comment } : undefined,
+    button: isApproved
+      ? { label: 'View in Time off', url: compassUrl('/leave#my-requests') }
+      : { label: 'Pick new dates', url: compassUrl('/leave?request=1') },
+    after: isApproved ? undefined : 'If you have questions about this decision, talk to your lead or HR.',
+    reason: 'You got this because you asked for this leave.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: employeeEmail,
       subject,
-      html: htmlContent,
+      ...finishedEmail(subject, htmlContent),
     })
 
     await safeRecordLeaveAuditEvent({
@@ -801,12 +843,12 @@ export async function sendLeaveCancellationNotification(
   const employee = leaveRequest.employee
   const startDateValue = new Date(leaveRequest.startDate)
   const endDateValue = new Date(leaveRequest.endDate)
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
   // Same holiday-aware count that was charged to the balance.
   const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
-  const subject = `Leave Cancelled: ${employee.name} - ${leaveRequest.leaveType} (${startDate} to ${endDate})`
+  const rangeLabel = emailRange(startDateValue, endDateValue)
+  const typeLabel = sentenceCase(leaveRequest.leaveType)
+  const subject = `Leave cancelled: ${employee.name}, ${rangeLabel}`
 
   const hrEmails = await getHrRecipientEmails()
   const fallbackRecipients = parseRecipientList(
@@ -840,35 +882,33 @@ export async function sendLeaveCancellationNotification(
     return { success: false, message: 'No recipients configured for leave cancellation notification' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #EF4444;">Leave Cancelled</h2>
-      <div style="background: #FEE2E2; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p style="font-size: 16px; color: #B91C1C; margin: 0;">
-          ${escapeHtml(employee.name)}'s ${leaveRequest.leaveType.toLowerCase()} leave has been <strong>cancelled</strong>.
-        </p>
-      </div>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Leave Type:</strong> ${escapeHtml(leaveRequest.leaveType)}</p>
-        <p><strong>Start Date (first day off):</strong> ${startDate}</p>
-        <p><strong>End Date (last day off):</strong> ${endDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        ${getHalfDayDetailsHtml(leaveRequest)}
-        <p><strong>Cancelled by:</strong> ${escapeHtml(cancelledByName)}</p>
-        ${reason ? `<p><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : ''}
-      </div>
-      <p style="color: #64748B; font-size: 14px;">
-        The leave balance has been restored and the calendar invite removed. Contact HR with any questions.
-      </p>
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: `No action needed. The days are back in ${employee.name}’s balance.`,
+    section: TIME_OFF,
+    banner: { tone: 'neutral', text: `Cancelled by ${cancelledByName}` },
+    name: null,
+    paragraphs: [
+      `${employee.name}’s ${typeLabel.toLowerCase()} leave is cancelled. The days are back in the balance and it is off the calendar.`,
+    ],
+    details: [
+      { label: 'Type', value: typeLabel },
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      ...halfDayDetails(leaveRequest),
+    ],
+    quote: reason ? { label: `Reason from ${cancelledByName}`, text: reason } : undefined,
+    button: { label: 'View team calendar', url: compassUrl('/leave') },
+    after: 'Contact HR with any questions.',
+    reason: 'You got this because you asked for, approve or cover this leave.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
       subject,
-      html: htmlContent,
+      ...finishedEmail(subject, htmlContent),
     })
     await safeRecordLeaveAuditEvent({
       leaveRequestId: requestId,
@@ -941,9 +981,6 @@ export async function sendTransitionPlanReminderNotification(requestId: string) 
   const returnDateValue = new Date(endDateValue)
   returnDateValue.setDate(returnDateValue.getDate() + 1)
 
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
-  const returnDate = returnDateValue.toLocaleDateString()
   // Same holiday-aware count that was charged to the balance.
   const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
@@ -961,44 +998,35 @@ export async function sendTransitionPlanReminderNotification(requestId: string) 
       : daysUntilStart === 1
         ? 'Your leave starts tomorrow.'
         : `Your leave starts in ${daysUntilStart} days.`
-  const subject = `Reminder: Add transition plan for leave (${startDate} to ${endDate})`
+  const rangeLabel = emailRange(startDateValue, endDateValue)
+  const subject = `Reminder: add a handover for your leave, ${rangeLabel}`
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #D97706;">Transition Plan Reminder</h2>
-
-      <p>Hi ${escapeHtml(employee.name)},</p>
-      <p style="color: #92400E;"><strong>${timelineMessage}</strong></p>
-      <p>Please add your transition plan for this leave request so your team has handover details.</p>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Leave Type:</strong> ${escapeHtml(leaveRequest.leaveType)}</p>
-        <p><strong>Start Date (first day off):</strong> ${startDate}</p>
-        <p><strong>End Date (last day off):</strong> ${endDate}</p>
-        <p><strong>Expected Return Date:</strong> ${leaveRequest.isHalfDay ? 'Same day' : returnDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        ${getHalfDayDetailsHtml(leaveRequest)}
-        <p><strong>Reason:</strong> ${escapeHtml(leaveRequest.reason)}</p>
-      </div>
-
-      ${
-        leavePageUrl
-          ? `<p><a href="${leavePageUrl}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Open Leave Management</a></p>`
-          : ''
-      }
-
-      <p style="color: #64748B; font-size: 14px;">
-        If your leave details have changed, please update the request in the portal.
-      </p>
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: `${timelineMessage} Your team needs the handover details.`,
+    section: TIME_OFF,
+    banner: { tone: 'warning', text: timelineMessage },
+    name: employee.name,
+    paragraphs: ['Please add your transition plan for this leave, so your team has the handover details.'],
+    details: [
+      { label: 'Type', value: sentenceCase(leaveRequest.leaveType) },
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      { label: 'Back on', value: leaveRequest.isHalfDay ? 'The same day' : emailDay(returnDateValue) },
+      ...halfDayDetails(leaveRequest),
+      { label: 'Reason', value: leaveRequest.reason },
+    ],
+    button: { label: 'Add handover', url: getLeaveRequestUrl(requestId) || leavePageUrl },
+    after: 'If your leave details have changed, update the request in Compass.',
+    reason: 'You got this because your leave has no handover yet.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: employeeEmail,
       subject,
-      html: htmlContent,
+      ...finishedEmail(subject, htmlContent),
     })
 
     await safeRecordLeaveAuditEvent({
@@ -1085,8 +1113,6 @@ async function sendTransitionPlanDeadlineMail(
   const employeeEmail = employee.email as string
   const startDateValue = new Date(leaveRequest.startDate)
   const endDateValue = new Date(leaveRequest.endDate)
-  const startDate = startDateValue.toLocaleDateString()
-  const endDate = endDateValue.toLocaleDateString()
   // Same holiday-aware count that was charged to the balance.
   const daysCount = await chargeableLeaveDays(prisma, leaveRequest)
   const durationLabel = getLeaveDurationLabel(daysCount)
@@ -1104,57 +1130,36 @@ async function sendTransitionPlanDeadlineMail(
   const leavePageUrl = getLeavePageUrl()
   const isWarning = kind === 'final_warning'
 
+  const rangeLabel = emailRange(startDateValue, endDateValue)
   const subject = isWarning
-    ? `Action required: leave will be cancelled tomorrow without a transition plan (${startDate} to ${endDate})`
-    : `Transition plan required by ${deadlineLabel} for your leave (${startDate} to ${endDate})`
+    ? `Your leave is cancelled tomorrow without a handover: ${rangeLabel}`
+    : `Handover needed by ${deadlineLabel} for your leave, ${rangeLabel}`
 
-  const accent = isWarning ? '#B91C1C' : '#D97706'
-  const panelBackground = isWarning ? '#FEE2E2' : '#FEF3C7'
-
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: ${accent};">
-        ${isWarning ? 'Final Notice — Transition Plan' : 'Transition Plan Required'}
-      </h2>
-
-      <p>Hi ${escapeHtml(employee.name)},</p>
-
-      <div style="background: ${panelBackground}; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p style="font-size: 16px; color: ${accent}; margin: 0;">
-          ${
-            isWarning
-              ? `Your leave request will be <strong>automatically cancelled</strong> if a transition plan is not attached by <strong>${escapeHtml(deadlineLabel)}</strong>.`
-              : `Please attach a transition plan by <strong>${escapeHtml(deadlineLabel)}</strong>. If nothing is attached by then, this leave request will be <strong>automatically cancelled</strong>.`
-          }
-        </p>
-      </div>
-
-      <p>
-        This applies because the leave is longer than two working days, so your team
-        needs handover details before you go.
-      </p>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Leave Type:</strong> ${escapeHtml(leaveRequest.leaveType)}</p>
-        <p><strong>Start Date (first day off):</strong> ${startDate}</p>
-        <p><strong>End Date (last day off):</strong> ${endDate}</p>
-        <p><strong>Duration (working days):</strong> ${durationLabel}</p>
-        <p><strong>Transition plan due:</strong> ${escapeHtml(deadlineLabel)}</p>
-        <p><strong>Reason:</strong> ${escapeHtml(leaveRequest.reason)}</p>
-      </div>
-
-      ${
-        leavePageUrl
-          ? `<p><a href="${leavePageUrl}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Add Transition Plan</a></p>`
-          : ''
-      }
-
-      <p style="color: #64748B; font-size: 14px;">
-        If the leave is cancelled, the days go back to your balance and you are free to
-        apply again with a plan attached.
-      </p>
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: `Add a transition plan by ${deadlineLabel}, or the leave is cancelled automatically.`,
+    section: TIME_OFF,
+    banner: isWarning
+      ? { tone: 'danger', text: `Final notice: handover due ${deadlineLabel}` }
+      : { tone: 'warning', text: `Handover due ${deadlineLabel}` },
+    name: employee.name,
+    paragraphs: [
+      isWarning
+        ? `Your leave request will be cancelled automatically if a transition plan is not attached by ${deadlineLabel}.`
+        : `Please attach a transition plan by ${deadlineLabel}. If nothing is attached by then, this leave request is cancelled automatically.`,
+      'This applies because the leave is longer than two working days, so your team needs the handover details before you go.',
+    ],
+    details: [
+      { label: 'Type', value: sentenceCase(leaveRequest.leaveType) },
+      { label: 'Dates', value: rangeLabel },
+      { label: 'Working days', value: durationLabel },
+      { label: 'Handover due', value: deadlineLabel },
+      { label: 'Reason', value: leaveRequest.reason },
+    ],
+    button: { label: 'Add handover', url: getLeaveRequestUrl(requestId) || leavePageUrl },
+    after: 'If the leave is cancelled, the days go back to your balance and you can apply again with a plan attached.',
+    reason: 'You got this because your leave has no handover yet.',
+  })
 
   // Only the final warning widens beyond the applicant, and a failure to resolve those
   // extras must not stop the applicant's own copy going out.
@@ -1181,7 +1186,7 @@ async function sendTransitionPlanDeadlineMail(
       to: employeeEmail,
       cc: ccEmails.length > 0 ? ccEmails.join(', ') : undefined,
       subject,
-      html: htmlContent,
+      ...finishedEmail(subject, htmlContent),
     })
 
     await safeRecordLeaveAuditEvent({
@@ -1257,44 +1262,33 @@ export async function sendNewTicketNotificationToHR(ticketId: string) {
     return { success: false, message: 'No support recipients configured' }
   }
 
-  const priorityColors: Record<string, string> = {
-    LOW: '#6B7280',
-    MEDIUM: '#3B82F6',
-    HIGH: '#F59E0B',
-    URGENT: '#EF4444',
-  }
-
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #4F46E5;">New Device Support Ticket</h2>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Employee:</strong> ${escapeHtml(ticket.employee.name)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(ticket.employee.department) || 'N/A'}</p>
-        <p><strong>Device:</strong> ${escapeHtml(ticket.deviceType)}</p>
-        <p><strong>Upgrade Request:</strong> ${ticket.isUpgradeRequest ? 'Yes' : 'No'}</p>
-        ${ticket.isUpgradeRequest ? `<p><strong>Manager Approval:</strong> ${ticket.managerApprovalReceived === true ? 'Yes' : ticket.managerApprovalReceived === false ? 'No' : 'Not provided'}</p>` : ''}
-        <p><strong>Priority:</strong> <span style="color: ${priorityColors[ticket.priority]}; font-weight: bold;">${ticket.priority}</span></p>
-        <p><strong>Issue:</strong> ${escapeHtml(ticket.title)}</p>
-      </div>
-
-      <div style="background: #FFFBEB; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #FEF3C7;">
-        <h4 style="margin: 0 0 10px; color: #92400E;">Description:</h4>
-        <p style="margin: 0; color: #92400E; white-space: pre-wrap;">${escapeHtml(ticket.description)}</p>
-      </div>
-
-      <p style="color: #64748B; font-size: 14px;">
-        Please review and update the ticket status in the support dashboard.
-      </p>
-    </div>
-  `
+  const priorityLabel = sentenceCase(ticket.priority)
+  const subject = `New ticket (${priorityLabel.toLowerCase()} priority): ${ticket.title}`
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: `From ${ticket.employee.name}, about their ${ticket.deviceType}.`,
+    section: HELP_AND_IT,
+    banner: ticket.priority === 'URGENT' || ticket.priority === 'HIGH' ? { tone: 'warning', text: `${priorityLabel} priority` } : undefined,
+    name: null,
+    paragraphs: [`${ticket.employee.name} raised a device support ticket.`],
+    details: [
+      { label: 'Ticket', value: ticket.title },
+      { label: 'Device', value: ticket.deviceType },
+      { label: 'Priority', value: priorityLabel },
+      ...(ticket.employee.department ? [{ label: 'Department', value: ticket.employee.department }] : []),
+      ...upgradeDetails(ticket),
+    ],
+    quote: { label: `From ${ticket.employee.name}`, text: ticket.description },
+    button: { label: 'Open ticket', url: compassUrl('/device-support') },
+    reason: 'You got this because you handle device support.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `New Device Support Ticket [${ticket.priority}]: ${ticket.title}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     console.log('[Email] New ticket notification sent to support team', { ticketId })
     return { success: true, data: { messageId: info.messageId } }
@@ -1337,63 +1331,42 @@ export async function sendTicketStatusNotification(
     RESOLVED: 'Resolved',
   }
 
-  const statusColors: Record<string, { text: string; bg: string }> = {
-    OPEN: { text: '#3B82F6', bg: '#DBEAFE' },
-    UNDER_REVIEW: { text: '#F59E0B', bg: '#FEF3C7' },
-    SOLUTION: { text: '#8B5CF6', bg: '#EDE9FE' },
-    RESOLVED: { text: '#10B981', bg: '#D1FAE5' },
-  }
+  const statusLabel = statusLabels[ticket.status] || sentenceCase(ticket.status)
+  const resolved = ticket.status === 'RESOLVED'
+  const subject = resolved ? `Ticket resolved: ${ticket.title}` : `Ticket ${statusLabel.toLowerCase()}: ${ticket.title}`
+  const by = updatedByName ?? ticket.hrAssignedTo ?? null
 
-  const statusLabel = statusLabels[ticket.status] || ticket.status
-  const colors = statusColors[ticket.status] || { text: '#6B7280', bg: '#F3F4F6' }
-
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #4F46E5;">Device Support Ticket Update</h2>
-
-      <div style="background: ${colors.bg}; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p style="font-size: 18px; color: ${colors.text}; margin: 0;">
-          Your ticket status has been updated to: <strong>${statusLabel}</strong>
-        </p>
-      </div>
-
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Employee:</strong> ${escapeHtml(employee.name)}</p>
-        <p><strong>Ticket:</strong> ${escapeHtml(ticket.title)}</p>
-        <p><strong>Device:</strong> ${escapeHtml(ticket.deviceType)}</p>
-        <p><strong>Upgrade Request:</strong> ${ticket.isUpgradeRequest ? 'Yes' : 'No'}</p>
-        ${ticket.isUpgradeRequest ? `<p><strong>Manager Approval:</strong> ${ticket.managerApprovalReceived === true ? 'Yes' : ticket.managerApprovalReceived === false ? 'No' : 'Not provided'}</p>` : ''}
-        <p><strong>Priority:</strong> ${ticket.priority}</p>
-        ${ticket.expectedResolutionDate ? `<p><strong>Expected Resolution:</strong> ${new Date(ticket.expectedResolutionDate).toLocaleDateString()}</p>` : ''}
-        ${ticket.hrAssignedTo ? `<p><strong>Handled by:</strong> ${escapeHtml(ticket.hrAssignedTo)}</p>` : ''}
-        ${updatedByName ? `<p><strong>Updated by:</strong> ${escapeHtml(updatedByName)}${updatedByRole ? ` (${escapeHtml(updatedByRole)})` : ''}</p>` : ''}
-      </div>
-
-      ${ticket.solution ? `
-        <div style="background: #EDE9FE; padding: 15px; border-radius: 8px; margin: 20px 0;">
-          <h4 style="margin: 0 0 10px; color: #6D28D9;">Solution:</h4>
-          <p style="margin: 0; color: #5B21B6; white-space: pre-wrap;">${escapeHtml(ticket.solution)}</p>
-        </div>
-      ` : ''}
-
-      ${ticket.status === 'RESOLVED' ? `
-        <p style="color: #059669;">
-          This ticket has been resolved. If you're still experiencing issues, feel free to open a new ticket.
-        </p>
-      ` : `
-        <p style="color: #64748B; font-size: 14px;">
-          You can check the latest updates on your ticket in the Compass portal.
-        </p>
-      `}
-    </div>
-  `
+  const htmlContent = renderCompassEmail({
+    subject,
+    preview: resolved
+      ? `${by ? `${by} fixed it. ` : ''}Open a new ticket if the problem comes back.`
+      : `${employee.name}’s ticket is now ${statusLabel.toLowerCase()}.`,
+    section: HELP_AND_IT,
+    banner: resolved ? { tone: 'success', text: by ? `Resolved by ${by}` : 'Resolved' } : undefined,
+    name: null,
+    paragraphs: [`${employee.name}’s device support ticket is now ${statusLabel.toLowerCase()}.`],
+    details: [
+      { label: 'Ticket', value: ticket.title },
+      { label: 'Device', value: ticket.deviceType },
+      { label: 'Priority', value: sentenceCase(ticket.priority) },
+      { label: 'Status', value: statusLabel },
+      ...upgradeDetails(ticket),
+      ...(ticket.expectedResolutionDate ? [{ label: 'Expected by', value: emailDay(new Date(ticket.expectedResolutionDate)) }] : []),
+      ...(ticket.hrAssignedTo ? [{ label: 'Handled by', value: ticket.hrAssignedTo }] : []),
+      ...(updatedByName ? [{ label: 'Updated by', value: updatedByName }] : []),
+    ],
+    quote: ticket.solution ? { label: 'What IT did', text: ticket.solution } : undefined,
+    button: { label: 'View ticket', url: compassUrl('/device-support') },
+    after: resolved ? 'If the problem comes back, open a new ticket in Help & IT.' : undefined,
+    reason: 'You got this because you raised or handle this ticket.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Device Support Ticket ${statusLabel}: ${ticket.title}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
 
     console.log('[Email] Status notification sent', { recipients: recipients.length, ticketId })
@@ -1439,26 +1412,24 @@ export async function sendPositionClosedNotification(positionId: string) {
     return { success: false, message: 'No recipients configured for position closed notification' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Position Closed</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>Title:</strong> ${escapeHtml(position.title)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(position.department || 'N/A')}</p>
-        <p><strong>Team Lead:</strong> ${escapeHtml(position.teamLead?.name || 'N/A')}</p>
-      </div>
-      <p style="color: #64748B; font-size: 14px;">
-        A new hire record can now be created from this closed position.
-      </p>
-    </div>
-  `
+  const subject = `Position closed: ${position.title}`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: 'This position is closed. A new hire record can now be created from it.',
+    details: [
+      { label: 'Title', value: position.title },
+      ...optionalDetail('Department', position.department),
+      ...optionalDetail('Team lead', position.teamLead?.name),
+    ],
+    button: { label: 'Open positions', path: '/admin/onboarding/positions' },
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Position Closed: ${position.title}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
@@ -1487,24 +1458,24 @@ export async function sendTeamLeadFormSubmittedNotification(newHireId: string) {
     return { success: false, message: 'No HR recipients configured' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Team Lead Form Submitted</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>New Hire:</strong> ${escapeHtml(newHire.name)}</p>
-        <p><strong>Title:</strong> ${escapeHtml(newHire.title)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(newHire.department || 'N/A')}</p>
-        <p><strong>Submitted By:</strong> ${escapeHtml(newHire.teamLead?.name || 'Team Lead')}</p>
-      </div>
-    </div>
-  `
+  const subject = `Team lead form submitted: ${newHire.name}`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: `${newHire.teamLead?.name || 'The team lead'} sent the team lead form for ${newHire.name}.`,
+    details: [
+      { label: 'New hire', value: newHire.name },
+      { label: 'Title', value: newHire.title },
+      ...optionalDetail('Department', newHire.department),
+      { label: 'Submitted by', value: newHire.teamLead?.name || 'Team lead' },
+    ],
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Team Lead Form Submitted: ${newHire.name}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
@@ -1531,30 +1502,25 @@ export async function sendTeamLeadFormRequestNotification(newHireId: string) {
     return { success: false, message: 'No team lead email configured' }
   }
 
-  const formUrl = compassUrl(`/team-lead-form/${encodeURIComponent(newHire.id)}`)
-
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Onboarding Team Lead Form Required</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>New Hire:</strong> ${escapeHtml(newHire.name)}</p>
-        <p><strong>Title:</strong> ${escapeHtml(newHire.title)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(newHire.department || 'N/A')}</p>
-        <p><strong>Onboarding Date:</strong> ${newHire.onboardingDate.toLocaleDateString()}</p>
-      </div>
-      <p style="color: #475569; margin: 0 0 14px;">
-        Please complete the team lead onboarding form so security and HR can proceed.
-      </p>
-      <p><a href="${formUrl}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Open Team Lead Form</a></p>
-    </div>
-  `
+  const subject = `Team lead form needed for ${newHire.name}`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: `Please complete the team lead onboarding form for ${newHire.name}, so security and HR can go ahead.`,
+    details: [
+      { label: 'New hire', value: newHire.name },
+      { label: 'Title', value: newHire.title },
+      ...optionalDetail('Department', newHire.department),
+      { label: 'Joining', value: emailDay(newHire.onboardingDate) },
+    ],
+    button: { label: 'Open team lead form', path: `/team-lead-form/${encodeURIComponent(newHire.id)}` },
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Action Required: Team Lead Form for ${newHire.name}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
@@ -1577,33 +1543,25 @@ export async function sendLeadInputRequest(newHireId: string): Promise<void> {
   const recipients = mergeRecipientEmails([newHire.teamLead?.email], getOnboardingExecutionRecipients())
   if (recipients.length === 0) return
 
-  const formUrl = compassUrl(`/team-lead-form/${encodeURIComponent(newHire.id)}`)
   const dueAt = newHire.teamLeadForm?.leadInputDueAt
-  const dueLine = dueAt
-    ? `<p><strong>Please complete by:</strong> ${escapeHtml(dueAt.toISOString().slice(0, 10))}</p>`
-    : ''
-
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Your input is needed for a new hire</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>New Hire:</strong> ${escapeHtml(newHire.name)}</p>
-        <p><strong>Title:</strong> ${escapeHtml(newHire.title)}</p>
-        <p><strong>Joining:</strong> ${escapeHtml(newHire.onboardingDate.toISOString().slice(0, 10))}</p>
-        ${dueLine}
-      </div>
-      <p style="color: #475569; margin: 0 0 14px;">
-        Please describe what you expect from this role and set their goals for day 1, week 1, month 1 and month 3.
-      </p>
-      <p><a href="${formUrl}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Add role expectations</a></p>
-    </div>
-  `
+  const subject = `Role expectations needed for ${newHire.name}`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: `Please describe what you expect from ${newHire.name}’s role and set their goals for day 1, week 1, month 1 and month 3.`,
+    details: [
+      { label: 'New hire', value: newHire.name },
+      { label: 'Title', value: newHire.title },
+      { label: 'Joining', value: emailDay(newHire.onboardingDate) },
+      ...(dueAt ? [{ label: 'Please complete by', value: emailDay(dueAt) }] : []),
+    ],
+    button: { label: 'Add role expectations', path: `/team-lead-form/${encodeURIComponent(newHire.id)}` },
+  })
 
   await transporter.sendMail({
     from: `P21 Compass <${FROM_EMAIL}>`,
     to: recipients.join(', '),
-    subject: `Action Required: role expectations for ${newHire.name}`,
-    html: htmlContent,
+    subject,
+    ...finishedEmail(subject, htmlContent),
   })
 }
 
@@ -1624,23 +1582,23 @@ export async function sendSecurityChecklistCompleteNotification(newHireId: strin
     return { success: false, message: 'No HR recipients configured' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Security Checklist Completed</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>New Hire:</strong> ${escapeHtml(newHire.name)}</p>
-        <p><strong>Title:</strong> ${escapeHtml(newHire.title)}</p>
-        <p><strong>Department:</strong> ${escapeHtml(newHire.department || 'N/A')}</p>
-      </div>
-    </div>
-  `
+  const subject = `Security checklist complete: ${newHire.name}`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: `The security checklist for ${newHire.name} is complete.`,
+    details: [
+      { label: 'New hire', value: newHire.name },
+      { label: 'Title', value: newHire.title },
+      ...optionalDetail('Department', newHire.department),
+    ],
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Security Checklist Complete: ${newHire.name}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
@@ -1678,24 +1636,24 @@ export async function sendOnboardingCompletedNotification(userId: string) {
     return { success: false, message: 'No recipients configured for onboarding completion notification' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Onboarding Completed</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>User:</strong> ${escapeHtml(onboardingUser.name)}</p>
-        <p><strong>Email:</strong> ${escapeHtml(onboardingUser.email || 'N/A')}</p>
-        <p><strong>Department:</strong> ${escapeHtml(onboardingUser.department || 'N/A')}</p>
-        <p><strong>Team Lead:</strong> ${escapeHtml(onboardingUser.newHireRecord?.teamLead?.name || 'N/A')}</p>
-      </div>
-    </div>
-  `
+  const subject = `Onboarding completed: ${onboardingUser.name}`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: `${onboardingUser.name} has finished onboarding.`,
+    details: [
+      { label: 'Name', value: onboardingUser.name },
+      ...optionalDetail('Email', onboardingUser.email),
+      ...optionalDetail('Department', onboardingUser.department),
+      ...optionalDetail('Team lead', onboardingUser.newHireRecord?.teamLead?.name),
+    ],
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Onboarding Completed: ${onboardingUser.name}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
@@ -1721,25 +1679,25 @@ export async function sendQuizFailAlert(userId: string, failedCount: number) {
     return { success: false, message: 'No recipients configured for quiz fail alert' }
   }
 
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Culture Quiz: Please Arrange a Short Conversation</h2>
-      <div style="background: #F8FAFC; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p><strong>User:</strong> ${escapeHtml(hire.name)}</p>
-        <p><strong>Email:</strong> ${escapeHtml(hire.email || 'N/A')}</p>
-        <p><strong>Department:</strong> ${escapeHtml(hire.department || 'N/A')}</p>
-        <p><strong>Failed attempts:</strong> ${failedCount}</p>
-      </div>
-      <p>Retakes stay open, so nothing is blocked while you talk.</p>
-    </div>
-  `
+  const subject = `Culture quiz: ${hire.name} has failed ${failedCount} times`
+  const htmlContent = onboardingEmail({
+    subject,
+    summary: `Please arrange a short conversation with ${hire.name} about the culture quiz.`,
+    details: [
+      { label: 'Name', value: hire.name },
+      ...optionalDetail('Email', hire.email),
+      ...optionalDetail('Department', hire.department),
+      { label: 'Failed attempts', value: String(failedCount) },
+    ],
+    after: 'Retakes stay open, so nothing is blocked while you talk.',
+  })
 
   try {
     const info = await transporter.sendMail({
       from: `P21 Compass <${FROM_EMAIL}>`,
       to: recipients.join(', '),
-      subject: `Culture Quiz Failed ${failedCount} Times: ${hire.name}`,
-      html: htmlContent,
+      subject,
+      ...finishedEmail(subject, htmlContent),
     })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error: any) {
@@ -1750,12 +1708,6 @@ export async function sendQuizFailAlert(userId: string, failedCount: number) {
 
 function getLeavePageUrl() {
   return compassUrl('/leave')
-}
-
-function leaveDateRangeLabels(leaveRequest: { startDate: Date; endDate: Date }) {
-  const start = new Date(leaveRequest.startDate).toLocaleDateString()
-  const end = new Date(leaveRequest.endDate).toLocaleDateString()
-  return { start, end }
 }
 
 /**
@@ -1903,49 +1855,32 @@ async function deliverHolidayEmails({
     // shown to HR is built from the same code path that does the sending.
     if (dryRun) continue
 
-    const rows = teamHolidays
-      .map(
-        (holiday) => `
-        <tr>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; color: #334155;">
-            ${escapeHtml(formatDay(holiday.holidayDate))}
-          </td>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; color: #1E293B; font-weight: 600;">
-            ${escapeHtml(holiday.name)}
-          </td>
-        </tr>`
-      )
-      .join('')
-
     const count = teamHolidays.length
-    const heading = isNew
-      ? count === 1
-        ? 'New Public Holiday'
-        : 'New Public Holidays'
-      : `Public Holidays in ${label}`
+    const teamName = labelOf(team)
+    // The team is always named: people in other countries work as usual.
     const subject = isNew
-      ? `${heading} — ${labelOf(team)}`
-      : `Public Holidays in ${label} — ${labelOf(team)}`
+      ? count === 1
+        ? `Public holiday for the ${teamName}: ${teamHolidays[0].name}, ${emailDay(teamHolidays[0].holidayDate)}`
+        : `${count} new public holidays for the ${teamName}`
+      : `Public holidays in ${label} for the ${teamName}`
     const intro = isNew
-      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${escapeHtml(labelOf(team))}.`
-      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${escapeHtml(labelOf(team))} this month.`
+      ? `${count === 1 ? 'A new public holiday has' : `${count} new public holidays have`} been added to the calendar for the ${teamName}. It won’t count as leave.`
+      : `${count === 1 ? 'There is 1 public holiday' : `There are ${count} public holidays`} for the ${teamName} this month.`
 
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px;">
-        <h2 style="color: #1E293B;">${escapeHtml(heading)}</h2>
-        <p style="font-size: 16px; color: #334155;">${intro}</p>
-        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-          <tbody>${rows}</tbody>
-        </table>
-        <p style="color: #64748B; font-size: 14px;">
-          ${
-            isNew
-              ? 'A calendar invite has been sent separately. Please plan any deadlines or handovers around these dates.'
-              : 'Please plan any deadlines or handovers around these dates.'
-          }
-        </p>
-      </div>
-    `
+    const html = renderCompassEmail({
+      subject,
+      preview: `The ${teamName} is off. Plan deadlines and handovers around ${count === 1 ? 'this date' : 'these dates'}.`,
+      section: TIME_OFF,
+      banner: { tone: 'info', text: `Public holiday · ${teamName}` },
+      name: null,
+      paragraphs: [intro],
+      details: teamHolidays.map((holiday) => ({ label: formatDay(holiday.holidayDate), value: holiday.name })),
+      button: { label: 'See the calendar', url: compassUrl('/leave') },
+      after: isNew
+        ? 'A calendar invite has been sent separately. Please plan any deadlines or handovers around these dates.'
+        : 'Please plan any deadlines or handovers around these dates.',
+      reason: `You got this because you are on the ${teamName}.`,
+    })
 
     try {
       await transporter.sendMail({
@@ -1953,7 +1888,7 @@ async function deliverHolidayEmails({
         to: to.join(', '),
         cc: ccEmails.length > 0 ? ccEmails.join(', ') : undefined,
         subject,
-        html,
+        ...finishedEmail(subject, html),
       })
       sent++
     } catch (error) {
@@ -2133,28 +2068,17 @@ export async function sendRosterChangeRequestNotification(requestId: string) {
          </ul>`
 
   const subject = `Roster change requested: ${request.client.name}`
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px;">
-      <h2 style="color: #1E293B;">Roster change requested</h2>
-      <p style="font-size: 16px; color: #334155;">
-        <strong>${escapeHtml(request.requestedBy.name)}</strong> has asked for changes to the
-        project roster for <strong>${escapeHtml(request.client.name)}</strong>.
-      </p>
-      ${listBlock('Add', additions)}
-      ${listBlock('Remove', removals)}
-      ${
-        request.note
-          ? `<p style="margin-top: 16px; color: #334155;"><strong>Note:</strong><br/>${escapeHtml(
-              request.note
-            )}</p>`
-          : ''
-      }
-      <p style="color: #64748B; font-size: 14px; margin-top: 20px;">
-        Apply these changes in Admin &rsaquo; Clients. The request is listed there as pending
-        until it is marked done.
-      </p>
-    </div>
-  `
+  const html = renderCompassEmail({
+    subject,
+    section: 'Projects',
+    name: null,
+    paragraphs: [`${request.requestedBy.name} has asked for changes to the project roster for ${request.client.name}.`],
+    blockHtml: `${listBlock('Add', additions)}${listBlock('Remove', removals)}`,
+    quote: request.note ? { label: `Note from ${request.requestedBy.name}`, text: request.note } : undefined,
+    button: { label: 'Open clients', url: compassUrl('/admin/clients') },
+    after: 'Apply these changes in Admin, Clients. The request stays pending there until it is marked done.',
+    reason: 'You got this because you manage client rosters.',
+  })
 
   try {
     await transporter.sendMail({
@@ -2163,7 +2087,7 @@ export async function sendRosterChangeRequestNotification(requestId: string) {
       // So HR can reply straight to the manager who asked.
       replyTo: request.requestedBy.email || undefined,
       subject,
-      html,
+      ...finishedEmail(subject, html),
     })
     return { success: true, message: `Sent to ${recipients.length} recipients` }
   } catch (error) {
@@ -2203,20 +2127,24 @@ export async function sendTransitionPlanSubmittedNotification(requestId: string)
     return { success: false, message: 'No team lead email' }
   }
 
-  const { start, end } = leaveDateRangeLabels(leaveRequest)
   const leavePageUrl = getLeavePageUrl()
-  const subject = `Transition plan submitted: ${leaveRequest.employee.name} (${start} to ${end})`
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #4F46E5;">Transition Plan Submitted</h2>
-      <p><strong>${escapeHtml(leaveRequest.employee.name)}</strong> submitted a transition plan for their leave (${start} to ${end}).</p>
-      <p>Please review the handover tasks. If anything needs changing, you can disapprove it and the applicant will be asked to revise.</p>
-      ${leavePageUrl ? `<p><a href="${leavePageUrl}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Review Transition Plan</a></p>` : ''}
-    </div>
-  `
+  const rangeLabel = emailRange(new Date(leaveRequest.startDate), new Date(leaveRequest.endDate))
+  const subject = `Handover from ${leaveRequest.employee.name} for ${rangeLabel}`
+  const html = renderCompassEmail({
+    subject,
+    preview: 'Review the handover before the leave starts.',
+    section: TIME_OFF,
+    name: null,
+    paragraphs: [
+      `${leaveRequest.employee.name} submitted a transition plan for their leave, ${rangeLabel}.`,
+      'Please review the handover tasks. If anything needs changing, disapprove it and they will be asked to revise it.',
+    ],
+    button: { label: 'Review handover', url: getLeaveRequestUrl(requestId) || leavePageUrl },
+    reason: `You got this because you lead ${leaveRequest.employee.name}.`,
+  })
 
   try {
-    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients, subject, html })
+    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients, subject, ...finishedEmail(subject, html) })
     await safeRecordLeaveAuditEvent({
       leaveRequestId: requestId,
       channel: 'EMAIL',
@@ -2263,24 +2191,26 @@ export async function sendTransitionPlanDisapprovedNotification(requestId: strin
     return { success: false, message: 'Employee email not found' }
   }
 
-  const { start, end } = leaveDateRangeLabels(leaveRequest)
   const leavePageUrl = getLeavePageUrl()
-  const subject = `Transition plan needs changes (${start} to ${end})`
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #D97706;">Transition Plan Needs Changes</h2>
-      <p>Hi ${escapeHtml(leaveRequest.employee.name)},</p>
-      <p>Your team lead requested changes to the transition plan for your leave (${start} to ${end}).</p>
-      <div style="background:#FEF3C7;padding:14px 18px;border-radius:8px;margin:16px 0;">
-        <p style="margin:0;"><strong>Reason:</strong> ${escapeHtml(reason)}</p>
-      </div>
-      <p>Please update your transition plan and submit it again.</p>
-      ${leavePageUrl ? `<p><a href="${leavePageUrl}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Update Transition Plan</a></p>` : ''}
-    </div>
-  `
+  const rangeLabel = emailRange(new Date(leaveRequest.startDate), new Date(leaveRequest.endDate))
+  const subject = `Your handover needs changes: ${rangeLabel}`
+  const html = renderCompassEmail({
+    subject,
+    preview: 'Your lead left a note. Update the plan and send it again.',
+    section: TIME_OFF,
+    banner: { tone: 'warning', text: 'Changes requested by your lead' },
+    name: leaveRequest.employee.name,
+    paragraphs: [
+      `Your team lead asked for changes to the transition plan for your leave, ${rangeLabel}.`,
+      'Please update the plan and submit it again.',
+    ],
+    quote: { label: 'Reason from your lead', text: reason },
+    button: { label: 'Update handover', url: getLeaveRequestUrl(requestId) || leavePageUrl },
+    reason: 'You got this because you asked for this leave.',
+  })
 
   try {
-    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to, subject, html })
+    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to, subject, ...finishedEmail(subject, html) })
     await safeRecordLeaveAuditEvent({
       leaveRequestId: requestId,
       channel: 'EMAIL',
@@ -2327,20 +2257,25 @@ export async function sendTransitionPlanEscalation(requestId: string) {
     return { success: false, message: 'No HR recipients' }
   }
 
-  const { start, end } = leaveDateRangeLabels(leaveRequest)
   const leavePageUrl = getLeavePageUrl()
-  const subject = `Action needed: transition plan missing for ${leaveRequest.employee.name} (${start} to ${end})`
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #DC2626;">Transition Plan Still Missing</h2>
-      <p><strong>${escapeHtml(leaveRequest.employee.name)}</strong> has not submitted a transition plan for their upcoming leave (${start} to ${end}), and the submission deadline (3 days before the leave) has passed.</p>
-      <p>Please follow up with the employee and decide whether to cancel the leave request.</p>
-      ${leavePageUrl ? `<p><a href="${leavePageUrl}" style="display:inline-block;background:#4F46E5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">Open Leave Management</a></p>` : ''}
-    </div>
-  `
+  const rangeLabel = emailRange(new Date(leaveRequest.startDate), new Date(leaveRequest.endDate))
+  const subject = `Handover still missing: ${leaveRequest.employee.name}, ${rangeLabel}`
+  const html = renderCompassEmail({
+    subject,
+    preview: 'The deadline has passed. Follow up, or decide whether to cancel the leave.',
+    section: TIME_OFF,
+    banner: { tone: 'danger', text: 'Handover deadline passed' },
+    name: null,
+    paragraphs: [
+      `${leaveRequest.employee.name} has not submitted a transition plan for their leave, ${rangeLabel}, and the deadline (3 days before the leave) has passed.`,
+      'Please follow up with them and decide whether to cancel the leave request.',
+    ],
+    button: { label: 'Open the request', url: getLeaveRequestUrl(requestId) || leavePageUrl },
+    reason: 'You got this because you are in HR.',
+  })
 
   try {
-    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients, subject, html })
+    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients, subject, ...finishedEmail(subject, html) })
     await safeRecordLeaveAuditEvent({
       leaveRequestId: requestId,
       channel: 'EMAIL',
@@ -2378,14 +2313,17 @@ export async function sendPaymentDetailsUpdatedNotification(personName: string) 
     return { success: false, message: 'No O&A recipients configured' }
   }
   const subject = `Payment details updated for ${personName}`
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">Payment details updated</h2>
-      <p>${escapeHtml(personName)} updated their payment details. Open Compass to review them.</p>
-    </div>
-  `
+  // Names only: no pay, bank or other personal data ever goes in an email.
+  const html = renderCompassEmail({
+    subject,
+    section: ONBOARDING,
+    name: null,
+    paragraphs: [`${personName} updated their payment details. Open Compass to review them.`],
+    button: { label: 'Open payment details', url: compassUrl('/oa/payment-details') },
+    reason: 'You got this because you are in Operations and Accounting.',
+  })
   try {
-    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients.join(', '), subject, html })
+    const info = await transporter.sendMail({ from: `P21 Compass <${FROM_EMAIL}>`, to: recipients.join(', '), subject, ...finishedEmail(subject, html) })
     return { success: true, data: { messageId: info.messageId } }
   } catch (error) {
     console.error('Failed to send payment details updated notification')
@@ -2415,17 +2353,16 @@ function academyNotice(input: {
   linkLabel: string
   path: string
 }): AcademyNotice {
-  const paragraph = (line: string): string => `<p>${escapeHtml(line)}</p>`
-  const list = input.list ? [`<ul>${input.list.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`] : []
-  const closing = input.closing ? [paragraph(input.closing)] : []
-  const lines = [...input.lines.map(paragraph), ...list, ...closing].join('\n      ')
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #0D9488;">${escapeHtml(input.heading)}</h2>
-      ${lines}
-      <p><a href="${compassUrl(input.path)}" style="display:inline-block;background:#0D9488;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;">${escapeHtml(input.linkLabel)}</a></p>
-    </div>
-  `
+  const html = renderCompassEmail({
+    subject: input.subject,
+    title: input.heading,
+    section: 'Onboarding',
+    paragraphs: input.lines,
+    list: input.list,
+    button: { label: input.linkLabel, url: compassUrl(input.path) },
+    after: input.closing,
+    reason: 'You got this because you are part of an onboarding at Plutus21.',
+  })
   return { subject: input.subject, html }
 }
 

@@ -16,7 +16,7 @@ test('HR’s reminder says in red that someone is overdue and that it counts at 
   const email = renderHrReminderEmail({ name: 'Ana', openCount: 5, overdueCount: 3, appUrl: 'https://compass.example' })
   assert.equal(email.subject, 'Overdue: 3 evaluation questions from earlier weeks')
   assert.match(email.html, /5 open evaluation questions, 3 from earlier weeks/)
-  const banner = email.html.match(/<div[^>]*#dc2626[^>]*>([\s\S]*?)<\/div>/)
+  const banner = email.html.match(/<td[^>]*#DC2626[^>]*>([\s\S]*?)<\/td>/)
   assert.ok(banner, 'a red notice')
   assert.match(banner[1], /You are overdue on 3 evaluation questions/)
   assert.match(banner[1], /This will be reflected at the time of profit sharing\./)
@@ -26,7 +26,7 @@ test('HR’s reminder says in red that someone is overdue and that it counts at 
 test('HR’s reminder has no overdue warning when only this week’s questions are open', () => {
   const email = renderHrReminderEmail({ name: 'Ana', openCount: 2, overdueCount: 0, appUrl: 'https://compass.example' })
   assert.equal(email.subject, 'Reminder from HR: 2 evaluation questions waiting')
-  assert.doesNotMatch(email.html, /#dc2626|profit sharing/)
+  assert.doesNotMatch(email.html, /#DC2626|profit sharing/i)
 })
 
 test('the round-opened email says in red that evaluations are open and when they are due', () => {
@@ -36,12 +36,13 @@ test('the round-opened email says in red that evaluations are open and when they
   assert.match(email.html, /by Friday/)
   assert.match(email.html, /2 catch-up weeks/)
   assert.equal(email.subject, 'Q4 2026 evaluations are now open: first questions due Sun 4 Oct, closing 3 Jan 2027')
-  const banner = email.html.match(/<div[^>]*#dc2626[^>]*>([\s\S]*?)<\/div>/)
+  const banner = email.html.match(/<td[^>]*#DC2626[^>]*>([\s\S]*?)<\/td>/)
   assert.ok(banner, 'a red banner leads the email')
   assert.match(banner[1], /Q4 2026 evaluations are now open/)
   assert.match(banner[1], /Sun 4 Oct/)
   assert.match(banner[1], /3 Jan 2027/)
-  assert.ok(email.html.indexOf('#dc2626') < email.html.indexOf('For 12 weeks'), 'the banner comes before the explanation')
+  // The hidden preview repeats the first sentence, so compare with where it sits in the card.
+  assert.ok(email.html.indexOf('#DC2626') < email.html.lastIndexOf('For 12 weeks'), 'the banner comes before the explanation')
 })
 
 test('the Monday email counts new and open questions and links to the inbox', () => {

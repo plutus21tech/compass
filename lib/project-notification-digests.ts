@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { sendMail } from '@/lib/email'
 import { escapeHtml } from '@/lib/sanitize'
 import { COMPASS_URL } from '@/lib/compass-url'
+import { renderCompassEmail } from '@/lib/email-template'
 
 export const PROJECT_NOTIFICATION_FREQUENCIES: ProjectNotificationDigestFrequency[] = ['DAILY', 'WEEKLY']
 export const DEFAULT_PROJECT_NOTIFICATION_TIME = '09:00'
@@ -217,21 +218,14 @@ function buildDigestEmailHtml(input: {
     `)
     .join('')
 
-  return `
-    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #111827; line-height: 1.5;">
-      <h2 style="color: #2563eb; margin-bottom: 8px;">Compass Project Digest</h2>
-      <p>Hi ${escapeHtml(input.recipientName || 'there')},</p>
-      <p>You have <strong>${input.items.length}</strong> project notification${input.items.length === 1 ? '' : 's'} waiting for you.</p>
-      <ul style="padding-left: 20px; margin: 16px 0;">
-        ${rows}
-      </ul>
-      <p>
-        <a href="${input.appBaseUrl}/projects" style="display: inline-block; background: #4f46e5; color: #ffffff; padding: 10px 14px; border-radius: 8px; text-decoration: none;">
-          Open projects in Compass
-        </a>
-      </p>
-    </div>
-  `
+  return renderCompassEmail({
+    section: 'Projects',
+    name: input.recipientName || null,
+    paragraphs: [`You have ${input.items.length} project ${input.items.length === 1 ? 'update' : 'updates'} waiting for you.`],
+    blockHtml: `<ul style="padding-left: 20px; margin: 0;">${rows}</ul>`,
+    button: { label: 'Open projects', url: `${input.appBaseUrl}/projects` },
+    reason: 'You got this because you chose a digest for project updates.',
+  })
 }
 
 export async function sendDueProjectNotificationDigests(input: {
