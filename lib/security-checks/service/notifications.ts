@@ -2,6 +2,7 @@
 // something in Compass — never links or codes (anti-phishing). In-app rows
 // carry the detail and are shown on the Security Checks page.
 import { prisma } from '@/lib/db'
+import { renderCompassEmail } from '@/lib/email-template'
 import type { Db } from './db'
 
 export interface NotificationInput {
@@ -18,13 +19,17 @@ export type Mailer = (to: string, subject: string, html: string) => Promise<unkn
 export const EMPLOYEE_EMAIL_SUBJECT = 'You have a task in Compass'
 export const SECURITY_TEAM_EMAIL_SUBJECT = 'You have Security Checks items in Compass'
 
-const EMAIL_HTML = (headline: string) => `
-  <div style="font-family: Arial, sans-serif; font-size: 14px; color: #111;">
-    <p>${headline}</p>
-    <p>Sign in to Compass the way you normally do to see it.</p>
-    <p style="color:#666; font-size:12px;">This message never contains links, codes or attachments. If an email
-    claiming to be from Compass asks you to click a link or share a code, report it to the Security team.</p>
-  </div>`
+/** No button and no link, on purpose: these emails only say there is something in Compass. */
+const EMAIL_HTML = (headline: string) =>
+  renderCompassEmail({
+    section: 'Help & IT',
+    name: null,
+    paragraphsHtml: [headline, 'Sign in to Compass the way you normally do to see it.'],
+    after:
+      'This message never contains links, codes or attachments. If an email claiming to be from Compass asks you to click a link or share a code, report it to the Security team.',
+    reason: 'You got this because you have security checks in Compass.',
+    noLinks: true,
+  })
 
 const SECURITY_TEAM_KINDS: ReadonlySet<string> = new Set(['OVERDUE_DIGEST', 'UNREVIEWED_EXPIRED', 'SELF_REVIEW_REPORT'])
 

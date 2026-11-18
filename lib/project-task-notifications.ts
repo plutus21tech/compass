@@ -3,6 +3,7 @@ import { sendMail } from '@/lib/email'
 import { queueOrSendProjectNotification } from '@/lib/project-notification-digests'
 import { escapeHtml } from '@/lib/sanitize'
 import { COMPASS_URL } from '@/lib/compass-url'
+import { renderCompassEmail } from '@/lib/email-template'
 
 function uniqueEmails(values: Array<string | null | undefined>) {
   const seen = new Set<string>()
@@ -29,20 +30,19 @@ async function sendProjectMail(input: {
   actionUrl: string
   actionLabel: string
 }) {
-  const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #111827; line-height: 1.5;">
-      <h2 style="color: #2563eb; margin-bottom: 8px;">${escapeHtml(input.heading)}</h2>
-      <p>Hi ${escapeHtml(input.greetingName || 'there')},</p>
-      ${input.bodyHtml}
-      <p>
-        <a href="${input.actionUrl}" style="display: inline-block; background: #4f46e5; color: #ffffff; padding: 10px 14px; border-radius: 8px; text-decoration: none;">
-          ${escapeHtml(input.actionLabel)}
-        </a>
-      </p>
-    </div>
-  `
+  return sendMail(input.to, input.subject, projectEmailHtml(input))
+}
 
-  return sendMail(input.to, input.subject, html)
+/** A project or task email on the shared template. `bodyHtml` is already safe HTML. */
+function projectEmailHtml(input: { subject: string; greetingName?: string | null; bodyHtml: string; actionUrl: string; actionLabel: string }): string {
+  return renderCompassEmail({
+    subject: input.subject,
+    section: 'Projects',
+    name: input.greetingName ?? null,
+    blockHtml: input.bodyHtml,
+    button: { label: input.actionLabel, url: input.actionUrl },
+    reason: 'You got this because you are on this project.',
+  })
 }
 
 export async function sendProjectInvitationNotification(input: {
@@ -305,18 +305,13 @@ export async function sendChildTaskCompletedNotification(taskId: string) {
   `
   const results = await Promise.all(recipients.map(async (recipient) => {
     const email = recipient.email!.trim()
-    const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #111827; line-height: 1.5;">
-        <h2 style="color: #2563eb; margin-bottom: 8px;">Subtask Completed</h2>
-        <p>Hi ${escapeHtml(recipient.name || 'there')},</p>
-        ${bodyHtml}
-        <p>
-          <a href="${projectUrl}" style="display: inline-block; background: #4f46e5; color: #ffffff; padding: 10px 14px; border-radius: 8px; text-decoration: none;">
-            Open project in Compass
-          </a>
-        </p>
-      </div>
-    `
+    const html = projectEmailHtml({
+      subject,
+      greetingName: recipient.name,
+      bodyHtml,
+      actionUrl: projectUrl,
+      actionLabel: 'Open project',
+    })
     const info = await queueOrSendProjectNotification({
       recipient,
       type: 'CHILD_TASK_COMPLETED',

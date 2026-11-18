@@ -363,13 +363,56 @@ export async function generateReport(
   return report
 }
 
+/** What the report carries when it goes out as an email: the Compass header, a greeting, one button and the footer. */
+export interface ReportEmailFrame {
+  /** The recipient's first name, for the greeting. */
+  firstName: string | null
+  /** Where "View in Compass" opens: the person's results in Compass. */
+  resultsUrl: string
+  logoUrl: string
+  settingsUrl: string
+}
+
+const EMAIL_FONT = "'Figtree',Arial,Helvetica,sans-serif"
+
+function reportEmailTop(frame: ReportEmailFrame, periodName: string): string {
+  const greeting = frame.firstName ? `Hi ${escapeHtml(frame.firstName)},` : 'Hi,'
+  return `
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your full report is below, and in Compass.</div>
+      <table role="presentation" class="email-header" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td valign="middle" width="24"><img src="${escapeHtml(frame.logoUrl)}" width="16" height="25" alt="Compass" style="display:block;border:0;"></td>
+        <td valign="middle" style="padding-left:8px;font-family:${EMAIL_FONT};font-size:16px;font-weight:700;color:#2A2F40;">Compass</td>
+        <td valign="middle" align="right" style="font-family:${EMAIL_FONT};font-size:13px;color:#6B7590;">Evaluations</td>
+      </tr></table>
+      <p style="margin:16px 0 0;font-size:15px;">${greeting}</p>
+      <p style="margin:8px 0 0;font-size:15px;">Your ${escapeHtml(periodName)} results are ready. The full report is below, and you can see it in Compass too.</p>
+      <table role="presentation" class="email-button" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0 28px;width:auto;"><tr><td bgcolor="#1B76FF" style="border-radius:8px;background:#1B76FF;">
+        <a href="${escapeHtml(frame.resultsUrl)}" style="display:inline-block;padding:12px 22px;font-family:${EMAIL_FONT};font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">View in Compass</a>
+      </td></tr></table>
+  `
+}
+
+function reportEmailBottom(frame: ReportEmailFrame): string {
+  return `
+      <p class="email-footer">
+        You got this because HR released your evaluation results. Only you, your lead and HR can see them.
+        <a href="${escapeHtml(frame.settingsUrl)}" style="color:#6B7590;text-decoration:underline;">Manage email settings</a><br>
+        Compass · Plutus21
+      </p>
+  `
+}
+
 export function formatReportAsHTML(
   detailedReport: DetailedReport,
-  period: { startDate: Date; endDate: Date }
+  period: { startDate: Date; endDate: Date },
+  emailFrame?: ReportEmailFrame
 ): string {
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(date))
   }
+  // Only the emailed copy has the Compass header, button and footer; the copy HR views or prints does not.
+  const emailTop = emailFrame ? reportEmailTop(emailFrame, detailedReport.periodName) : ''
+  const emailBottom = emailFrame ? reportEmailBottom(emailFrame) : ''
 
   const periodRange = `${formatDate(period.startDate)} - ${formatDate(period.endDate)}`
   // The 0-4 value is the score the engine actually computes; the stored percentage
@@ -423,69 +466,70 @@ export function formatReportAsHTML(
       <meta charset="utf-8">
       <title>Performance Evaluation ${detailedReport.periodName}</title>
       <style>
-        body { 
-          font-family: Arial, sans-serif; 
-          line-height: 1.6; 
-          color: #333; 
-          max-width: 900px; 
-          margin: 0 auto; 
-          padding: 20px; 
+        /* The Compass email look: one font, grey text on white, no coloured headings. */
+        body {
+          font-family: 'Figtree', Arial, Helvetica, sans-serif;
+          line-height: 1.6;
+          color: #525D76;
+          max-width: 900px;
+          margin: 0 auto;
+          padding: 20px;
         }
-        h1 { 
-          color: #2c3e50; 
-          border-bottom: 3px solid #3498db; 
-          padding-bottom: 10px; 
+        h1 {
+          color: #2A2F40;
+          font-size: 22px;
+          letter-spacing: -0.3px;
+          border-bottom: 1px solid #E4E6EB;
+          padding-bottom: 10px;
           margin-bottom: 10px;
         }
-        h2 { 
-          color: #34495e; 
-          margin-top: 30px; 
+        h2 {
+          color: #2A2F40;
+          margin-top: 30px;
           margin-bottom: 15px;
-          font-size: 1.3em;
+          font-size: 1.15em;
         }
-        h3 { 
-          color: #555; 
+        h3 {
+          color: #2A2F40;
           margin-top: 20px;
           margin-bottom: 10px;
-          font-size: 1.1em;
+          font-size: 1em;
         }
-        table { 
-          width: 100%; 
-          border-collapse: collapse; 
-          margin: 20px 0; 
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 20px 0;
           font-size: 0.95em;
         }
-        th, td { 
-          padding: 10px 12px; 
-          text-align: left; 
-          border: 1px solid #ddd; 
+        th, td {
+          padding: 10px 12px;
+          text-align: left;
+          border: 1px solid #E4E6EB;
         }
-        th { 
-          background-color: #3498db; 
-          color: white; 
-          font-weight: bold;
+        th {
+          background-color: #F8F9FB;
+          color: #2A2F40;
+          font-weight: 600;
         }
-        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:nth-child(even) { background-color: #FBFBFC; }
         .section { margin: 30px 0; }
-        .evaluator-name { 
-          font-weight: bold; 
-          color: #2c3e50; 
+        .evaluator-name {
+          font-weight: 600;
+          color: #2A2F40;
           margin-bottom: 10px;
         }
-        .total-row { 
-          font-weight: bold; 
-          background-color: #e8f4f8 !important; 
-        }
-        .aggregate-table th {
-          background-color: #2c3e50;
+        .total-row {
+          font-weight: 600;
+          color: #2A2F40;
+          background-color: #EEF0F3 !important;
         }
         .key-table {
           margin-top: 30px;
           font-size: 0.9em;
         }
-        .key-table th {
-          background-color: #7f8c8d;
-        }
+        .email-header, .email-header td, .email-button, .email-button td { border: 0; margin: 0; padding: 0; background: none; }
+        .email-header { margin-bottom: 16px; }
+        .email-footer { margin-top: 28px; font-size: 12px; color: #6B7590; }
         @media print {
           body { 
             max-width: 100%; 
@@ -509,9 +553,9 @@ export function formatReportAsHTML(
           text-align: center;
           margin: 28px 0;
           padding: 24px 20px;
-          border: 1px solid #e2e5e9;
+          border: 1px solid #EEF0F3;
           border-radius: 8px;
-          background-color: #fcfcfd;
+          background-color: #F8F9FB;
           /* Without this the gold fill is dropped when the browser prints to PDF. */
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
@@ -527,23 +571,24 @@ export function formatReportAsHTML(
           margin-top: 12px;
           font-size: 1.7em;
           font-weight: bold;
-          color: #2c3e50;
+          color: #2A2F40;
         }
         .score-outof {
           font-size: 0.55em;
           font-weight: normal;
-          color: #7b8794;
+          color: #6B7590;
         }
         .score-band {
           margin-top: 4px;
           font-size: 1.05em;
-          color: #34495e;
+          color: #525D76;
         }
       </style>
     </head>
     <body>
+      ${emailTop}
       <h1>Performance Evaluation ${detailedReport.periodName}</h1>
-      
+
       <div class="section">
         <table>
           <tr>
@@ -709,6 +754,7 @@ export function formatReportAsHTML(
   html += `</div>`
 
   html += `
+      ${emailBottom}
       </body>
     </html>
   `
