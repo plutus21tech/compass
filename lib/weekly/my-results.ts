@@ -101,11 +101,6 @@ export function scoreChange(quarters: readonly MyResultQuarter[], index: number)
   return previous ? round2(quarters[index].score - previous.score) : null
 }
 
-/** Where a score sits along the 1 to 4 scale, as a percentage of its width. */
-export function scalePercent(score: number): number {
-  return Math.round(Math.min(1, Math.max(0, (score - 1) / 3)) * 100)
-}
-
 /** The group to work on next: the lowest score, when there is more than one group to compare. */
 export function lowestGroup(groups: readonly MyResultGroup[]): MyResultGroup | null {
   if (groups.length < 2) return null
