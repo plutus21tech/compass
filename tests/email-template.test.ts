@@ -67,7 +67,9 @@ test('every text value is escaped; only the Html fields are used as written', ()
     after: '<a>after</a>',
     reason: '<p>reason</p>',
   })
-  assert.doesNotMatch(html, /<script>|<img src=x>|<i>one<\/i>|<u>|<q>|<b>Go<\/b>|<a>after|<p>reason/)
+  for (const raw of ['<script>', '<img src=x>', '<i>one</i>', '<u>', '<q>', '<b>Go</b>', '<a>after', '<p>reason']) {
+    assert.ok(!html.includes(raw), raw)
+  }
   assert.match(html, /<em>two<\/em>/)
   assert.match(html, /<s>To do<\/s> → Done/)
   assert.match(html, /href="https:\/\/compass\.example\/\?a=1&amp;b=&quot;2&quot;"/)
@@ -110,4 +112,13 @@ test('the plain-text version has the same words and every link written out', () 
   assert.doesNotMatch(text, /<[a-z]|&nbsp;|&#847;|\n\n\n/)
   // The hidden preview is not repeated in the text.
   assert.equal(text.split('You have 3 casual days left').length, 1)
+})
+
+test('text conversion stays fast and tag-free on hostile HTML', () => {
+  const hostile = '<head'.repeat(20000) + '<a '.repeat(20000) + '<div style="display:none'.repeat(5000) + '<<a>script>alert(1)<</a>/script>'
+  const started = Date.now()
+  const text = emailTextFromHtml(hostile)
+  assert.ok(Date.now() - started < 1000, 'linear time')
+  assert.doesNotMatch(text, /[<>]/)
+  assert.equal(emailTextFromHtml('<p>Go <a class="x" href="https://e.x/?a=1">here</a> or <a>there</a></p>'), 'Go here (https://e.x/?a=1) or there')
 })
