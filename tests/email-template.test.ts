@@ -115,7 +115,7 @@ test('the plain-text version has the same words and every link written out', () 
 })
 
 test('text conversion stays fast and tag-free on hostile HTML', () => {
-  const hostile = '<head'.repeat(20000) + '<a '.repeat(20000) + '<div style="display:none'.repeat(5000) + '<<a>script>alert(1)<</a>/script>'
+  const hostile = '<head'.repeat(20000) + '<li'.repeat(20000) + '<a '.repeat(20000) + '<div style="display:none'.repeat(5000) + '<<a>script>alert(1)<</a>/script>'
   const started = Date.now()
   const text = emailTextFromHtml(hostile)
   assert.ok(Date.now() - started < 1000, 'linear time')

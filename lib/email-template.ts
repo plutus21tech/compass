@@ -229,15 +229,33 @@ function linksAsText(html: string): string {
   return out + html.slice(from)
 }
 
+const BLOCK_END_TAG = /^(\/(p|div|h1|h2|h3|tr|table|ul|ol)|br\s*\/?)$/i
+
+/**
+ * Drops every tag in one pass: list items become "- " lines and block ends become line breaks.
+ * Real text never holds a raw < or > (content is escaped), so any stray ones are dropped too.
+ */
+function tagsToText(html: string): string {
+  let out = ''
+  let i = 0
+  while (i < html.length) {
+    const lt = html.indexOf('<', i)
+    if (lt === -1) { out += html.slice(i); break }
+    out += html.slice(i, lt)
+    const gt = html.indexOf('>', lt + 1)
+    if (gt === -1) { out += html.slice(lt + 1); break }
+    const tag = html.slice(lt + 1, gt)
+    if (/^li/i.test(tag)) out += '\n- '
+    else if (BLOCK_END_TAG.test(tag)) out += '\n'
+    i = gt + 1
+  }
+  return out.split('<').join('').split('>').join('')
+}
+
 /** The plain-text version sent alongside the HTML: the same words, with each link's address written out. */
 export function emailTextFromHtml(html: string): string {
   const body = linksAsText(dropFirstSpan(dropFirstSpan(html, '<head', '</head>'), '<div style="display:none', '</div>'))
-  return body
-    .replace(/<li[^>]*>/gi, '\n- ')
-    .replace(/<\/(p|div|h1|h2|h3|tr|table|ul|ol)>|<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    // Text never holds a raw < or > (content is escaped), so any left are tag fragments.
-    .replace(/[<>]/g, '')
+  return tagsToText(body)
     .replace(/&[a-z#0-9]+;/gi, (entity) => ENTITIES[entity.toLowerCase()] ?? ' ')
     .split('\n')
     .map((line) => line.replace(/\s+/g, ' ').trim())
