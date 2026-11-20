@@ -199,15 +199,63 @@ export function applyEmailSubject(html: string, subject: string): string {
 
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&#x27;': "'", '&nbsp;': ' ', '&zwnj;': '', '&#847;': '' }
 
+/** Drops the first `open`…`close` span (case-insensitive) using plain index scans, no backtracking. */
+function dropFirstSpan(html: string, open: string, close: string): string {
+  const lower = html.toLowerCase()
+  const start = lower.indexOf(open)
+  if (start === -1) return html
+  const end = lower.indexOf(close, start + open.length)
+  return end === -1 ? html : html.slice(0, start) + html.slice(end + close.length)
+}
+
+/** Rewrites each `<a href="url">label</a>` as `label (url)`, scanning the HTML once. */
+function linksAsText(html: string): string {
+  const lower = html.toLowerCase()
+  const anchorStart = /<a\s/gi
+  let out = ''
+  let from = 0
+  let match: RegExpExecArray | null
+  while ((match = anchorStart.exec(html)) !== null) {
+    const start = match.index
+    const tagEnd = html.indexOf('>', start)
+    if (tagEnd === -1) break
+    const close = lower.indexOf('</a>', tagEnd)
+    const href = /\shref="([^"]*)"/i.exec(html.slice(start, tagEnd))
+    if (close === -1 || !href) { anchorStart.lastIndex = tagEnd + 1; continue }
+    out += `${html.slice(from, start)}${html.slice(tagEnd + 1, close)} (${href[1]})`
+    from = close + 4
+    anchorStart.lastIndex = from
+  }
+  return out + html.slice(from)
+}
+
+const BLOCK_END_TAG = /^(\/(p|div|h1|h2|h3|tr|table|ul|ol)|br\s*\/?)$/i
+
+/**
+ * Drops every tag in one pass: list items become "- " lines and block ends become line breaks.
+ * Real text never holds a raw < or > (content is escaped), so any stray ones are dropped too.
+ */
+function tagsToText(html: string): string {
+  let out = ''
+  let i = 0
+  while (i < html.length) {
+    const lt = html.indexOf('<', i)
+    if (lt === -1) { out += html.slice(i); break }
+    out += html.slice(i, lt)
+    const gt = html.indexOf('>', lt + 1)
+    if (gt === -1) { out += html.slice(lt + 1); break }
+    const tag = html.slice(lt + 1, gt)
+    if (/^li/i.test(tag)) out += '\n- '
+    else if (BLOCK_END_TAG.test(tag)) out += '\n'
+    i = gt + 1
+  }
+  return out.split('<').join('').split('>').join('')
+}
+
 /** The plain-text version sent alongside the HTML: the same words, with each link's address written out. */
 export function emailTextFromHtml(html: string): string {
-  return html
-    .replace(/<head[\s\S]*?<\/head>/i, '')
-    .replace(/<div style="display:none[\s\S]*?<\/div>/i, '')
-    .replace(/<a\s[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_match, href: string, label: string) => `${label} (${href})`)
-    .replace(/<li[^>]*>/gi, '\n- ')
-    .replace(/<\/(p|div|h1|h2|h3|tr|table|ul|ol)>|<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
+  const body = linksAsText(dropFirstSpan(dropFirstSpan(html, '<head', '</head>'), '<div style="display:none', '</div>'))
+  return tagsToText(body)
     .replace(/&[a-z#0-9]+;/gi, (entity) => ENTITIES[entity.toLowerCase()] ?? ' ')
     .split('\n')
     .map((line) => line.replace(/\s+/g, ' ').trim())
