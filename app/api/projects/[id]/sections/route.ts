@@ -114,7 +114,7 @@ export async function PUT(
 
     const { sectionId, name, orderIndex, color } = await request.json()
 
-    if (!sectionId) return NextResponse.json({ error: 'sectionId required' }, { status: 400 })
+    if (typeof sectionId !== 'string' || !sectionId) return NextResponse.json({ error: 'sectionId required' }, { status: 400 })
 
     const existing = await prisma.taskSection.findUnique({
       where: { id: sectionId },

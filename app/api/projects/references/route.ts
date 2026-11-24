@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { projectId, title, url, note } = await request.json()
-    if (!projectId) return NextResponse.json({ error: 'projectId is required' }, { status: 400 })
+    if (typeof projectId !== 'string' || !projectId) return NextResponse.json({ error: 'projectId is required' }, { status: 400 })
     if (!title?.trim()) return NextResponse.json({ error: 'title is required' }, { status: 400 })
     if (url && !isValidUrl(url)) return NextResponse.json({ error: 'url must be a valid http/https URL' }, { status: 400 })
 

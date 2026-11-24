@@ -56,7 +56,7 @@ export async function POST(
       return NextResponse.json({ error: authorizationFailure.error }, { status: authorizationFailure.status })
     }
     const { taskId, content } = await request.json()
-    if (!taskId || !content?.trim()) {
+    if (typeof taskId !== 'string' || !taskId || typeof content !== 'string' || !content.trim()) {
       return NextResponse.json({ error: 'taskId and content required' }, { status: 400 })
     }
 

@@ -245,7 +245,7 @@ export async function reopenTask(
     const task = await loadTask(tx, taskId)
     if (!canReopen(timelineOf(task), now)) throw conflict('Only Verified tasks can be reopened, and only until the review wrap-up ends')
     const self = await resolveSelfReview(tx, actor, task.userId, input.selfReviewJustification, now)
-    await tx.securitySubtask.updateMany({ where: { taskId, status: 'VERIFIED' }, data: { status: 'PENDING_REVIEW' } })
+    await tx.securitySubtask.updateMany({ where: { taskId: { equals: taskId }, status: 'VERIFIED' }, data: { status: 'PENDING_REVIEW' } })
     await tx.securityReviewAction.create({
       data: {
         taskId,

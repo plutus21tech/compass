@@ -118,7 +118,7 @@ export async function PUT(request: NextRequest) {
 
     const { id, name, startDate, endDate, reviewStartDate, isActive, isLocked } = await request.json()
 
-    if (!id) {
+    if (typeof id !== 'string' || !id) {
       return NextResponse.json(
         { error: 'ID is required' },
         { status: 400 }

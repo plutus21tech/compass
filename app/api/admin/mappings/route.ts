@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     const { evaluatorId, evaluateeId, relationshipType } = await request.json()
 
-    if (!evaluatorId || !evaluateeId || !relationshipType) {
+    if (typeof evaluatorId !== 'string' || typeof evaluateeId !== 'string' || typeof relationshipType !== 'string' || !evaluatorId || !evaluateeId || !relationshipType) {
       return NextResponse.json(
         { error: 'Evaluator, evaluatee, and relationship type are required' },
         { status: 400 }
