@@ -125,7 +125,7 @@ export async function POST(request: NextRequest) {
 
     const { employeeId, periodId } = await request.json()
 
-    if (!employeeId || !periodId) {
+    if (typeof employeeId !== 'string' || typeof periodId !== 'string' || !employeeId || !periodId) {
       return NextResponse.json(
         { error: 'employeeId and periodId are required' },
         { status: 400 }

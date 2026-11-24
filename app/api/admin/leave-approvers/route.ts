@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     const { employeeId, leadId } = await request.json()
 
-    if (!employeeId || !leadId) {
+    if (typeof employeeId !== 'string' || typeof leadId !== 'string' || !employeeId || !leadId) {
       return NextResponse.json(
         { error: 'Both a 3E team member and a team lead are required' },
         { status: 400 }

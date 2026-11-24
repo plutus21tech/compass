@@ -2,9 +2,7 @@
 // reopen, and prohibited-content deletion. Reviewer ≠ submitter is enforced
 // here (last-resort self-review excepted, flagged). Verify is refused on
 // non-compliant answers.
-import type { PrismaClient } from '@prisma/client'
-
-type TransactionClient = Parameters<PrismaClient['$transaction']>[0] extends (client: infer Client) => unknown ? Client : never
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { canManageTasks, canReview, type SecurityActor } from '../access'
 import { nonCompliantQuestions } from '../answers'
@@ -35,7 +33,7 @@ const SUBTASK_RESULT: Record<Verdict, SubtaskStatus> = {
 }
 
 interface ReviewContext {
-  tx: TransactionClient
+  tx: Prisma.TransactionClient
   actor: SecurityActor
   task: TaskWithDetail
   self: SelfReviewOutcome
@@ -50,14 +48,14 @@ const taskRef = (task: TaskWithDetail) => ({
   cycleId: task.cycleId,
 })
 
-async function loadTask(tx: TransactionClient, taskId: string): Promise<TaskWithDetail> {
+async function loadTask(tx: Prisma.TransactionClient, taskId: string): Promise<TaskWithDetail> {
   const task = await tx.securityTask.findUnique({ where: { id: taskId }, include: TASK_DETAIL_INCLUDE })
   if (!task) throw notFound('Task not found')
   return task
 }
 
 async function reviewContext(
-  tx: TransactionClient,
+  tx: Prisma.TransactionClient,
   actor: SecurityActor,
   taskId: string,
   justification: string | undefined,

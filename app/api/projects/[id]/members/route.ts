@@ -17,7 +17,7 @@ export async function POST(
     const { id: projectId } = await params
     const { userId } = await request.json()
 
-    if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 })
+    if (typeof userId !== 'string' || !userId) return NextResponse.json({ error: 'userId required' }, { status: 400 })
     const authorization = await getProjectAuthorization(projectId, user)
     const authorizationFailure = projectAuthorizationFailure(authorization, 'manage')
     if (authorizationFailure) {
