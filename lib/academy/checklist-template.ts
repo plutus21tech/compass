@@ -26,7 +26,11 @@ export const newTemplateItemSchema = templateItemInputSchema.omit({ orderIndex: 
 export type NewTemplateItemInput = z.infer<typeof newTemplateItemSchema>
 
 export function slugFromTitle(title: string): string {
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '')
+  // The one replace collapses every separator run, so at most one dash sits at each end.
+  let slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  if (slug.startsWith('-')) slug = slug.slice(1)
+  slug = slug.slice(0, 60)
+  if (slug.endsWith('-')) slug = slug.slice(0, -1)
   return slug || 'item'
 }
 

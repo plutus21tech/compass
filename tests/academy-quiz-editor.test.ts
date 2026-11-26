@@ -45,6 +45,11 @@ test('the minimum stays at 10', () => assert.equal(MIN_QUIZ_QUESTIONS, 10))
 test('slugFromTitle makes a stable lowercase key', () => {
   assert.equal(slugFromTitle("Completion of Manager's Checklist!"), 'completion-of-manager-s-checklist')
   assert.equal(slugFromTitle('  ***  '), 'item')
+  assert.equal(slugFromTitle('-- Hello,  World --'), 'hello-world')
+  assert.equal(slugFromTitle(`${'a'.repeat(59)} b`), 'a'.repeat(59))
+  const started = Date.now()
+  assert.equal(slugFromTitle('-'.repeat(50_000) + '!'), 'item')
+  assert.ok(Date.now() - started < 1000)
 })
 
 test('uniqueKey adds a counter when the key is taken', () => {
