@@ -8,7 +8,7 @@ export type WorkspaceView = 'table' | 'kanban'
 export type WorkspaceGroupMode = 'project' | 'assignee'
 export type ProjectStatusFilter = 'CURRENT' | 'ALL' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED'
 export type SortDirection = 'asc' | 'desc'
-export type WorkspaceSortKey = 'status' | 'title' | 'project' | 'priority' | 'dueDate' | 'assignee' | 'notes' | 'variance'
+export type WorkspaceSortKey = 'status' | 'title' | 'project' | 'priority' | 'dueDate' | 'createdAt' | 'assignee' | 'notes' | 'variance'
 export type KanbanColumnId = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'DONE'
 
 export interface WorkspacePerson {

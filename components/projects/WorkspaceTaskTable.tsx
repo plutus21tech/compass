@@ -74,6 +74,7 @@ import {
   assigneeIdForFilter,
   daysFromToday,
   displayDueDate,
+  formatShortDue,
   groupWorkspaceTaskItemsByAssignee,
   isDoneTask,
   isRowNavigationClick,
@@ -1439,7 +1440,15 @@ export function OpenedProjectTaskTable({
   onFilterByAssignee?: (assigneeId: string) => void
   onCreateTask: (parentTaskId: string | null, title: string) => Promise<boolean>
 }) {
-  const taskTree = buildWorkspaceTaskTree(tasks)
+  // Newest created first by default; the Created and Due headers switch and flip the order.
+  const [sort, setSort] = useState<{ key: 'createdAt' | 'dueDate'; direction: SortDirection }>({ key: 'createdAt', direction: 'desc' })
+  const onSort = (key: WorkspaceSortKey) => {
+    if (key !== 'createdAt' && key !== 'dueDate') return
+    setSort((current) => current.key === key
+      ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: key === 'createdAt' ? 'desc' : 'asc' })
+  }
+  const taskTree = buildWorkspaceTaskTree(sortTasks(project, tasks, sort.key, sort.direction))
   const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(() => (
     defaultExpandAll
       ? new Set(tasks
@@ -1465,7 +1474,8 @@ export function OpenedProjectTaskTable({
             <TableHeader className="sticky top-0 z-10 bg-popover">
               <TableRow className="hover:bg-transparent [&>th]:h-9 [&>th]:px-2 [&>th]:text-xs [&>th]:font-medium [&>th]:text-muted-foreground">
                 <TableHead>Task</TableHead>
-                <TableHead className="w-36">Due</TableHead>
+                <SortableHead label="Created" sortKey="createdAt" activeKey={sort.key} direction={sort.direction} onSort={onSort} className="w-28" />
+                <SortableHead label="Due" sortKey="dueDate" activeKey={sort.key} direction={sort.direction} onSort={onSort} className="w-36" />
                 <TableHead className="w-52">Assignees</TableHead>
                 <TableHead className="w-32">Priority</TableHead>
               </TableRow>
@@ -1638,7 +1648,7 @@ export function InlineSubtaskComposerRow({
       className="border-0 bg-popover hover:bg-muted/20"
     >
       {/* Lines up with the child title: select gutter (20) + chevron spacer (24) + toggle (16) + gaps. */}
-      <TableCell colSpan={4} className="h-8 py-0" style={{ paddingLeft: `${8 + 20 + depth * 20 + 52}px` }}>
+      <TableCell colSpan={5} className="h-8 py-0" style={{ paddingLeft: `${8 + 20 + depth * 20 + 52}px` }}>
         {editing ? (
           <div className="flex min-w-0 items-center gap-1.5">
             <Input
@@ -1809,6 +1819,9 @@ function WorkspacePopupTaskRow({
             <FileText className="h-3.5 w-3.5" />
           </button>
         </div>
+      </TableCell>
+      <TableCell className="text-xs tabular-nums text-muted-foreground">
+        {task.createdAt ? formatShortDue(task.createdAt) : null}
       </TableCell>
       <TableCell>
         <DueDatePicker

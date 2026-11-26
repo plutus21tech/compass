@@ -619,6 +619,7 @@ export async function PUT(
     if (description !== undefined) updateData.description = description?.trim() || null
     if (section) {
       updateData.sectionId = section.id
+      if (section.id !== existingTask.sectionId) updateData.movedAt = new Date()
       updateData.status = nextStatus
       updateData.completedAt = nextStatus === 'DONE'
         ? (existingTask.status === 'DONE' ? existingTask.completedAt || new Date() : new Date())

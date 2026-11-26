@@ -149,6 +149,9 @@ export function TaskCard({ task, overdue, done, project, onOpen, dragHandleProps
           <PriorityIcon aria-hidden className={cn('h-3.5 w-3.5 shrink-0', priorityTone)} />
           {PRIORITY_LABEL[task.priority]}
         </span>
+        {task.createdAt && (
+          <span className="text-[11px] tabular-nums text-muted-foreground">Created {formatShortDue(task.createdAt)}</span>
+        )}
         <span className="ml-auto flex items-center gap-2.5 text-[11px] tabular-nums text-muted-foreground">
           {children.length > 0 && (
             <span className="inline-flex items-center gap-1" title="Subtasks done">

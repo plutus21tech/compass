@@ -85,6 +85,7 @@ export async function syncParentTaskStatus(input: {
       where: { id: parent.id },
       data: {
         sectionId: section.id,
+        movedAt: new Date(),
         status: nextStatus,
         completedAt: nextStatus === 'DONE' ? new Date() : null,
         completedLate: shouldMarkTaskCompletedLate({
