@@ -110,7 +110,10 @@ export interface PanelTask {
   orderIndex: number
   completedLate?: boolean
   completedAt?: string | null
+  createdAt?: string
   updatedAt?: string
+  /** When the task last changed section. */
+  movedAt?: string
   parentTaskId?: string | null
   parentTask?: ParentTaskSummary | null
   childTasks?: ChildTaskSummary[]

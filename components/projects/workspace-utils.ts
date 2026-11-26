@@ -281,6 +281,16 @@ export function sortTasksByDeadline<T>(
     compareNullableString(dateInputValue(getDueDate(left)), dateInputValue(getDueDate(right))))
 }
 
+// Newest first by an ISO timestamp; missing or unparseable values sort last.
+export function sortNewestFirst<T>(items: T[], getTime: (item: T) => string | null | undefined): T[] {
+  const ms = (item: T) => {
+    const value = getTime(item)
+    const time = value ? new Date(value).getTime() : NaN
+    return Number.isNaN(time) ? -Infinity : time
+  }
+  return items.map((item) => ({ item, time: ms(item) })).sort((a, b) => (b.time - a.time) || 0).map(({ item }) => item)
+}
+
 export const DONE_RECENT_DAYS = 14
 
 export function doneCountLabel(total: number, recent: number, days = DONE_RECENT_DAYS) {
@@ -338,6 +348,7 @@ export function sortWorkspaceTaskItems(
     if (key === 'project') result = leftProject.name.localeCompare(rightProject.name, undefined, { sensitivity: 'base' })
     if (key === 'priority') result = PRIORITY_ORDER[left.priority] - PRIORITY_ORDER[right.priority]
     if (key === 'dueDate') result = compareNullableString(dateInputValue(left.dueDate), dateInputValue(right.dueDate), direction)
+    if (key === 'createdAt') result = compareNullableString(left.createdAt, right.createdAt, direction)
     if (key === 'assignee') result = compareNullableString(left.assignee?.name, right.assignee?.name, direction)
     if (key === 'notes') result = compareNullableString(left.description, right.description, direction)
     if (key === 'variance') result = Number(isTaskOverdue(rightProject, right)) - Number(isTaskOverdue(leftProject, left))
@@ -345,7 +356,7 @@ export function sortWorkspaceTaskItems(
     if (result !== 0) {
       // Empty cells stay at the bottom in both directions; the nullable comparators
       // have already applied the requested direction to non-empty values.
-      if (key === 'dueDate' || key === 'assignee' || key === 'notes') return result
+      if (key === 'dueDate' || key === 'createdAt' || key === 'assignee' || key === 'notes') return result
       return result * multiplier
     }
 

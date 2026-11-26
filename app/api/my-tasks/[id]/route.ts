@@ -103,6 +103,7 @@ export async function PATCH(
       }
       updateData.status = nextStatus
       updateData.sectionId = nextSection.id
+      if (nextSection.id !== task.sectionId) updateData.movedAt = new Date()
       updateData.completedAt = nextStatus === 'DONE'
         ? (task.status === 'DONE' ? task.completedAt || new Date() : new Date())
         : null

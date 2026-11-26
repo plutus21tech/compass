@@ -25,7 +25,7 @@ import { calculateTaskVariance, isTaskAssignedTo } from '@/lib/project-progress'
 import type { PanelTask, ProjectStatusSection } from './TaskDetailPanel'
 import { TaskCard } from './TaskCard'
 import { AddTaskButton, BoardColumnEmpty, BoardColumnShell, BoardScroller, ShowOlderButton, TASK_NAME_INPUT_CLASS } from './BoardColumn'
-import { DONE_RECENT_DAYS, doneCountLabel, sortableCardKeyDown, sortTasksByDeadline, splitDoneTasks } from './workspace-utils'
+import { DONE_RECENT_DAYS, doneCountLabel, sortableCardKeyDown, sortNewestFirst, splitDoneTasks } from './workspace-utils'
 
 interface BoardViewProps {
   projectId: string
@@ -118,6 +118,7 @@ export function BoardView({ projectId, tasks, sections, viewerId, canManage, new
               sectionId: targetSection.id,
               section: targetSection,
               status: targetSection.canonicalStatus,
+              movedAt: new Date().toISOString(),
             }
           : task
       )
@@ -368,7 +369,11 @@ function BoardColumn({
   const [showOlder, setShowOlder] = useState(false)
   const isDoneColumn = section.isDone || section.canonicalStatus === 'DONE'
   const done = isDoneColumn ? splitDoneTasks(sectionTasks, completedAtFor) : null
-  const tasks = done ? (showOlder ? [...done.recent, ...done.older] : done.recent) : sortTasksByDeadline(sectionTasks)
+  // To Do and Backlog: newest created first. Other columns: most recently moved in first.
+  const byCreated = section.isBacklog || section.canonicalStatus === 'TODO'
+  const tasks = done
+    ? (showOlder ? [...done.recent, ...done.older] : done.recent)
+    : sortNewestFirst(sectionTasks, (task) => byCreated ? task.createdAt : task.movedAt ?? task.updatedAt)
   const { setNodeRef, isOver } = useDroppable({ id: section.id })
   const {
     attributes,

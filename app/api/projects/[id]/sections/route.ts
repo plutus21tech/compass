@@ -248,6 +248,7 @@ export async function DELETE(
         where: { sectionId },
         data: {
           sectionId: targetSection.id,
+          movedAt: new Date(),
           status: getTaskStatusForSection(targetSection),
           completedAt: targetSection.isDone ? new Date() : null,
           completedLate: false,

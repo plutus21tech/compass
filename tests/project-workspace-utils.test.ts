@@ -19,6 +19,7 @@ import {
   projectMatchesSearch,
   sortTasks,
   sortableCardKeyDown,
+  sortNewestFirst,
   sortTasksByDeadline,
   splitDoneTasks,
   doneCountLabel,
@@ -125,6 +126,18 @@ test('project-row progress ignores the assignee view and counts every non-backlo
 
   assert.deepEqual(calculateProgress(value, myTasks), { completed: 2, total: 2, percent: 100 })
   assert.deepEqual(calculateOverallProgress(value), { completed: 2, total: 3, percent: 67 })
+})
+
+test('created-date sorting puts the newest task first by default', () => {
+  const tasks = [
+    task({ id: 'old', title: 'Old', createdAt: '2026-11-01T09:00:00.000Z' }),
+    task({ id: 'new', title: 'New', createdAt: '2026-11-25T09:00:00.000Z' }),
+    task({ id: 'mid', title: 'Mid', createdAt: '2026-11-10T09:00:00.000Z' }),
+  ]
+  const value = project(tasks)
+
+  assert.deepEqual(sortTasks(value, tasks, 'createdAt', 'desc').map(({ id }) => id), ['new', 'mid', 'old'])
+  assert.deepEqual(sortTasks(value, tasks, 'createdAt', 'asc').map(({ id }) => id), ['old', 'mid', 'new'])
 })
 
 test('due-date sorting keeps undated tasks last in both directions', () => {
@@ -458,4 +471,15 @@ test('splitDoneTasks honours a custom window', () => {
 test('doneCountLabel names the total and the recent count', () => {
   assert.equal(doneCountLabel(23, 14), '23 done in total, 14 finished in the last 14 days')
   assert.equal(doneCountLabel(1, 0, 1), '1 done in total, 0 finished in the last 1 day')
+})
+
+test('sortNewestFirst puts the latest timestamp first and missing ones last', () => {
+  const items = [
+    { id: 'none', at: undefined },
+    { id: 'old', at: '2026-11-01T09:00:00.000Z' },
+    { id: 'bad', at: 'not a date' },
+    { id: 'new', at: '2026-11-25T09:00:00.000Z' },
+  ]
+  assert.deepEqual(sortNewestFirst(items, (item) => item.at).map(({ id }) => id), ['new', 'old', 'none', 'bad'])
+  assert.equal(items[0].id, 'none')
 })
