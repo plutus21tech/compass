@@ -1,7 +1,7 @@
 // §3 Campaign setup: create, edit (structure locked after launch), activate,
 // clone-as-new-version, retire. Only Security Admins manage campaigns.
 import { randomUUID } from 'node:crypto'
-import type { Prisma, SecurityCampaign, SecurityCampaignQuestion, SecurityCampaignSubtask } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import { put } from '@vercel/blob'
 import { cleanDisplayName, safeStorageName, sniffEvidenceMime } from '../evidence'
 import { blobToken } from './blob-store'
@@ -25,11 +25,6 @@ import { type Db, inTransaction, toJson } from './db'
 import { conflict, notFound, SecurityChecksError } from './errors'
 import { openNextCycleIfDue } from './cycles'
 
-export type FullCampaign = SecurityCampaign & {
-  questions: SecurityCampaignQuestion[]
-  subtaskTemplates: SecurityCampaignSubtask[]
-}
-
 const FULL_INCLUDE = {
   questions: { orderBy: { position: 'asc' } },
   subtaskTemplates: { orderBy: { position: 'asc' } },
@@ -37,6 +32,9 @@ const FULL_INCLUDE = {
 
 export function fieldsOf(campaign: FullCampaign): CampaignFields {
   return {
+
+export type FullCampaign = Prisma.SecurityCampaignGetPayload<{ include: typeof FULL_INCLUDE }>
+
     name: campaign.name,
     control: campaign.control,
     instructions: campaign.instructions,
@@ -139,7 +137,7 @@ export async function updateCampaign(actor: SecurityActor, id: string, patch: Ca
     assertNoIssues(definitionIssues(definitionOf(merged)))
     const structural = existing.status === 'DRAFT' && (changed.includes('questions') || changed.includes('subtasks') || changed.includes('subtaskMode'))
     if (structural) {
-      await tx.securityCampaignQuestion.deleteMany({ where: { campaignId: id } })
+      await tx.securityCampaignQuestion.deleteMany({ where: { campaignId: { equals: id } } })
       await tx.securityCampaignSubtask.deleteMany({ where: { campaignId: id } })
     }
     const data = existing.status === 'ACTIVE' ? liveData(merged) : scalarData(merged)
